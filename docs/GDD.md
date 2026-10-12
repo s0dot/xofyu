@@ -99,7 +99,7 @@ That design is what makes rolling compatible with a fair PvP game. The research 
 
 **Business model:** cosmetic and convenience passes (genre-standard), Wish bundles (odds-disclosed and `PolicyService`-gated), an 8-week Adventure Pass, an "Algebraic Club" subscription, cheap private servers (paid out by Roblox Plus), and rewarded ads. No sale of combat power, ever.
 
-**Decision required now (§5).** *Adventure Time* is owned by Cartoon Network / Warner Bros. Discovery (reported in October 2026 to have merged into "Skydance"). Research found **no Adventure Time listing in Roblox's License Manager**. Cartoon Network runs its own Roblox games, and the franchise is in active production (*Side Quests*, 2026; a film in development).
+**Decision required now (§5).** *Adventure Time* is owned by Cartoon Network. Its parent, Warner Bros. Discovery, merged with Paramount into **Skydance** on 6 Oct 2026, so the IP now sits next to Paramount's Roblox program, the most active Western enforcer of fan games on Roblox. Research found **no Adventure Time listing in Roblox's License Manager**. Cartoon Network runs its own Roblox games, and the franchise is in active production (*Side Quests*, 2026; a film in development).
 
 We recommend a **"license-ready, IP-separable" build**:
 - pursue an official license with a playable vertical slice
@@ -1242,7 +1242,7 @@ Progression has **five interlocking tracks**. Each has a different time horizon,
 |---|---|
 | 1 | Style lore card (episode references, concept art) |
 | 5 | Title (e.g., *"Hero-in-Training"* for Finn-style) |
-| 10 | Style Finale #1 + **Full Costume** (§12.3) |
+| 10 | Style Finale #1 + alternate **character palette** for the Character Look (§12.3) |
 | 15 | M1 trail recolor |
 | 20 | Style emote (signature pose with VO bark) |
 | 25 | Awakening tint (alternate awakening aura colors) + choice of one Variant |
@@ -1481,14 +1481,18 @@ The test: **a screenshot posted on social media should be recognizable as "the A
 
 ### 12.3 Characters: who you are on screen
 
-**Decision: players fight as their own "Ooo-sona" wearing their style's signature kit, and can unlock the full character look.**
+**Decision: the character look is optional. Each player chooses, with a simple toggle, whether they appear as the show character or as themselves.**
 
-| Layer | What it is | Why |
-|---|---|---|
-| **Ooo-sona** (default) | A custom character from a stylized creator: species templates (Human, Candy Person, Dog, Cat, Vampire, Flame, Lumpy, Wizard, Ghost, Penguin-in-a-suit) with color, face (dot eyes, single-line mouths), hats, hair and outfits | Identity and self-expression, like JJS/TSB players fighting as their avatars, but **on-model** with the show |
-| **Style Kit** (automatic) | Equipping a style adds its signature props to your Ooo-sona: Finn-style gives the bear hat, backpack and sword; Marceline-style gives the axe-bass and boots | Readability: you can tell a Finn-style player at 50 studs |
-| **Full Costume** (Mastery 10, free) | Become the character: full on-model Finn, Marceline and so on | The fan fantasy, earned through play and never sold separately from Mastery. Variants (§9.3) extend it. |
-| **Roblox Avatar mode** (option) | Use your own Roblox avatar, rendered with our toon post-process | Player choice. Some players value their avatar purchases. |
+| Setting | Options | Default | Notes |
+|---|---|---|---|
+| **Character Look** | **On**: become the full on-model character (Finn, Marceline…) for whichever style is equipped · **Off**: appear as yourself | On | Available **for every style you own (or are trialing) from the moment you get it**. Not gated behind Mastery. Can be set globally and overridden per style. |
+| **Your look** (when Character Look is Off) | **Ooo-sona**: a custom character from a stylized creator (species templates such as Human, Candy Person, Dog, Cat, Vampire, Flame, Lumpy, Wizard, Ghost, Penguin-in-a-suit; color; dot-eye faces; hats, hair, outfits) · **Roblox Avatar**: your own Roblox avatar with our toon post-process | Ooo-sona | Identity and self-expression, like JJS/TSB players fighting as their avatars. Some players value their avatar purchases. |
+| **Style Gear** (when Character Look is Off) | On / Off: adds the style's signature props to your look (Finn-style: bear hat, backpack, sword; Marceline-style: axe-bass, boots) | On | Keeps a "my look" player readable as their style at 50 studs |
+| **Show other players as** (viewer-side, local only) | Their choice · Always characters · Always their own looks | Their choice | Lets competitive players force maximum style readability without affecting anyone else |
+
+**Readability guarantee:** whatever look a player picks, the **style emblem** above their nameplate, the style's **VFX shape language** (§13.4) and its silhouette props when Style Gear is on always identify the style. Ranked Duels show the opponent's style card during the 3 s pre-round intro.
+
+**Mastery and Variants:** Mastery 10 now grants an alternate **character palette** instead of unlocking the look (§9.2). Variants (§9.3) are alternate versions of the character look, such as Farmworld Finn.
 
 **Fairness rule:** in every mode **the hurtbox is a fixed capsule** (§6.2). Avatar scale, accessories and species never change hit detection. **R15-compatible rigs throughout**, which also keeps the game eligible for Roblox's US 18+ DevEx rate (R15-only requirement, §17.6).
 
@@ -1737,7 +1741,7 @@ Ducking reduces music by 4 dB during your combos and by 8 dB during Realm casts.
 
 | Screen | Key content | Notes |
 |---|---|---|
-| **Style Wheel** | Owned styles by rarity ring; free-rotation styles marked; Mastery level; equipped Flair | Opens on death; 3 s auto-confirm last style |
+| **Style Wheel** | Owned styles by rarity ring; free-rotation styles marked; Mastery level; equipped Flair; a quick **Character Look** toggle per style | Opens on death; 3 s auto-confirm last style |
 | **Make a Wish** | 1× / 10× wish, odds button (always visible), pity counters, current banner | Reveal theatre §8.6; skip after first view of a rarity |
 | **Collection Book** | Styles × Flairs × Variants grid, completion %, lore cards with episode references | The "museum"; drives the long-tail chase |
 | **Choose Goose's Shop** | 3 rotating styles + 4 cosmetics for Treasure; refresh timer | Deterministic path to every non-Cosmic style (§8.5) |
@@ -1746,6 +1750,7 @@ Ducking reduces music by 4 dB during your combos and by 8 dB during Realm casts.
 | **Ranked** | Queue, rank badge, season rewards, match history | §10.3 |
 | **Kingdom** | Members, weekly goals, Kingdom War standings | §10.6 |
 | **Settings** | Graphics tier, camera shake, outline thickness, colorblind modes, input remap, audio buses, chat filters | §16 |
+| **Appearance** | Character Look On/Off (global + per style), Your Look (Ooo-sona / Roblox Avatar), Style Gear, Show other players as…, Ooo-sona creator | §12.3 |
 
 ### 15.5 First-time user experience (FTUE)
 
@@ -1970,19 +1975,19 @@ Roblox's Server Authority went to **full release around July 2026**. The server 
 
 | Topic | Decision |
 |---|---|
-| **Mode** | `Workspace.AuthorityMode = Server`. This auto-enables NextGenerationReplication, the Input Action System, Deferred signals, fixed simulation and streaming. |
-| **Simulation** | All combat state machines (movement, dashes, M1 chain, stun, block/guard, Breakaway, knockback, grabs, ragdoll *state*) live in one shared `Simulation` ModuleScript, run via `RunService:BindToSimulation` at **60 Hz** on both client and server |
+| **Mode** | `Workspace.AuthorityMode = Server`, set by a human in the Properties window (it is not script-settable). This auto-enables NextGenerationReplication, the Input Action System, Deferred signals, fixed simulation and streaming. |
+| **Simulation** | All combat state machines (movement, dashes, M1 chain, stun, block/guard, Breakaway, knockback, grabs, ragdoll *state*) live in one shared `Simulation` ModuleScript, run via `RunService:BindToSimulation` at **60 Hz** on both client and server **Always pass `Enum.StepFrequency.Hz60` explicitly: the API default is 30 Hz**, which would silently halve all frame data. |
 | **State storage** | Gameplay state lives in **attributes on predicted instances** (`HP`, `Stun`, `ComboIndex`, `Guard`, `Breakaway`, `Meter`, `CD_<move>`, `HitstopUntil`). **Not** `Humanoid.Health`, which has no simulation access. Up to 64 attributes replicate per instance, with names ≤ 50 characters. |
 | **Time** | Only `time()` inside the simulation; never `tick()` / `os.clock()` |
 | **Inputs** | `InputContext`/`InputAction`/`InputBinding` for every simulation-affecting input. This also gives us cross-platform bindings, including touch UI buttons, for free. **Poll** input state inside the simulation rather than relying on change signals, which can fire during rollback. |
 | **Knockback** | `LinearVelocity` / `ApplyImpulse` inside the simulation, so it is authoritative and predicted |
 | **Grabs** | `AlignPosition`/`AlignOrientation` to an attacker attachment, toggled through `Constraint.Enabled` (simulation-accessible) |
 | **Projectiles** | Created inside the simulation via `Instance.new`/`Clone`, so they are *stitched* (client-predicted, merged with the server copy by deterministic GUID) |
-| **Hit resolution** | Server-side, at the input's intended frame. `GetPartBoundsInBox` for melee frames, `Blockcast`/`Spherecast`/`Shapecast` for dashes and fast projectiles (no tunnelling), `GetPartsInPart` only for odd-shaped Realms and zones. Queries target a dedicated **Hurtbox** collision group of fixed capsules (§6.2). |
+| **Hit resolution** | Server-side, at the input's intended frame. `GetPartBoundsInBox` for melee frames, `Blockcast`/`Spherecast`/`Shapecast` for dashes and fast projectiles (no tunnelling), `GetPartsInPart` only for odd-shaped Realms and zones. Queries target a dedicated **Hurtbox** collision group of fixed capsules (§6.2). Collision groups are registered with `workspace:RegisterCollisionGroup` (the `PhysicsService` collision APIs are deprecated; max 32 groups). |
 | **Lag compensation (we build it)** | SA has **no built-in hit rewind**. We keep a per-character **1 s ring buffer of hurtbox CFrames at 60 Hz** and rewind targets by *(client-server step delta + interpolation delay)*, **capped at 200 ms**, before running the query. Damage, stun and knockback apply in present time. Above 200 ms the attacker gets no rewind beyond the cap, so high-ping players can't hit across the map. |
 | **Latency-friendly design** | Visible wind-ups (≥ 6f startup on M1s, ≥ 8f for big hits), a "fuse" before AoEs, and modest knockback acceleration, so rollbacks land on unremarkable frames. This follows Roblox's own SA techniques guidance. |
 | **Rendering** | Animations, VFX, SFX and camera react to simulated state in `RenderStepped`, and can **undo** mispredicted effects (e.g., cancel a hit spark if the server rejects the hit) |
-| **Animation under SA** | `Animator:GetTrackByAnimationId` (no cached tracks). Move timing is sampled from `TimePosition`, because `GetMarkerReachedSignal` has no simulation access. **Verify the per-Animator playing-track limit** under SA (8 was reported in beta). Fighting characters layer tracks, so the animation graph is designed to stay within that limit. |
+| **Animation under SA** | `Animator:GetTrackByAnimationId` (no cached tracks). Move timing is sampled from `TimePosition`, because `GetMarkerReachedSignal` has no simulation access. **Verify the per-Animator playing-track limit** under SA (8 was reported in beta). Fighting characters layer tracks, so the animation graph is designed to stay within that limit. Note: the "8 playing tracks" figure comes from community reports, not the official docs, so it is an M0 spike item. Placeholder animations must be **published** for any Server Authority playtest, because Studio-only temporary animation IDs work only in the DataModel that registered them. |
 | **Server CPU** | SA-heavy games exceed default CPU limits. Budget **Extended Services for Compute** (>2× per-player CPU; first 100K playtime hours/month free, then $0.001/playtime hour). |
 
 **Fallback (if SA blockers appear in pre-production):** run the classic battlegrounds model. The client detects hits, and the server validates attacker origin, range, angle, cooldown, state, rate and static line of sight. Use server-set network ownership during knockback windows. The Simulation module is written so either model can drive it.
@@ -2001,7 +2006,7 @@ Roblox's Server Authority went to **full release around July 2026**. The server 
 ### 18.4 Characters, movement and avatars
 
 - **Controller:** the **Character Controller Library** *(beta)* fits our rules well. Its ability labels (`StartsWhen`/`RunsWhile`, `Blocks`/`Stops`/`Suspends`, `ExclusiveGroup`, timed labels such as `DashCooldown`) map directly onto stun, guard break, Hop Cancel and Breakaway, and its state restores on rollback. Fallback: a custom `ControllerManager`-based controller.
-- **Avatar fairness:** Avatar Settings **"Consistent Gameplay"** preset + **Single Collider** with hit/touch on colliders. Every player gets the same collider regardless of avatar.
+- **Avatar fairness:** Avatar Settings **"Consistent Gameplay"** preset + **Single Collider** with hit/touch on colliders. Every player gets the same collider regardless of avatar. Avatar Settings are **not accessible to scripts**, so this is a human setup step (the build spec lists it as H-05).
 - **Rigs:** R15-compatible custom rigs (§12.3). `AvatarJointUpgrade` with `AnimationConstraint` + `BallSocketConstraint` joints for powered ragdolls, because constraint joints are simulation-accessible and Motor6D toggling is not. Death and cosmetic ragdolls are client-side.
 - **Animation:** the **Animation Graph Editor** (blend trees, state machines; graph state replicates under SA) for locomotion and hit reactions. `Animator.PreferLodEnabled = false` for characters in combat range, so startups are never throttled. `IKControl` for grab alignment and foot planting.
 - **Input:** Input Action System bindings for KB+M, touch (UI-button bindings), gamepad, and Windows handhelds. `HapticEffect` waveforms for hits on phones and pads.
@@ -2020,7 +2025,7 @@ Roblox's Server Authority went to **full release around July 2026**. The server 
 
 ### 18.6 Live configuration: ConfigService (balance without updates)
 
-- **ConfigService** (GA) is the feature-flag and tuning system. Server-only reads (`GetConfigAsync`, `GetConfigForPlayerAsync`) with snapshots that refresh live. There are up to 1,000 keys, with JSON values up to 100k characters, staged publishing (≈ 15 s – 1 min, or a gradual 15-min rollout), history and restore.
+- **ConfigService** (GA) is the feature-flag and tuning system. It is **server-only** (it errors on clients), so the server publishes a frozen, versioned snapshot of combat values to clients, and new values apply only at respawn/round boundaries so both peers simulate identical frame data. Server-only reads (`GetConfigAsync`, `GetConfigForPlayerAsync`) with snapshots that refresh live. There are up to 1,000 keys, with JSON values up to 100k characters, staged publishing (≈ 15 s – 1 min, or a gradual 15-min rollout), history and restore.
 - **What lives in config:** all frame data, damage, cooldowns, meter rates, Wish odds and pity values (§8; the same values feed the odds UI), shop rotations, event schedules, kill switches per style and move, and price display experiments.
 - **A/B tests:** Roblox **Experiments** over config values (up to 2 variants + control, 14–60 days). Matchmaking experiments for server-fill logic.
 - **Safety:** any config change to Wish odds triggers an automatic **odds UI regeneration check**, and a **two-person approval** rule is enforced through our Open Cloud tooling.
@@ -2057,7 +2062,7 @@ Roblox's device data says **~65% of players are on Android, ~60% of those on 2�
 | Toolchain | **Rokit** (tool versions), **Wally** or **pesde** (packages) | Active |
 | Quality | **luau-lsp** analyze, **Selene**, **StyLua** | Active |
 | Scripting/build | **Lune**, **darklua** | Active |
-| Tests | **Jest-Lua**, run headless via Open Cloud **Luau Execution** | Maintained; used by Roblox |
+| Tests | **Lune** on the host for pure-logic modules (combat core, Wish odds/pity, lints); Studio playtests driven through the Studio MCP server for anything needing physics or Server Authority. Open Cloud Luau Execution has no physics and does not run place scripts. | Active |
 | Networking | **Blink** (or Zap) | Active |
 | UI | **react-lua** (official) or **Vide**; **Charm** for state | Active |
 | ECS (projectiles/debris only) | **jecs** | Active |
@@ -2083,7 +2088,7 @@ tools/      Lune scripts: frame-data export, odds-table generator, balance sim
 3. `rojo sourcemap` + `luau-lsp analyze`
 4. `rojo build`
 5. Open Cloud **Place Publishing** to a test place
-6. Jest-Lua via **Luau Execution**
+6. Lune unit tests and lints (Studio playtests stay agent- or human-driven, because GitHub-hosted Linux runners can't run Studio)
 7. On `main`: publish to staging, then a manual promote to prod and a rolling `restartServers` (old versions only)
 
 ### 18.10 Live-ops, analytics and moderation tooling
@@ -2093,9 +2098,10 @@ tools/      Lune scripts: frame-data export, odds-table generator, balance sim
   - Economy: `LogEconomyEvent` for every currency source and sink
   - Progression: `LogProgressionEvent` for Pass and Mastery
   - Custom: `LogCustomEvent` for combat telemetry (rolled up per match), within 120 + 20 × CCU requests/min
+  - All AnalyticsService events are **server-only and only recorded in published games**. In Studio the wrapper mirrors them to Output as `[ALG][TEL]` lines for verification.
 - **Monitoring:** Error Report (by version and platform), the crash chart with OOM snapshots, and **Alerts** with webhooks to Discord/PagerDuty. Open Cloud game-server logs and an analytics-query API feed our internal live-ops dashboard.
 - **Moderation:**
-  - `Players:BanAsync`: alts banned by default, escalating durations from `GetBanHistoryAsync`, `ApplyDeviceBlock` on desktop
+  - `Players:BanAsync`: alts banned by default, escalating durations from `GetBanHistoryAsync`, `ApplyDeviceBlock` (blocks the device for 24 h)
   - `ModerationService` for report captures
   - `TextChatService` + `TextService` filtering
   - **Quick Words**/preset chat for cross-age communication
@@ -2103,8 +2109,18 @@ tools/      Lune scripts: frame-data export, odds-table generator, balance sim
 
 ### 18.11 AI-assisted production (allowed, bounded)
 
-- The Studio **Assistant** (bring-your-own LLM keys, MCP) and Roblox's open-source **Studio MCP server** are allowed for tooling, scaffolding and test generation. All code is reviewed like human code.
+- The Studio **Assistant** (bring-your-own LLM keys, MCP) and Studio's **built-in MCP server** (Assistant → ⋯ → Manage MCP Servers; the older open-source `studio-rust-mcp-server` is deprecated) are allowed for tooling, scaffolding and test generation. All code is reviewed like human code.
 - **GenerationService** (Cube 3D mesh/model generation) is allowed for **graybox and prototype props only**. Final, character and IP assets are authored by artists. Under Track A, licensor approval is mandatory, and generated assets would not pass it.
+
+### 18.12 Agentic build
+
+The agent-executable build plan lives in **`docs/STUDIO_BUILD_SPEC.md`** and **`docs/agent/TASKS.md`**. The harness is Roblox's official coding harness:
+- **Script Sync** keeps code on disk in sync with Studio.
+- An **external agent** (e.g., Claude Code) edits the code.
+- The **built-in Studio MCP server** covers instances, playtests, console output, screenshots and input simulation.
+
+The plan covers milestones M0 (feel prototype) and M1-G (graybox vertical slice). Every step the agent cannot do is a human checklist item: Avatar Settings, `AuthorityMode`, asset publishing, product creation, prices and publishing.
+
 
 
 ## 19. Live Operations
@@ -2307,8 +2323,8 @@ If budget is constrained:
 
 | # | Risk | Likelihood | Impact | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R1 | **IP: no license; a takedown of an unlicensed AT game** | High (if unlicensed) | Critical | Track A/B strategy (§5). IP-separable architecture from day 1. No public monetized launch on unlicensed IP. Legal counsel at M0. | Director + Producer |
-| R2 | **Licensor reorganization** (the WBD → Skydance merger, reported Oct 2026) stalls approval | Medium | High | Lead with a playable slice. Set a decision gate at Alpha with an automatic switch to Track B. Monitor License Manager listings. | Producer |
+| R1 | **IP: no license; a takedown or forced license offer on an unlicensed AT game** | High (if unlicensed and successful; see the §5.7 likelihood table) | Critical | Track A/B strategy (§5). Skin-pack architecture with a publish gate (build spec Part 8). The owner decides on public Codename use with informed consent. Legal counsel at M0. | Director + Producer |
+| R2 | **Licensor reorganization** (the Paramount–WBD "Skydance" merger closed 6 Oct 2026; Cartoon Network is being combined with Nickelodeon) stalls approval | Medium | High | Lead with a playable slice. Set a decision gate at Alpha with an automatic switch to Track B. Monitor License Manager listings. | Producer |
 | R3 | **Genre saturation**: JJS and TSB own the audience | High | High | Clear differentiation (art direction, Wishes + Flairs, Realms, duos, seasonal world). Target AT fans and RNG players, not just battlegrounds regulars. | Director |
 | R4 | **Gacha backlash / P2W perception** in a PvP game | Medium | High | Rarity ≠ power with *published* win-rate data. Training Grounds trials. Free rotation. Choose Goose deterministic path. Monthly Wish Report. | Systems Designer |
 | R5 | **PRI policy tightens further** or more regions restrict | Medium | Medium | All gating reads `PolicyService` (no hard-coded countries). A complete non-paid path. Cosmetic and pass revenue does not depend on Wishes. | Systems + Eng |
@@ -2393,7 +2409,8 @@ A single source of truth, generated from the data files by a Lune script. Column
 | **Finale** | Cosmetic KO flourish; never locks the attacker |
 | **Flair** | Cosmetic finish rolled with every Wish (Standard → Glitched) |
 | **Hop Cancel** | Side dash out of M1-2/M1-3 recovery after a hit |
-| **Ooo-sona** | The player's custom on-model character |
+| **Character Look** | Per-player toggle: appear as the full show character (On) or as yourself (Off) |
+| **Ooo-sona** | The player's custom on-model character, used when Character Look is Off |
 | **Perfect Block** | Block pressed ≤ 9f before a hit: full negate + attacker stagger |
 | **Quirk** | A style's unique R-key mechanic |
 | **Realm** | A Legendary+ awakened move that projects a show-location bubble with special rules |
@@ -2521,7 +2538,9 @@ Research was conducted in October 2026.
 | # | Item | Why it matters | Owner |
 |---|---|---|---|
 | F1 | Live License Manager catalog: any *Adventure Time* / Cartoon Network / Skydance listing? | Decides Track A path (§5) | Producer |
-| F2 | Who now runs Cartoon Network licensing after the reported Oct 2026 merger | Outreach target | Producer |
+| F2 | Who now runs Cartoon Network licensing after the Skydance merger (6 Oct 2026): Skydance Games & Experiences (Tony Driscoll) or consumer products? | Outreach target | Producer |
+| F11 | Trademark clearance for the title **"Algebraic!"** (an AT catchphrase). Pick a backup title. | Title risk on every track | Counsel + Producer |
+| F12 | Is an official AT Roblox game in development (Skydance in-house or with partners such as Gamefam / Wonder Works)? | Biggest enforcement trigger (§5) | Producer |
 | F3 | Full text and any enforcement dates of the 2026 PRI clarification; NL/BE flag status | §8.8 compliance | Systems + Legal |
 | F4 | Kids/Select publishing fee and evaluation window (30 vs 60 days) | §16.1 plan | Producer |
 | F5 | Server Authority: per-Animator playing-track limit in full release; any server-side lag-comp helper | §18.2 animation and hit design | Lead Engineer |
