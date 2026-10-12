@@ -9,9 +9,9 @@
 | **Genre** | Battlegrounds PvP brawler (Jujutsu Shenanigans-style) with a rolling/collection meta-layer |
 | **Platform** | Roblox: mobile (iOS/Android), PC, Mac, Xbox, PlayStation. VR not supported at launch. |
 | **Target maturity** | Roblox **Mild** |
-| **Document version** | 1.0, first complete draft |
+| **Document version** | 1.1, first complete draft with editorial review applied |
 | **Date** | 12 October 2026 |
-| **Status** | For greenlight review (Milestone M0) |
+| **Status** | Concept greenlight (entry to pre-production). M0 production gate: 4 Jan 2027 (§21.2). |
 
 > **How to read this document.**
 > - **Leadership:** read §1 (Executive Summary), §5 (IP strategy, decision required), §17.7 (business case) and §22 (risks).
@@ -61,7 +61,7 @@
 
 **The game.** *Algebraic!* is a free-to-play Roblox battlegrounds brawler set in the Land of Ooo. Twenty players drop into a hand-painted arena (the Candy Kingdom, the Tree Fort, the Ice Kingdom) and fight using **Fighting Styles** inspired by *Adventure Time* characters. Each style has:
 - the shared 4-hit M1 chain, block, Perfect Block, dashes and **Breakaway** escape
-- 4 signature moves and a unique **Quirk**
+- 4 moves (one of them a ★ signature) and a unique **Quirk**
 - a show-accurate **Awakening** that swaps in 4 new moves
 - for Legendary styles and above, a **Realm**: a show location projected as a rules-changing bubble that can **Realm Clash** with another
 
@@ -71,7 +71,7 @@ Combat follows the grammar that made Jujutsu Shenanigans the #1 battlegrounds ga
 - every Wish also rolls a cosmetic **Flair** (1-in-50 Shiny up to 1-in-100,000 Glitched), giving a Sol's RNG-style long-tail chase
 - **rarity is prestige, not power**: every style is tuned into the same 47–53% win-rate band
 - every style can be tried for free in Training Grounds
-- generous visible pity and a Treasure-only shop (Choose Goose) guarantee a non-random path to every style
+- generous visible pity and a Treasure-only shop (Choose Goose) guarantee a non-random path to every non-Cosmic style. The secret Cosmic style has a bounded Cosmic Spark path.
 
 That design is what makes rolling compatible with a fair PvP game. The research found it is also what Roblox's 2026 paid-random-item rules effectively require.
 
@@ -107,7 +107,7 @@ We recommend a **"license-ready, IP-separable" build**:
 - if no license exists by Alpha, launch on an original world with the same mechanics
 - do **not** publicly launch a monetized, unlicensed *Adventure Time* game; the takedown risk would wipe out the game, progress and revenue
 
-**Team and budget (§21, §17.7).** The studio-quality target is ~34 people at peak. Break-even at that size needs roughly **25K–120K average CCU**, depending on location costs. We recommend a **lean-plus-contractors** team (8–12 core) through Closed Beta and scaling only on retention data (D1 ≥ 35%, D7 ≥ 15% targets).
+**Team and budget (§21, §17.7).** The studio-quality target is ~42 people at Beta peak (39 core plus QA scale-up). Break-even at that size needs roughly **30K–65K average CCU** for a globally distributed team, or **70K–150K** if US-based. We recommend a **lean-plus-contractors** team (8–12 core) through Closed Beta and scaling only on retention data (D1 ≥ 35%, D7 ≥ 15% targets).
 
 **Top risks:** IP/licensing, genre saturation versus JJS/TSB, gacha perception in PvP, mobile performance with 20-player VFX, and the maturity of Roblox's new Server Authority netcode. Mitigations are in §22.
 
@@ -165,7 +165,7 @@ This section condenses the research behind the design. Full source lists are in 
 | Cosmetic RNG (Sol's RNG auras, UBG Shinies) is the **least controversial** form of rolling | **Flairs**: a long-tail cosmetic roll layer on every Wish (§8.7) |
 | JJS's escape meter, awakening, R special and domains are the genre's grammar | Adopted and themed: **Breakaway**, **Algebraic Meter → Awakening**, **Quirk (R)** and **Realms** (§6) |
 | Content cadence drives CCU spikes; Heroes BG declined without it | A **biweekly** style/mechanic cadence, title-tagged updates and 8-week seasons that transform the maps (§11.3, §19) |
-| Collabs set all-time peaks (JJS × Jump Showdown) | A cross-game collab slot every second season (§19.3) |
+| Collabs set all-time peaks (JJS × Jump Showdown) | A cross-game collab slot every second season (§19.1) |
 | Free private servers plus Build Mode create a UGC engine | Paid-cheap private servers that leverage Roblox Plus payouts, plus a Year-2 **Ooo Workshop** (§10.1) |
 | Toxicity complaints center on teaming, kill-stealing and exploiters | Pile-on protection, a party cap of 2 in FFA, server-authoritative hits and the Ban API (§6, §16, §18) |
 | 2026 Roblox **PRI rules** require full per-item odds, live-updating pity and luck odds, no empty outcomes and PolicyService gating. PRIs are blocked for UK under-18s, all Australians, Brazilian minors and unverified Brazilian adults. | §8.8 compliance table: odds are generated from server config, restricted players get free and fixed-price paths only |
@@ -177,7 +177,7 @@ This section condenses the research behind the design. Full source lists are in 
 
 ### 3.1 High concept
 
-> **Algebraic!** is a free-to-play Roblox brawler set in the Land of Ooo. You drop into a hand-painted Ooo arena with 15–24 other players, pick a **Fighting Style** inspired by a character from the show, and brawl. Every style has 4 signature moves, a passive, and a show-accurate **Awakening** that turns the fight upside down. You unlock styles by **making Wishes**, a rolling system with rarities from Common to Cosmic. A style's rarity sets how complex and spectacular it is. It never makes the style stronger.
+> **Algebraic!** is a free-to-play Roblox brawler set in the Land of Ooo. You drop into a hand-painted Ooo arena with 15–23 other players, pick a **Fighting Style** inspired by a character from the show, and brawl. Every style has 4 moves (one of them a ★ signature), a Quirk, a passive, and a show-accurate **Awakening** that turns the fight upside down. You unlock styles by **making Wishes**, a rolling system with rarities from Common to Cosmic. A style's rarity sets how complex and spectacular it is. It never makes the style stronger.
 
 ### 3.2 The 10-second pitch for players
 
@@ -194,7 +194,7 @@ Every feature, asset and tuning change has to serve at least one pillar and brea
 | P3 | **Rarity is prestige, not power** | Rarer styles are flashier, more mechanically unusual and rarer to see. Every style lands in the same 47–53% win-rate band. | Stat bonuses tied to rarity. Paid power. "This Mythic is just better." |
 | P4 | **Chaos with readable fairness** | 20 players and 5 awakenings at once should look gorgeous and still be legible. Every hit is telegraphed, every stun has an exit, every death has a cause. | Unblockable instant-kill moves. Endless stunlocks. VFX that hide hitboxes. |
 | P5 | **Ooo is alive** | Maps react to fights through destruction, NPCs and world events. Seasons change the world itself, not only the shop. | Static grey boxes. Seasons that are only a battle-pass reskin. |
-| P6 | **Respect the player** | Odds are always disclosed. Pity is generous, and there is a deterministic path to every style. Ethical monetization, short timers, no dark patterns. | Fake "limited" pressure. Paid Breakaway/revive. Selling advantage in ranked. |
+| P6 | **Respect the player** | Odds are always disclosed. Pity is generous. Every non-Cosmic style can be bought at a fixed Treasure price, and Cosmic has a guaranteed long path through Cosmic Sparks. Ethical monetization, short timers, no dark patterns. | Fake "limited" pressure. Paid Breakaway/revive. Selling advantage in ranked. |
 
 ### 3.4 Target audience
 
@@ -213,7 +213,7 @@ Every feature, asset and tuning change has to serve at least one pillar and brea
 1. **Real cartoon art direction.** The genre is dominated by default Roblox avatars and anime VFX. Algebraic! uses gouache-painted maps, ink-line outlines and squash-and-stretch animation. It is recognizable from a single thumbnail.
 2. **Rolling with ethics.** The game borrows the RNG thrill that makes Sol's RNG and Shindo Life sticky. It removes the power-gating that makes those systems toxic in PvP.
 3. **Realms.** Legendary and higher awakenings can project a *Realm*, a show-location bubble that changes the rules inside it (the Nightosphere, the Time Room, the Lich's Well). When two Realms collide they **Realm Clash**. This is the genre's "domain expansion" moment, rebuilt around Adventure Time locations.
-4. **A world that changes with the seasons.** Each quarter re-skins and re-mechanizes the main map (Ice Kingdom winter, Nightosphere Halloween, *Elements* spring, *Islands* summer), with a seasonal style and a world boss.
+4. **A world that changes with the seasons.** Every 8-week season transforms a map or adds a new one (Ice Kingdom winter, Nightosphere Halloween, *Elements* spring, *Islands* summer), with a seasonal style and a world boss.
 5. **Duos.** Finn & Jake, Fionna & Cake and Marceline & Bubblegum are paired by the show itself. Duo styles get **Bond Moves** when partied together, making 2v2 a first-class mode.
 
 ### 3.6 Comparable titles and positioning
@@ -277,8 +277,8 @@ This is the JJS/TSB rhythm: **neutral → opener → combo → ender → reset**
 - **Pick or swap** a style. Every respawn shows the Style Wheel, and you can switch styles mid-life at the **Style Totem** in each spawn hub.
 - **Earn** Treasure, Wishes and quest progress from kills, assists, damage, world events and "style moments" (landing a style's signature combo).
 - **World events every 4–6 minutes** (§10.4) pull the server into shared moments: a Gumball Guardian awakens, the Lich's shadow falls, Choose Goose shows up with his shop, a Rainicorn rainbow buff appears.
-- **Make Wishes** between lives. Results pop as a 3–6 second reveal you can skip after the first view. Rarer pulls broadcast to the server feed.
-- A **session ends** naturally after a quest set (≈ 25–40 min). Daily quests are tuned to finish in about 3 sessions per week for a casual player.
+- **Make Wishes** between lives. Results pop as a 1–8 second reveal (§8.6) you can skip after the first view. Rarer pulls broadcast to the server feed.
+- A **session ends** naturally after a quest set (≈ 25–40 min). Daily quests fit in one session. Weekly quests are tuned to finish in about 3 sessions per week for a casual player.
 
 ### 4.4 Meta (days to months)
 
@@ -290,7 +290,7 @@ This is the JJS/TSB rhythm: **neutral → opener → combo → ender → reset**
 | Adventure Pass | 8-week season | Habit + monetization; free and paid tracks |
 | Ranked Duels / Duos | Season | Competitive identity; top-100 "Hero of Ooo" |
 | Kingdoms (guilds) | Weekly | Social retention; Kingdom Wars weekend |
-| Seasonal world | Quarterly | Map transformation, seasonal style, world boss |
+| Seasonal world | Every 8 weeks | Map transformation, seasonal style, world boss |
 
 ### 4.5 Places and server topology
 
@@ -301,6 +301,7 @@ This is the JJS/TSB rhythm: **neutral → opener → combo → ender → reset**
 | **Training Grounds** | Practice mode, frame data, dummies, combo recorder | 1–6 | Free trial of *any* style here (incl. unowned) |
 | **Raid Instance** | Seasonal PvE boss raids (2–6 players) | 2–6 | Reserved servers |
 | **Kingdom Keep** | Guild hall, social, cosmetics showcase | up to 40 | Low-combat social space; emote stage |
+| **Preview** (Sneak Peek) | Upcoming styles in Battlegrounds and Duels before they join the Wish pool | 20 | Sneak Peek pass holders and creators. Feeds the Wish-pool balance gate (§19.2). |
 
 All places are in one Roblox *experience* (universe). Matchmaking uses MemoryStore queues and reserved-server teleports (§18).
 
@@ -452,12 +453,12 @@ Each dash has its **own cooldown** so players can chain movement into tech:
 
 Every style has **4 base moves (1–4)**, **1 Quirk (R)**, **1 passive**, and an **Awakening** that replaces moves 1–4 with **4 awakened moves** (§6.9).
 
-**Quirk (R).** This adopts the JJS "special" key. A Quirk is a style's unique mechanic, with a short cooldown (3–8 s) or its own mini-resource. Examples: Jake-style's *Stretch Grapple*, Prismo-style's *Wish Roulette*, Ice King-style's *Gunter Call*. Quirks carry style identity. They are never a primary damage source (≤ 6 damage).
+**Quirk (R).** This adopts the JJS "special" key. A Quirk is a style's unique mechanic, with a short cooldown (3–8 s; up to 12 s for random-outcome Quirks) or its own mini-resource. Examples: Jake-style's *Stretch Grapple*, Prismo-style's *Twisted Wish*, Ice King-style's *Gunter Call*. Quirks carry style identity. They are never a primary damage source (≤ 6 damage).
 
 **Kit composition rules.** Every base kit must contain:
 - ≥ 1 **opener**: a projectile, a rush or a grab that starts offense from neutral
 - ≥ 1 **extender**: a move that combos from M1s or from ragdoll
-- ≥ 1 **defensive/mobility** tool: a counter, an i-frame move, a reposition or a zone
+- ≥ 1 **defensive/mobility** tool (in moves 1–4 *or* the Quirk): a counter, an i-frame move, a reposition or a zone
 - exactly 1 **signature**: the move fans clip, most faithful to the show
 
 **Move tags** (shown in the UI, used by balance tools):
@@ -469,9 +470,18 @@ Every style has **4 base moves (1–4)**, **1 Quirk (R)**, **1 passive**, and an
 | `Grab` | Ignores block; short range | I-frame dash, jump (ground grabs), Perfect Block if *parryable* |
 | `Counter` | Stance that punishes incoming hits | Grabs, projectiles from range, waiting it out |
 | `Zone` | Persistent area | Leave the area; some are destructible |
-| `Summon` | Spawns an ally NPC (max 1 per summon move, 8–12 s life, 25–40 HP) | Kill it; summons take 2× M1 damage |
+| `Summon` | Spawns ally NPCs: max 3 bodies per summon move, combined HP 20–60, 6–12 s life. Ultimate (A4) summons may be untargetable set pieces lasting ≤ 6 s. | Kill them; summons take 2× M1 damage |
 | `Buff` / `Debuff` | Self or target modifiers | Cleansing moves, wait out timers |
 | `Mobility` | Movement tool | — |
+| `AoE` | Instant area burst around the user or a point | Spacing; block (front-facing) |
+| `Utility` | Information or setup with no direct damage | — |
+| `Stealth` | Invisibility (always with a close-range shimmer/outline) | Proximity reveal, AoE |
+| `Ultimate` | The awakened A4 move; ≤ 30 damage, cinematic but telegraphed | As per its other tags |
+| `Realm` | Legendary+ A4 bubble with rule changes (§6.10) | Escape the ring, Stubborn Heart, Realm Clash |
+| `Music` | A musical move. Interacts with GOLB (§7.3.18). | — |
+| `Demon` | A Nightosphere move. Amplified inside the Nightosphere Realm. | — |
+
+Parenthetical qualifiers such as *Zone (trap)*, *Projectile (lob)* or *Grab (multi)* refine a tag without creating a new one.
 
 **Cooldown bands:** basic moves 6–10 s, utility 10–16 s, signature 14–22 s. **Global rule:** no base move deals more than **18 damage** on its own.
 
@@ -495,7 +505,7 @@ Breakaway is the genre's "evasive." It is what keeps 20-player brawls from becom
 | Gain: signature combo landed | +10 (style-specific "style moment") |
 | Gain: KO / assist | +15 / +7 |
 | Activation | **G** at 100. 72f activation; **invulnerable**, with a shockwave that pushes enemies back 10 studs. The local camera plays a 1.2 s mini-cinematic, which observers see as a pose and burst. |
-| On activation | Heal **10 HP**, refill **1 Breakaway pip**, swap to the 4 awakened moves, change the passive, play the style's awakening music sting |
+| On activation | Heal **10 HP**, refill **1 Breakaway pip**, swap to the 4 awakened moves, play the style's awakening music sting. The base passive persists unless the kit lists an awakened modifier (e.g., Finn's +3 M1 range, Kaiju Jake's size). |
 | Duration | **60 s**. Each KO while awakened adds **+5 s** (max 90 s). |
 | End | 1 s "power-down" animation with no vulnerability penalty. The meter starts again from 0. |
 
@@ -642,7 +652,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 |---|---|---|---|---|---|---|
 | Passive | **Rubber Body** | — | Jake's ragdolls end 10f earlier (he bounces back up) | — | — | Stretchy Powers |
 | Quirk (R) | **Stretch Grapple** | Mobility | Stretches an arm to terrain up to 40 studs away and yanks himself there | — | 6 | Stretchy Powers |
-| 1 | **Long Arm Jab** | Projectile-melee, Opener | A 25-stud stretchy punch | 7 | 6 | — |
+| 1 | **Long Arm Jab** | Projectile, Opener | A 25-stud stretchy punch | 7 | 6 | — |
 | 2 | **Giant Fist** ★ | Rush, AoE | Fist swells to boulder size and smashes a 10-stud cone; launches | 15 | 16 | Jake's size-changing gags |
 | 3 | **Stretchy Shield** | Counter | Flattens into a bouncy wall for 1.2 s: **reflects projectiles**; melee attackers bounce off (18f stagger) | — | 12 | Jake shapeshifting into shields |
 | 4 | **Wrap-Up** | Grab, Extender | Coils around the target, squeezes 3 times, then throws in the held direction | 9 | 13 | — |
@@ -691,7 +701,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | Quirk (R) | **Apple Toss** | Projectile | A quick apple with a 12f flinch | 3 | 3 | — |
 | 1 | **Hot Apple Pie** | Projectile (lob) | Arcing pie that splashes a 12-stud area and slows 1 s | 9 | 8 | — |
 | 2 | **Trunk Swat** | Rush, Extender | Trunk sweep that launches | 9 | 8 | — |
-| 3 | **Stampede** | Rush | 35-stud elephant charge; armor vs M1s | 11 | 13 | — |
+| 3 | **Stampede** | Rush, Mobility | 35-stud elephant charge; armor vs M1s | 11 | 13 | — |
 | 4 | **Crystal Gem Apple** ★ | Projectile | On hit, the target is **encased in crystal for 60f** (stunned; counts toward Stun Decay) | 8 | 18 | "Tree Trunks" (S1) |
 | **Awakening** | **Crystal Queen** | — | She becomes Quartzion, ruler of the Crystal Dimension, with a crystal crown and a prism aura | heal 10 | — | "Crystals Have Power" (S2) |
 | A1 | **Crystal Guardians** | Summon | 2 crystal guards (25 HP each, 8 s) | 6 each | 15 | Crystal Guardians, "Crystals Have Power" |
@@ -711,7 +721,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | Slot | Name | Tags | Effect | Dmg | CD | Canon |
 |---|---|---|---|---|---|---|
 | Passive | **Floaty** | — | Double jump plus slow-fall glide; immune to the first ground hazard per life | — | — | LSP floats |
-| Quirk (R) | **Oh My Glob!** | Counter-lite | A dramatic shriek pushes adjacent enemies back 6 studs | — | 8 | "Oh my glob!" catchphrase |
+| Quirk (R) | **Oh My Glob!** | Counter | A dramatic shriek pushes adjacent enemies back 6 studs | — | 8 | "Oh my glob!" catchphrase |
 | 1 | **Lump Bite** | Rush, Debuff | Applies **Lumps** for 6 s: the target's dashes cost +0.5 s cooldown, and they *look* lumpy | 6 | 8 | "Trouble in Lumpy Space" (S1) |
 | 2 | **Drama Slap** | Rush, Extender | Double slap | 8 | 6 | — |
 | 3 | **Cloud Hop** | Mobility | Rises and floats to a target point (20 studs) | — | 10 | Lumpy Space clouds |
@@ -741,7 +751,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | 4 | **ONE MILLION YEARS DUNGEON!** ★ | Zone | After a 0.6 s telegraph, a trapdoor drops enemies into a cell for 1.5 s, then they pop out | 12 | 20 | "Too Young" (S3) |
 | **Awakening** | **Fused Lemongrab** | — | Two Lemongrabs in one body | heal 10 | — | "Too Old" (S5) |
 | A1 | **Double Scream** | Counter | Front and back interrupt cones | — | 8 | — |
-| A2 | **Lemon Children** | Summon | 3 lemon kids cling to an enemy: −30% speed for 3 s | 6 | 12 | Lemon People |
+| A2 | **Lemon Children** | Summon | 3 lemon kids (8 HP each) cling to an enemy: −30% speed for 3 s | 6 | 12 | Lemon People |
 | A3 | **Sour Dash** | Rush | — | 14 | 9 | — |
 | A4 | **Earldom Decree** | Zone, Ultimate | A 30-stud sour field: **enemies inside can't block for 4 s**, with tick damage | 12 | 25 | Earldom of Lemongrab |
 
@@ -760,8 +770,8 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | Quirk (R) | **Snapshot** | Debuff | A camera snap overlays a polaroid frame on enemies in front for 30f, briefly obscuring their view. **No bright flash**, so it is photosensitivity-safe. | — | 8 | BMO's camera |
 | 1 | **Pixel Blaster** | Projectile | 3 pixel shots | 3 × 3 | 6 | — |
 | 2 | **BMO Chop!** | Rush | Karate chop | 9 | 7 | "BMO Chop!" line *(verify episode)* |
-| 3 | **Cartridge Swap** | Buff | 8 s cartridge: *Racer* (+20% speed) / *Fighter* (+6f M1 hitstun) / *Shield* (absorbs 10) | — | 15 | — |
-| 4 | **MO Factory Swarm** ★ | Summon | 3 tiny MO robots rush the nearest enemies and pop | 4 each | 18 | "Be More" (S5) |
+| 3 | **Cartridge Swap** | Buff, Mobility | 6f of i-frames on activation, then an 8 s cartridge: *Racer* (+20% speed) / *Fighter* (+6f M1 hitstun) / *Shield* (absorbs 10) | — | 15 | — |
+| 4 | **MO Factory Swarm** ★ | Summon | 3 tiny MO robots (8 HP each) rush the nearest enemies and pop | 4 each | 18 | "Be More" (S5) |
 | **Awakening** | **Game Mode** | — | BMO's screen lights up with an 8-bit HUD; moves become "video game" attacks | heal 10 | — | BMO's games |
 | A1 | **8-Bit Sword** | Rush | 3-hit pixel sword combo | 13 | 8 | — |
 | A2 | **Combo Breaker** | Counter | Pixel burst on hit | 10 | 12 | — |
@@ -779,9 +789,9 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 
 | Slot | Name | Tags | Effect | Dmg | CD | Canon |
 |---|---|---|---|---|---|---|
-| Passive | **Hyooman Strength** | — | Grabs deal +20% guard damage to blocking targets (as a guard-crush follow-up) | — | — | "Susan Strong" (S1) |
+| Passive | **Hyooman Strength** | — | Shoulder Rush and Ground Pound deal +20% guard damage to blocking targets, setting up her block-ignoring grabs | — | — | "Susan Strong" (S1) |
 | Quirk (R) | **Seeker Sense** | Utility | Outlines the nearest enemy through walls for 3 s | — | 8 | Seekers, *Islands* (S8) |
-| 1 | **Shoulder Rush** | Rush | Armor vs M1s | 9 | 8 | — |
+| 1 | **Shoulder Rush** | Rush, Mobility | 20-stud charge; armor vs M1s | 9 | 8 | — |
 | 2 | **Ground Pound** | AoE | 10-stud shockwave | 10 | 10 | — |
 | 3 | **Suplex** | Grab | — | 14 | 14 | — |
 | 4 | **Giant Swing** ★ | Grab | Spins the target and throws them 40 studs. Bodies hit along the way take 6. | 12 | 16 | — |
@@ -804,7 +814,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | Slot | Name | Tags | Effect | Dmg | CD | Canon |
 |---|---|---|---|---|---|---|
 | Passive | **Scientific Method** | — | Landing two *different* moves within 4 s reduces all her cooldowns by 1 s | — | — | — |
-| Quirk (R) | **Analyze** | Utility | Scans a target: shows their Breakaway pips and move cooldowns to PB for 5 s | — | 8 | PB the scientist |
+| Quirk (R) | **Analyze** | Utility | Scans a target: shows their move cooldowns and Algebraic Meter to PB for 5 s | — | 8 | PB the scientist |
 | 1 | **Gum Blaster** | Projectile | Sticky bubblegum shot that **roots for 36f** | 7 | 7 | PB's Gum War gear *(verify)* |
 | 2 | **Banana Guard Squad** | Summon | 2 Banana Guard NPCs (20 HP, 8 s) | 3 per poke | 15 | Banana Guards |
 | 3 | **Chemistry Flask** | Zone | A 12-stud candy-fume cloud: 2 dmg/s and −15% speed for 5 s | ≤ 10 | 12 | Her lab |
@@ -813,7 +823,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | A1 | **Candy Mortar** | Projectile (lob) | 3 shells on telegraphed spots | 15 | 9 | — |
 | A2 | **Rattleballs Strike** | Summon, Rush | Her swordsman robot Rattleballs dashes through a target line | 14 | 11 | "Rattleballs" (S5) |
 | A3 | **Goliad Link** | Zone | Psychic lift: enemies within 15 studs float, stunned for 60f | 8 | 14 | "Goliad" (S4) |
-| A4 | **Royal Gumball Guardian** | Summon, Ultimate | A full Gumball Guardian stomps in for 6 s and fires at targets PB marks | ≤ 24 | 25 | Gumball Guardians |
+| A4 | **Royal Gumball Guardian** | Summon, Ultimate | A full Gumball Guardian stomps in for 6 s (untargetable set piece) and fires at targets PB marks | ≤ 24 | 25 | Gumball Guardians |
 
 - **Style Moment:** Gum Blaster root into Gumball Guardian Beam.
 - **Variants:** Distant Lands Bonnibel ("Obsidian"), Gum War armor, Young Bonnibel ("Bonnibel Bubblegum", S10).
@@ -857,7 +867,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | 3 | **Candy Cane Strike** | Rush, Extender | — | 9 | 7 | — |
 | 4 | **Night Sword Forge** ★ | Rush | Conjures a dark blade for one heavy slash that **drains 5 Algebraic Meter** from the target | 15 | 18 | Forging the Night Sword, "Marcy & Hunson" |
 | **Awakening** | **Demon Summoning Ritual** | — | Summoning circles orbit him; his eyes glow | heal 10 | — | His dark-magic rituals |
-| A1 | **Summoning Circle** | Zone, Summon | Spawns 1 imp every 2 s (max 3) | 3 per imp hit | 14 | — |
+| A1 | **Summoning Circle** | Zone, Summon | Spawns 1 imp (10 HP, 6 s life) every 2 s (max 3) | 3 per imp hit | 14 | — |
 | A2 | **Soul Bind** | Grab | Binds the target in place for 72f | 10 | 12 | Binding Hunson, "Marcy & Hunson" |
 | A3 | **Grave Hands** | Zone (trap) | Hands burst from the ground | 12 | 10 | — |
 | A4 | **Rite of Dark Candy** | Zone, Ultimate | A 2 s channel (interruptible). A demon maw then erupts under **every cursed enemy** within 40 studs. | 18 each | 25 | — |
@@ -875,7 +885,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 |---|---|---|---|---|---|---|
 | Passive | **Color Drain** | — | Each Ender she lands drains red from the target and heals her 2 HP. She can hover for 3 s per jump. | — | — | Eating the color red, "Henchman" (S2) |
 | Quirk (R) | **Bat Shift** | Mobility | Turns into a small bat and flies 25 studs, with i-frames on frames 1–6 | — | 5 | Shapeshifting |
-| 1 | **Axe Bass Swing** | Rush, Extender | — | 9 | 8 | Her axe-bass |
+| 1 | **Axe Bass Swing** | Rush, Extender, Music | — | 9 | 8 | Her axe-bass |
 | 2 | **Invisible Ambush** | Mobility, Buff | Invisible for 2 s (shimmer visible within 12 studs). Her next hit deals +5. | +5 | 14 | Invisibility |
 | 3 | **Red Drain** | Grab | Drains the red out of the target in 3 ticks; heals 5 | 10 | 14 | "Henchman" (S2) |
 | 4 | **Monster Scare** ★ | Zone (cone) | Flashes a horrifying monster face. Enemies in front are spooked: a 48f backward stumble. | 12 | 16 | Monster forms, "Evicted!" (S1) |
@@ -922,8 +932,8 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | Slot | Name | Tags | Effect | Dmg | CD | Canon |
 |---|---|---|---|---|---|---|
 | Passive | **Wild Hunt** | — | After 3 s without being hit, her next projectile is *Stalked*: +30% speed and +2 damage | — | — | "The Wild Hunt" *(verify)* |
-| Quirk (R) | **Leaf Fade** | Mobility, Stealth | Dissolves into leaves: invisible for 1.5 s (outline visible within 15 studs) | — | 10 | Dissolving into foliage |
-| 1 | **Magic Arrow** | Projectile | Tap: 8 dmg. Hold 0.6 s: 12 dmg. | 8–12 | 5 | — |
+| Quirk (R) | **Leaf Fade** | Mobility, Stealth | Dissolves into leaves: invisible for 1.5 s (outline visible within 15 studs) | — | 8 | Dissolving into foliage |
+| 1 | **Magic Arrow** | Projectile | Tap: 8 dmg. Hold 0.6 s: 12 dmg. | 8–12 | 6 | — |
 | 2 | **Thorn Snare** | Zone (trap) | Roots the first enemy for 60f | 6 | 10 | — |
 | 3 | **Vine Lash** | Rush, Extender | 22-stud vine pull | 9 | 9 | — |
 | 4 | **Flute Spell** ★ | Zone | A haunting tune *charms* enemies within 20 studs, pulling them toward her for 72f, then she fires a fan of arrows | 14 | 18 | "Flute Spell" (S6) |
@@ -946,7 +956,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | Slot | Name | Tags | Effect | Dmg | CD | Canon |
 |---|---|---|---|---|---|---|
 | Passive | **Extinction** | — | His hits apply **Decay** (max 5 stacks, 8 s). Each stack blocks out-of-combat regen and adds +1 damage to his next hit (max +5). | — | — | The Lich's decay |
-| Quirk (R) | **Hypnotic Whisper** | Debuff | A target within 20 studs is *Whispered* for 4 s: their camera sways gently and their next block raises 6f later | — | 10 | Hypnotized prisoners, "Escape from the Citadel" (S6) |
+| Quirk (R) | **Hypnotic Whisper** | Debuff | A target within 20 studs is *Whispered* for 4 s: their camera sways gently and their next block raises 6f later | — | 8 | Hypnotized prisoners, "Escape from the Citadel" (S6) |
 | 1 | **Decay Bolt** | Projectile | +1 Decay | 8 | 6 | — |
 | 2 | **Thrall Grasp** | Grab | +2 Decay | 12 | 12 | — |
 | 3 | **Well of Power** | Zone | A 10-stud green pool for 6 s. **The Lich** heals 1 HP/s inside it; **enemies** take 2 dmg/s. | ≤ 12 | 16 | The Well of Power, "Mortal Folly" / "Mortal Recoil" (S2) |
@@ -977,20 +987,20 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 |---|---|---|---|---|---|---|
 | Passive | **Soul Collector** | — | KOs and assists grant a **Soul** (max 3, lost on death). Souls empower Soul Suck. | — | — | Soul-sucking |
 | Quirk (R) | **Maloso Vobiscum** | Mobility | Chants and steps through a small Nightosphere portal 30 studs away | — | 8 | The summoning chant, "It Came from the Nightosphere" (S2) |
-| 1 | **Demon Swipe** | Rush | — | 9 | 7 | — |
-| 2 | **Tentacle Lash** | Rush, Extender | Multi-hit tentacle flurry | 10 | 9 | Demon form |
-| 3 | **Amulet Flare** | Counter | The amulet glows. If hit, he bursts with demonic flame. | 12 | 14 | The Nightosphere Amulet, "Daddy's Little Monster" (S4) |
-| 4 | **Soul Suck** ★ | Zone (cone) | A 0.8 s telegraphed inhale pulls in enemies within 15 studs. Heals 6. | 14 (+3/Soul) | 18 | Soul-sucking, "It Came from the Nightosphere" |
+| 1 | **Demon Swipe** | Rush, Demon | — | 9 | 7 | — |
+| 2 | **Tentacle Lash** | Rush, Extender, Demon | Multi-hit tentacle flurry | 10 | 9 | Demon form |
+| 3 | **Amulet Flare** | Counter, Demon | The amulet glows. If hit, he bursts with demonic flame. | 12 | 14 | The Nightosphere Amulet, "Daddy's Little Monster" (S4) |
+| 4 | **Soul Suck** ★ | Zone (cone), Demon | A 0.8 s telegraphed inhale pulls in enemies within 15 studs. Heals 6. | 12 (+2/Soul, max 18) | 18 | Soul-sucking, "It Came from the Nightosphere" |
 | **Awakening** | **Chaos Demon** | — | He becomes a huge tentacled demon (hurtbox ×1.3) | heal 10 | — | His demon form |
-| A1 | **Nightosphere Geysers** | Zone | 3 fire geysers erupt at telegraphed spots | 15 | 9 | Nightosphere |
-| A2 | **Tentacle Prison** | Grab (multi) | Grabs up to 2 enemies | 14 | 12 | — |
-| A3 | **"Ate Your Fries"** | Debuff | Steals 20 Algebraic Meter from the target and gains 10 | 6 | 14 | "Daddy, why'd you eat my fries?", "It Came from the Nightosphere" |
+| A1 | **Nightosphere Geysers** | Zone, Demon | 3 fire geysers erupt at telegraphed spots | 15 | 9 | Nightosphere |
+| A2 | **Tentacle Prison** | Grab (multi), Demon | Grabs up to 2 enemies | 14 | 12 | — |
+| A3 | **"Ate Your Fries"** | Debuff, Demon | Steals 20 Algebraic Meter from the target and gains 10 | 6 | 14 | "Daddy, why'd you eat my fries?", "It Came from the Nightosphere" |
 | A4 | **REALM: The Nightosphere** | Realm | See below | rules | once | "It Came from the Nightosphere"; "Return to the Nightosphere" (S4) |
 
 **Realm: The Nightosphere.** A Bosch-like chaos bubble (40 studs, 12 s). Inside:
 - gravity flips every 3 s, and everyone floats for 0.5 s
 - Hunson's demon-tagged moves deal +20%
-- souls of players KO'd inside go to Hunson, even past the cap, for the Realm's duration
+- souls of players KO'd inside go to Hunson, even past the cap, for the Realm's duration. Souls above 3 do not add Soul Suck damage.
 
 **Counterplay:** Stubborn Heart, or leaving before the ring closes. Floating windows also give enemies free aerial dashes.
 
@@ -1006,7 +1016,7 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 | Slot | Name | Tags | Effect | Dmg | CD | Canon |
 |---|---|---|---|---|---|---|
 | Passive | **Paper-Thin** | — | Prismo is 2D. Hits from his **sides** deal 70%; hits from front or back deal 110%. Positioning matters. | — | — | Flat-gradient body |
-| Quirk (R) | **Wish Roulette** | Buff (random) | Grants one of 6 disclosed outcomes, ~16.7% each: +20% speed 4 s / 8 HP shield / +8 meter / −2 s on all cooldowns / heal 6 / **a pickle** (nothing, just a pickle, as a twisted-wish joke) | — | 12 | Twisted wishes; Prismo's pickles |
+| Quirk (R) | **Twisted Wish** | Buff (random) | Grants one of 6 disclosed outcomes, ~16.7% each: +20% speed 4 s / 8 HP shield / +8 meter / −2 s on all cooldowns / heal 6 / **a pickle** (nothing, just a pickle, as a twisted-wish joke) | — | 12 | Twisted wishes; Prismo's pickles |
 | 1 | **Gradient Beam** | Projectile (beam) | — | 8 | 6 | — |
 | 2 | **Pickle Jar Portal** | Mobility | Places a jar. Reactivate within 10 s to teleport back to it. | — | 12 | Prismo's pickle jar portal |
 | 3 | **Time Wave** | Projectile (wave) | Enemies hit act at **70% animation speed** for 90f | 8 | 12 | The Time Room's time waves |
@@ -1079,7 +1089,7 @@ A Bond Move is balanced to equal the combined value of both players' signature m
 
 | Season | New styles (rarity) | Kit fantasy | Canon anchor |
 |---|---|---|---|
-| S1 Nightosphere Rising | **Death** (Mythic), **Ghost Princess** (Uncommon) | Death: reaper judgment and drum-beat rhythm attacks. Ghost Princess: intangible phasing. | "Death in Bloom" (S2); "Ghost Princess" (S3) |
+| S1 Nightosphere Rising | **Death** (Mythic, Realm: *Land of the Dead*), **Ghost Princess** (Uncommon) | Death: reaper judgment and drum-beat rhythm attacks. Ghost Princess: intangible phasing. | "Death in Bloom" (S2); "Ghost Princess" (S3) |
 | S2 Holly Jolly | **Fionna** (Epic), **Cake** (Epic) | Fionna: crystal-sword hero. Cake: stretchy cat. Bond: Fionna & Cake. | *Fionna and Cake* (2023–25); "Fionna and Cake" (S3) |
 | S3 Lumps & Love | **Lady Rainicorn** (Rare), **Slime Princess** (Uncommon) | Rainicorn: flight and color-changing horn beams. Slime: absorb-grab, bouncy terrain. | "Her Parents" (S2); "Love Games" (S5) |
 | S4 Elements | **Patience St. Pim** (Legendary, Realm: *Winter Light*), **Fern** (Epic) | St. Pim: elemental ice commander. Fern: grass-sword Finn duplicate. | *Elements* (S9); "Two Swords" (S8) |
@@ -1097,7 +1107,7 @@ Also tie-ins with **Side Quests** (2026) young Finn and Jake as Variants, and a 
 
 1. **The thrill of RNG.** Reveal theatre, rare-pull flexes and server-wide announcements, as in Sol's RNG and Shindo Life.
 2. **Rolls never gate power** (Pillar P3). Every style is balanced, every style can be *tried* for free in Training Grounds, and 3 styles rotate free every week.
-3. **There is always a deterministic path.** Choose Goose's Shop sells specific styles for Treasure, which is earned only by playing (§8.5).
+3. **There is always a deterministic path.** Choose Goose's Shop sells every non-Cosmic style for Treasure, which is earned only by playing (§8.5). Cosmic is guaranteed through 10 Cosmic Sparks (§8.4).
 4. **Rolls stay meaningful after collection completion** through a cosmetic long-tail: **Flairs** and **Variants**.
 5. **Policy-compliant and transparent.** Odds are always one tap away, pity counters are always visible, and region rules are respected (§8.8).
 
@@ -1134,16 +1144,16 @@ Counters are visible on the Wish screen, persist across sessions and never expir
 | **Legendary+ hard pity** | Guaranteed at Wish 120 |
 | **Mythic+ hard pity** | Guaranteed at Wish 400 |
 | **New-style priority** | When a pity triggers, an **unowned** style in that tier is selected if one exists |
-| **Cosmic** | No pity (it's the flex). Every Mythic duplicate grants 1 **Cosmic Spark**. **10 Sparks** craft a guaranteed Cosmic, so dedicated players have a long but finite path. |
+| **Cosmic** | No pity (it's the flex). Every Mythic duplicate grants 1 **Cosmic Spark**. **10 Sparks** craft a guaranteed Cosmic. Because Mythic+ has a 400-Wish hard pity, this path is bounded at ≤ 4,400 Wishes. |
 
-**Expected time-to-unlock** for a casual player (≈ 20 Wishes/day, §17.5):
+**Expected time-to-unlock** for a casual player (≈ 14 Wishes/day, §17.5). Values come from a 4,000-run Monte Carlo simulation of these exact pity rules, and they exclude the 3 tutorial Wishes.
 
-| Milestone | Expected | Worst case (pity) |
+| Milestone | Mean (median) | Worst case / 95th percentile |
 |---|---|---|
-| First Epic | Day 1 | Day 2 |
-| First Legendary | ~ Day 3 | Day 6 |
-| First Mythic | ~ Day 13 | Day 20 |
-| Full launch roster except Cosmic | ~ Day 25–35 | ~ Day 50 (with Choose Goose) |
+| First Epic | Day 1.4 (Day 1) | Day 3 (hard pity) |
+| First Legendary | Day 3.2 (Day 3) | Day 9 (hard pity at 120) |
+| First Mythic | Day 12.6 (Day 10) | Day 29 (hard pity at 400) |
+| Full launch roster except Cosmic | Day 16 (Day 14) | Day 29 for 95% of players. Choose Goose closes any remaining gap. |
 
 ### 8.5 Choose Goose's Shop (deterministic path)
 
@@ -1151,7 +1161,7 @@ A rotating shop with Choose Goose, a merchant from the show who speaks in rhyme:
 - **3 style slots** refresh every 12 hours, drawn from all non-Cosmic styles (weighted toward styles the player *doesn't* own).
 - **Treasure only.** Robux can never buy styles here directly.
 - Prices: Common 1,500 · Uncommon 3,000 · Rare 6,000 · Epic 12,000 · Legendary 30,000 · Mythic 75,000 Treasure.
-- A casual player earns about 1,800 Treasure/day (§17.5), so a targeted Legendary is ≈ 17 days of play. That's slower than the average Wish path but **certain**.
+- A casual player earns about 1,775 Treasure/day (§17.5), so a targeted Legendary is ≈ 17 days of play. That's slower than the average Wish path but **certain**.
 - It also has 4 cosmetic slots (Variants, emotes, Finales).
 
 ### 8.6 Reveal theatre
@@ -1175,13 +1185,13 @@ Every Wish independently rolls a **Flair**, a cosmetic finish for that style's V
 
 | Flair | Odds | Look |
 |---|---|---|
-| Standard | ~97.6% | Normal |
-| Shiny | 1 in 50 | Sparkle trail, brighter outline |
-| Golden | 1 in 250 | Gold-leaf outline and VFX tint |
-| Crystal | 1 in 1,000 | Crystal Dimension refraction shader on VFX |
-| Rainbow | 1 in 5,000 | Animated prismatic hue cycle |
-| Nightosphere | 1 in 25,000 | Chaotic demonic flame outline, red-black VFX |
-| Glitched | 1 in 100,000 | Glitch-art outline with "static" VFX and corrupted-text nameplate |
+| Standard | 97.475% | Normal |
+| Shiny | 1 in 50 (2%) | Sparkle trail, brighter outline |
+| Golden | 1 in 250 (0.4%) | Gold-leaf outline and VFX tint |
+| Crystal | 1 in 1,000 (0.1%) | Crystal Dimension refraction shader on VFX |
+| Rainbow | 1 in 5,000 (0.02%) | Animated prismatic hue cycle |
+| Nightosphere | 1 in 25,000 (0.004%) | Chaotic demonic flame outline, red-black VFX |
+| Glitched | 1 in 100,000 (0.001%) | Glitch-art outline with "static" VFX and corrupted-text nameplate |
 
 A Flair is **purely cosmetic**, so luck boosts (§17.3) are ethically safe: they can't buy power.
 
@@ -1199,7 +1209,7 @@ Robux Wish bundles (§17.3) make every Wish a **Paid Random Item (PRI)** under R
 | Accurate **Content Maturity Questionnaire** declaration | PRIs are declared. The Wish UI avoids slot machines, casino chips and roulette wheels, because gambling imagery risks a Moderate label. The theme is a magical *wish jar*. |
 
 **Our extra ethics rules:**
-- **No pay-to-roll-only content.** Every style is obtainable through free Wishes *and* through Choose Goose's fixed-price Treasure shop.
+- **No pay-to-roll-only content.** Every style is obtainable through free Wishes. Every non-Cosmic style is also sold in Choose Goose's fixed-price Treasure shop, and Cosmic has the Cosmic Spark path.
 - **Spending guardrails:** a soft confirmation appears on the 4th Wish purchase within 24 hours, and a "spent this week" summary shows in the store. Wish offers are never shown right after a lost fight.
 - **Published audits:** a monthly community "Wish Report" compares the server's observed pull distribution with the configured odds.
 
@@ -1219,23 +1229,23 @@ Progression has **five interlocking tracks**. Each has a different time horizon,
 ### 9.1 Account Level (1–100, then Prestige)
 
 - **XP sources:** 10 XP per minute of active combat (AFK-detected and zeroed), KO 25, assist 10, world-event participation 40, daily quest 150, weekly quest 600.
-- **Curve:** `XP_to_next(n) = 300 + 45·n` → Level 100 ≈ 255k XP. That is roughly **110–130 hours** for an average player.
-- **Rewards:** 3 Wishes every level; +100 Treasure every 5 levels; a cosmetic (emote/Finale/nameplate) every 10 levels.
+- **Curve:** `XP_to_next(n) = 300 + 45·n` → Level 100 ≈ 252k XP. That is roughly **110–130 hours** for an average player.
+- **Rewards:** 3 Wishes and 250 Treasure every level; a cosmetic (emote/Finale/nameplate) every 10 levels.
 - **Prestige** (after 100): resets the level number, keeps everything, and adds a prestige star to the nameplate (★ to ★★★★★, then animated). Prestige grants an exclusive Flair dye per star.
 
 ### 9.2 Style Mastery (1–30 per style)
 
-- **Mastery XP:** damage dealt with the style (1 XP/HP), KOs (50), **Style Moments** (100). A Style Moment is a style's showcase combo or interaction. Examples: Jake catching a falling teammate with a stretch, or Marceline dropping from invisibility into a Bite.
+- **Mastery XP:** damage dealt with the style (1 XP/HP), KOs (50), **Style Moments** (100). A Style Moment is a style's showcase combo or interaction. Examples: Jake reflecting a projectile into its owner with Stretchy Shield, or Marceline's Bat Shift → Invisible Ambush → Red Drain.
 - **Style Shards** (from duplicate Wishes) convert to Mastery XP at 1 shard = 60 XP, but only up to **Mastery 20**. **Mastery 21–30 must be earned in combat**, so a Master title always means real play.
 
 | Mastery | Reward |
 |---|---|
 | 1 | Style lore card (episode references, concept art) |
 | 5 | Title (e.g., *"Hero-in-Training"* for Finn-style) |
-| 10 | Style Finale #1 |
+| 10 | Style Finale #1 + **Full Costume** (§12.3) |
 | 15 | M1 trail recolor |
 | 20 | Style emote (signature pose with VO bark) |
-| 25 | Awakening tint (alternate awakening aura colors) |
+| 25 | Awakening tint (alternate awakening aura colors) + choice of one Variant |
 | 30 | **Master** nameplate frame, animated banner, Master title, Finale #2 |
 
 ### 9.3 Variants (cosmetic alternate looks)
@@ -1300,7 +1310,7 @@ Around 150 achievements, named with show catchphrases where licensed. Examples: 
 | Stocks | 3 per player | 5 shared |
 | Timer | 5 min. On timeout: stocks remaining, then damage dealt | Same |
 | Style choice | Blind pick. After losing a stock, the loser may **swap style** (counter-pick). | Same, per player |
-| Arenas | 5 compact authored arenas (Time Room, Tree Fort Roof, Candy Castle Throne Room, Ice Kingdom Balcony, Marceline's Cave) | 3 larger arenas |
+| Arenas | 5 compact authored arenas (Time Room, Tree Fort Roof, Candy Castle Throne Room, Ice Kingdom Balcony, Marceline's Cave) | The same 5 arenas in ×1.4-scaled Duo layouts |
 | Restrictions | Auto-target assist off for everyone; Realms allowed; Breakaway as normal | Same |
 | Rating | Glicko-2, hidden MMR plus visible tier | Separate ladder |
 | Eligibility | Account Level 15 and ≥ 3 playable styles (owned + free rotation) | Same |
@@ -1321,7 +1331,7 @@ Around 150 achievements, named with show catchphrases where licensed. Examples: 
 | **Banana Guard Bounty Hunt** | Candy Kingdom | NPC guards chase the top-bounty player. The bounty player gets +20% speed. | Big bounty |
 | **Treasure Shower** | Any | Chests rain down. Opening one takes 2 s of channeling, so it's contested. | Treasure, Wish shards |
 | **Lemongrab's Inspection** | Any | For 60 s a random rule applies ("NO BLOCKING!", "ONLY SWORDS!"). Breaking it sends you to the Lemon Dungeon for 5 s. | Rule-followers get a bonus |
-| **Catalyst Comet** | Grasslands / seasonal | A comet strikes and permanently cratering part of the map for the rest of the server's life. A destruction showcase. | Comet fragment (cosmetic currency) |
+| **Catalyst Comet** | Grasslands / seasonal | A comet strikes and permanently cratering part of the map for the rest of the server's life. A destruction showcase. | A *Comet* Flair dye (cosmetic) |
 
 ### 10.5 Party Modes: "Game Night" (rotating playlist)
 
@@ -1329,10 +1339,10 @@ Around 150 achievements, named with show catchphrases where licensed. Examples: 
 |---|---|---|
 | **Everything Burrito** | Your style is randomized every life; first to 12 KOs wins | Jake's everything-burrito gag |
 | **Floor Is Fire Kingdom** | Platforms sink into lava one by one; last player standing wins | Fire Kingdom episodes |
-| **Ice King's Princess Grab** | One Ice King hunter "freezes" tagged players; frozen players can be thawed by teammates | Ice King's princess-kidnapping running gag |
-| **Giant Jake Juggernaut** | One player is an enormous Jake with 1,000 HP; everyone else teams up | Jake's giant-size gags |
-| **Card Wars Arena** *(Season 1)* | Each round, everyone draws a "card" that sets their style and one modifier | "Card Wars" (S3) |
-| **Lumpy Low-Grav Brawl** *(Season 2)* | Low gravity and bouncy clouds; KOs only by ring-out | Lumpy Space |
+| **Ice King's Princess Grab** | One Ice King hunter "freezes" tagged players; frozen players can be thawed by teammates. The hunter wins if everyone is frozen within 3 min; otherwise the runners win. | Ice King's princess-kidnapping running gag |
+| **Giant Jake Juggernaut** | One player is an enormous Jake with 1,000 HP; everyone else teams up. The team wins by KO'ing Jake within 3 min; Jake wins on timeout. | Jake's giant-size gags |
+| **Card Wars Arena** *(Season 1)* | Each round, everyone draws a "card" that sets their style and one modifier. The UI is styled as the show's Card Wars board game, never casino cards. First to 10 KOs wins. | "Card Wars" (S3) |
+| **Lumpy Low-Grav Brawl** *(Season 2)* | Low gravity and bouncy clouds; KOs only by ring-out. First to 10 ring-outs wins. | Lumpy Space |
 
 ### 10.6 Kingdoms (guilds)
 
@@ -1396,7 +1406,7 @@ Around 150 achievements, named with show catchphrases where licensed. Examples: 
   2. **Face Windows.** High exterior ledges at the face-shaped windows, the best spot for ring-out kills.
   3. **Penguin Slopes.** Slippery ice ramps with low friction, where momentum matters and dashes slide 30% further.
   4. **Frozen Lake.** Thin ice that cracks under heavy hits. Fall in for a 1.5 s freeze status.
-  5. **Spirit-World Basement** (event-only). Opens during the *Ice King's Lost Crown* event.
+  5. **Spirit-World Basement** (event-only). Opens during the *Robot Castle* super-event (below), while the castle is standing.
 - **Interactables:** penguin swarm (harmless pushers, but Gunter is mean), ice spikes (telegraphed falling stalactites), cold zones (snow piles that slow).
 - **Super-event: Robot Castle.** About once per 45 min the castle stands up as a giant robot ("Frost & Fire") and stomps a zone with telegraphed footprints.
 - **Palette:** pale cyan, white and lavender shadows, with the aurora skybox at night.
@@ -1423,11 +1433,11 @@ Around 150 achievements, named with show catchphrases where licensed. Examples: 
 
 ### 11.3 Seasonal world: Year-1 calendar
 
-Seasons are **8 weeks**, six per year. Four are **seasonal transformations** of existing maps and two add **new maps**. Each season brings 2–4 new styles (§7.5), an Adventure Pass, a world event and, usually, a raid.
+Seasons are **8 weeks**, six per year. Two are **seasonal transformations** of existing maps (S2, S4) and four add **new maps** (S1, S3, S5, S6). Each season brings 2 new styles (§7.5), an Adventure Pass, a world event and, usually, a raid.
 
 | # | Season (dates, illustrative) | Theme and canon | Map work | Signature event | Raid / boss |
 |---|---|---|---|---|---|
-| S0 | **Launch** (2 Oct – 15 Oct 2027) | Welcome to Ooo | Candy Kingdom, Grasslands, Ice Kingdom | All launch events | The Lich's Well |
+| S0 | **Launch** (2 Oct – 15 Oct 2027) | Welcome to Ooo | Candy Kingdom, Grasslands, Ice Kingdom | All launch events + a free *Welcome to Ooo* event track (no pass; the Adventure Pass starts with S1) | The Lich's Well |
 | S1 | **Nightosphere Rising** (16 Oct – 10 Dec) — *Halloween* | "It Came from the Nightosphere," "Return to the Nightosphere," "Slumber Party Panic," "The Creeps," "Ghost Princess," "Death in Bloom" | **NEW: Nightosphere** map (Bosch-inspired chaos wasteland, Nightosphere Jail shaft, soul-suck vortex). Candy Kingdom **candy-zombie** night overlay. | *Slumber Party Panic*: an infection party mode (zombified players convert others; last uninfected wins). Candy-corn event currency. | **Hunson's Amulet** (a boss that swaps between demon forms) |
 | S2 | **Holly Jolly** (11 Dec 2027 – 4 Feb 2028) — *Winter* | "Holly Jolly Secrets," "The Winter King" (Fionna & Cake), "Reign of Gunters," "Frost & Fire" | Ice Kingdom **snowed-in** variant (VHS-tape collectible hunt); **Winterworld Candy Kingdom** reskin (canon from Fionna & Cake) | *Simon's Tapes*: a server-wide hunt for the Ice King's video diaries, which unlock lore cinematics | **Frost & Fire** (split ice/lava arena boss) |
 | S3 | **Lumps & Love** (5 Feb – 31 Mar 2028) — *Valentine's* | "Trouble in Lumpy Space," "Love Games" (Trials of Glarb), "Prisoners of Love" | **NEW: Lumpy Space** (floating lump platforms over the Lumpy Abyss, bouncy clouds, drive-by car hazards) | *Trials of Glarb*: a Slime Kingdom gauntlet mode | **Glarb's Trials** (gauntlet) |
@@ -1435,7 +1445,7 @@ Seasons are **8 weeks**, six per year. Four are **seasonal transformations** of 
 | S5 | **Islands** (27 May – 21 Jul) — *Summer* | The *Islands* miniseries, "Water Park Prank," "Ocean of Fear" | **NEW: Founders' Island** (tropical city, Helper robots, the Guardian sentinel) and a **Water Park ruins** party map | *Helpers' Uprising*: protect Founders' Island from rogue Helper robots | **The Guardian** |
 | S6 | **Gum War** (22 Jul – 15 Sep) — *Late summer; the finale's anniversary is 3 Sep* | "Come Along With Me": Candy Kingdom vs **Gumbaldia** | **NEW: Gumbaldia** (the ziggurat temple candy city) joined to Candy Kingdom across Lake Butterscotch | *The Gum War*: a 20-player **team mode** (10v10) with a payload (the Gumbaldia ziggurat siege) | **GOLB's Shadow** (event finale) |
 
-**Year 2 plans:** S7 *Stakes* vampire season (16 Sep – 10 Nov 2028, covering Halloween with a vampire boss rush), the Fire Kingdom map, the Crystal Dimension, Mars (low gravity, Grob Gob Glob Grod temple), the Dead Worlds, Distant Lands-themed seasons (The Drift, the Glass Kingdom, Wizard City), and a **Side Quests** "young era" storybook-filter event.
+**Year 2 plans:** S7 *Stakes* vampire season (16 Sep – 10 Nov 2028, covering Halloween with a vampire boss rush), the Fire Kingdom map, Mount Cragdor (a vertical trial-climb map), the Crystal Dimension, Mars (low gravity, Grob Gob Glob Grod temple), the Dead Worlds, Distant Lands-themed seasons (The Drift, the Glass Kingdom, Wizard City), and a **Side Quests** "young era" storybook-filter event.
 
 ### 11.4 Map lighting and day/night
 
@@ -1539,7 +1549,7 @@ Blender → FBX (rigs, hulls, LODs) → Roblox Studio import (Asset Manager / Op
 |---|---|---|
 | Characters | ≤ 6k tris (+ hull ≤ 6k), 3 LODs | 1 × 1024² atlas ×4 color models |
 | Hero props | ≤ 3k tris | Shared 1024² atlases |
-| Map total (on screen) | ≤ 350k tris | ≤ 180 MB texture memory |
+| Map total (on screen) | ≤ 220k tris (low) / 450k (mid) / 800k (high), leaving room for 20 characters | ≤ 180 MB texture memory |
 
 - **Naming convention:** `STY_<Style>_<Asset>_<Variant>`, `MAP_<Map>_<Zone>_<Asset>`.
 - Every asset passes **silhouette review**, **mobile performance review** and (Track A) **licensor review** before merge.
@@ -1596,7 +1606,7 @@ Ragdoll physics runs **client-side, cosmetic only**. The server owns position an
 | Active particle emitters | 120 | 220 | 400 |
 | Max particles on screen | 1,500 | 3,000 | 6,000 |
 | Beams/trails | 40 | 80 | 150 |
-| Per-move emitter cap | Common 3 / Rare 5 / Epic 6 / Legendary 7 / Mythic–Cosmic 8 | same | same |
+| Per-move emitter cap | Starter–Common 3 / Uncommon–Rare 5 / Epic 6 / Legendary 7 / Mythic–Cosmic 8 | same | same |
 
 **LOD policy:**
 - **Your own** moves and those of your **current target** render at full quality.
@@ -1719,7 +1729,7 @@ Ducking reduces music by 4 dB during your combos and by 8 dB during Realm casts.
 
 - **HP bar:** 100 HP shown as a hand-inked bar. Recent damage drains in white over 0.4 s, which reads "how much that combo did."
 - **Breakaway pips:** 2 pips under the HP bar (§6.8). A full pip has a sparkle animation. An empty pip shows a refill sweep.
-- **Enemy info:** overhead nameplates show the style icon, Flair glint, HP and a block-crack indicator, but only for the current lock/last-hit target and players within 25 studs. This keeps 20-player chaos readable.
+- **Enemy info:** overhead nameplates show the style icon, Flair glint, HP, Breakaway pips and a block-crack indicator, but only for the current lock/last-hit target and players within 25 studs. This keeps 20-player chaos readable.
 - **Damage numbers:** off by default. They can be enabled in Training Grounds and accessibility settings.
 - **Combo counter:** appears at 3+ hits ("3 HIT! … ALGEBRAIC 12 HIT!"), drawn in the show's hand-lettered style.
 
@@ -1727,12 +1737,12 @@ Ducking reduces music by 4 dB during your combos and by 8 dB during Realm casts.
 
 | Screen | Key content | Notes |
 |---|---|---|
-| **Style Wheel** | Owned styles by rarity ring; free-rotation styles marked; Mastery level; equipped Flair | Opens on death; 5 s auto-confirm last style |
+| **Style Wheel** | Owned styles by rarity ring; free-rotation styles marked; Mastery level; equipped Flair | Opens on death; 3 s auto-confirm last style |
 | **Make a Wish** | 1× / 10× wish, odds button (always visible), pity counters, current banner | Reveal theatre §8.6; skip after first view of a rarity |
 | **Collection Book** | Styles × Flairs × Variants grid, completion %, lore cards with episode references | The "museum"; drives the long-tail chase |
-| **Choose Goose's Shop** | 3 rotating styles + 4 cosmetics for Treasure; refresh timer | Deterministic path to every style (§8.5) |
+| **Choose Goose's Shop** | 3 rotating styles + 4 cosmetics for Treasure; refresh timer | Deterministic path to every non-Cosmic style (§8.5) |
 | **Adventure Pass** | 50 tiers, free and paid tracks, quest list | §9.4 |
-| **Mastery** | Per-style track: titles, Finales, emotes, VFX tints, lore unlocks | §9.3 |
+| **Mastery** | Per-style track: titles, Finales, emotes, VFX tints, lore unlocks | §9.2 |
 | **Ranked** | Queue, rank badge, season rewards, match history | §10.3 |
 | **Kingdom** | Members, weekly goals, Kingdom War standings | §10.6 |
 | **Settings** | Graphics tier, camera shake, outline thickness, colorblind modes, input remap, audio buses, chat filters | §16 |
@@ -1747,7 +1757,7 @@ The goal is a player who has **landed a combo, felt an awakening, made a wish an
 | 0:06 | Spawn on a training path near the Tree Fort. A friendly narrator NPC (licensed track: BMO; codename track: "Console Buddy") greets you. You already have **Finn-style and Jake-style**. | Ownership: "these two are yours" |
 | 0:20 | Punch a training log 4 times. The 4th hit sends it flying into a tree, which breaks. | M1 chain, the last hit knocks back, the world reacts |
 | 0:40 | A slow Banana Guard dummy swings at you. A prompt tells you to *Hold block*, then *tap block on the flash* for a Perfect Block. | Block, Perfect Block |
-| 1:05 | Use moves 1–2 on two dummies. Move 3 is a dash-in. | Moves, dash |
+| 1:05 | Use moves on two dummies: Move 1 (Hero Leap) closes distance, and Move 3 (Grass Sword Lash) pulls a dummy to you. Then dash. | Moves, dash |
 | 1:30 | The narrator hits you into a ragdoll, and a big prompt says **"BREAKAWAY!"** | Escape meter |
 | 1:50 | Your meter is filled for you, and a "Press G" prompt shows the Finn awakening cinematic on a giant Gumball dummy. | Awakening fantasy |
 | 2:30 | The narrator hands you **3 free Wishes**. The first wish is **guaranteed Rare** (Princess Bubblegum or Flame Princess style, weighted 50/50). | Rolling, rarity reveal |
@@ -1815,7 +1825,7 @@ The game must therefore be fully social **without chat**:
 ### 17.1 Principles
 
 1. **Sell expression, convenience and collection speed. Never sell combat power.** This is the JJS/TSB template, the two largest battlegrounds games, plus a rolling layer that is ethical because rarity ≠ power.
-2. **Every paid random item is disclosed and gated** (§8.8), and every style also has a non-paid, non-random path.
+2. **Every paid random item is disclosed and gated** (§8.8), and every style also has a non-paid path. For every non-Cosmic style that path is non-random (Choose Goose). Cosmic is guaranteed by Cosmic Sparks.
 3. **Prices come from `MarketplaceService`**, never hard-coded. Roblox **Managed Pricing** (regional pricing plus price optimization, enrolled by default since 2025–2026) can tune prices per region.
 4. **No dark patterns.** No fake countdowns, no confirm-shaming, no "last chance" re-pops, no purchase prompts after a loss, and no premium currency that hides real prices. Robux prices are shown directly.
 
@@ -1829,7 +1839,7 @@ The game must therefore be fully social **without chat**:
 | **Cosmic Sparks** | Mythic duplicates | 10 = guaranteed Cosmic | No | No |
 | **Event tokens** (seasonal, e.g., *Candy Corn*, *Snowflakes*) | Seasonal events | Event shop; expire into Treasure at season end (1:5) | No | No |
 
-**Wish storage cap: 1,000.** Wishes beyond the cap convert to 10 Treasure each. This is an anti-hoarding brake following the Shindo Life model, and it protects future banners from players "saving 3,000 wishes."
+**Wish storage cap: 1,000.** Wish purchases that would exceed the cap are blocked. *Earned* Wishes over the cap convert to 10 Treasure each, so Robux can never become Treasure. This is an anti-hoarding brake following the Shindo Life model, and it protects future banners from players "saving 3,000 wishes."
 
 ### 17.3 Catalog (launch)
 
@@ -1861,9 +1871,9 @@ The game must therefore be fully social **without chat**:
 **Subscription: "Algebraic Club"** (Roblox in-experience subscription, ≈ $4.99/month tier):
 - 3 bonus Wishes/day. For PRI-restricted players this is swapped for 300 Treasure/day.
 - +1 daily quest slot, a monthly exclusive emote, a Club nameplate, and 5% Pass XP.
-- Value check: ~90 Wishes/month for ≈ $4.99. That's a strong deal that drives habit, and Creator Rewards pays per daily Active Spender (§17.6).
+- Value check: ~90 Wishes/month for ≈ $4.99, about +20% on a casual player's free income. That's a strong deal that drives habit, and Creator Rewards pays per daily Active Spender (§17.6).
 
-**Private servers:** **49 R$/month**, with a full custom-rules editor (style bans, meter rates, map choice, Realm toggles, Roulette-style party modes). Roblox Plus members get paid private servers free, and Roblox pays creators up to 100 R$ per Plus subscriber who spends 60+ minutes in our paid private servers per 30 days. A cheap paid private server is better than a free one because of that Plus payout.
+**Private servers:** **49 R$/month**, with a full custom-rules editor (style bans, meter rates, map choice, Realm toggles, party-mode playlists). Roblox Plus members get paid private servers free, and Roblox pays creators up to 100 R$ per Plus subscriber who spends 60+ minutes in our paid private servers per 30 days. A cheap paid private server is better than a free one because of that Plus payout.
 
 **Rewarded video ads** (13+ users, where eligible): watch an ad for **1 free Wish**, up to 3 per day. Never Robux, never during combat.
 
@@ -1873,22 +1883,22 @@ The game must therefore be fully social **without chat**:
 
 | Goal | Free player | Paying player |
 |---|---|---|
-| Specific Legendary | ~6–17 days (Wishes or Choose Goose) | 899 R$ guarantees a Legendary+ (may not be the specific one; pity prefers unowned) |
-| Mythic | ~13–20 days | ≤ ~2,700 R$ worst case (400-Wish hard pity) |
-| Whole launch roster except Cosmic | ~25–50 days | Purchasable in a weekend. Acceptable because rarity ≠ power |
+| Specific Legendary | ~6–17 days (Wishes, or 30,000 Treasure in Choose Goose) | 899 R$ guarantees a Legendary+ (may not be the specific one; pity prefers unowned) |
+| Mythic | ~13 days average, ≤ 29 days | ≤ ~2,900 R$ worst case (400-Wish hard pity: 300 + 55 + 55 Wish packs) |
+| Whole launch roster except Cosmic | ~16 days average, ≤ ~29 days for 95% | Purchasable in a weekend. Acceptable because rarity ≠ power |
 | A specific Glitched Flair | Months of play | Still luck-based. Luck boosts are capped at ×1.5 |
 
 ### 17.5 Earn-rate model (casual player, 45 min/day)
 
 | Source | Wishes/day | Treasure/day |
 |---|---|---|
-| Active combat (KOs, assists, damage) | 5–6 (1 per 8 min active) | ~350 |
+| Active combat (KOs, assists, damage) | 3 (1 per 15 min active) | ~350 |
 | World events (≈ 6 joined) | 1 | ~500 |
-| Daily quests (3) | 6 | 450 |
-| Daily login (streak avg) | 4 | 100 |
-| Weekly quests (amortized) | 3.5 | 250 |
-| Level-ups (amortized) | 1.5 | ~150 |
-| **Total** | **≈ 20** | **≈ 1,800** |
+| Daily quests (3) | 4 | 450 |
+| Daily login (streak avg) | 2 | 100 |
+| Weekly quests (amortized: 18/week) | 2.5 | 250 |
+| Level-ups (amortized: ~0.5 levels/day × 3) | 1.5 | ~125 (250 per level) |
+| **Total** | **≈ 14** | **≈ 1,775** |
 
 **Sinks:** Choose Goose (styles 1.5k–75k), cosmetics (500–8k), quest rerolls (100), Kingdom founding (5,000), event shops, Variant crafting. The economy designer reviews the **sources/sinks ratio weekly**. The target ratio is 1.0–1.2, with ≤ 15% of players holding > 100k Treasure.
 
@@ -1918,8 +1928,8 @@ Creator net ≈ **22–28% of gross player spend** after Roblox's purchase prici
 
 | Team | Monthly burn | Break-even average CCU |
 |---|---|---|
-| Studio scale, globally distributed (~34 people, §21) | ~$170K | ~25K–50K |
-| Studio scale, US-based | ~$400K | ~60K–120K |
+| Studio scale, globally distributed (~42 people at peak, §21.1) | ~$210K | ~30K–64K |
+| Studio scale, US-based | ~$494K | ~71K–150K |
 | Lean team (§21.5) | $50K–$100K | ~7K–30K |
 
 A licensed track must also subtract the royalty (model 10–25%).
@@ -2021,7 +2031,7 @@ Roblox's device data says **~65% of players are on Android, ~60% of those on 2�
 
 | Budget | Low (reference) | Mid | High |
 |---|---|---|---|
-| Target fps (20 players, 2 awakenings) | 30 | 45–60 | 60+ |
+| Target fps (20 players, 5 awakenings, 2 Realms) | 30 | 45–60 | 60+ |
 | Draw calls | ≤ 600 | ≤ 900 | ≤ 1,500 |
 | Triangles on screen | ≤ 350k | ≤ 600k | ≤ 1M |
 | Client memory | ≤ 1.1 GB | ≤ 1.6 GB | ≤ 2.5 GB |
@@ -2114,7 +2124,7 @@ tools/      Lune scripts: frame-data export, odds-table generator, balance sim
 
 ### 19.2 Content pipeline
 
-1. **Season planning runs 3 seasons ahead.** Licensor review (Track A) adds 2–3 weeks per beat, so styles are **content-locked 6 weeks** before release.
+1. **Season planning runs 3 seasons ahead.** Licensor review (Track A) adds 2–3 weeks per beat, so a style's **kit and frame data lock at Week 4**. Licensor review runs Weeks 5–7, alongside final VFX/SFX/VO.
 2. **Style production cadence** (pipelined; 3 styles in flight at any time):
    - **Week 1:** concept, kit design, frame-data draft
    - **Week 3:** graybox kit in Training Grounds
@@ -2211,7 +2221,7 @@ These are internal targets, not platform benchmarks. Compare against the **Creat
 
 ### 21.1 Team (studio scale)
 
-The plan assumes a **studio-scale team of about 34 people at peak**. A lean alternative is in §21.5.
+The plan assumes a **studio-scale team of 39 core people, rising to about 42 at Beta peak** when QA scales up. A lean alternative is in §21.5.
 
 | Discipline | Roles (headcount) | Notes |
 |---|---|---|
@@ -2229,30 +2239,32 @@ The plan assumes a **studio-scale team of about 34 people at peak**. A lean alte
 ```mermaid
 gantt
     dateFormat  YYYY-MM-DD
-    title Algebraic! — pre-launch roadmap (illustrative, starting 2026-11-02)
+    title Algebraic! pre-launch roadmap (illustrative, from 2026-11-02)
     section Pre-production
     IP path decision & legal review         :a1, 2026-11-02, 30d
     Combat prototype (graybox, 4 styles)    :a2, 2026-11-02, 60d
     Art style test (1 map corner, 2 rigs)   :a3, 2026-11-16, 60d
+    M0 production gate                      :milestone, m0, 2027-01-04, 0d
     section Production
     Vertical slice (Candy Kingdom + 6 styles):b1, 2027-01-04, 75d
     Core systems (Wishes, data, economy)    :b2, 2027-02-01, 90d
-    Content production (18 styles, 3 maps)  :b3, 2027-03-15, 150d
+    Content production (18 styles, 3 maps)  :b3, 2027-03-15, 116d
+    Season 1 content (map, 2 styles, raid)  :b4, 2027-06-01, 95d
     section Testing
     Closed Alpha (500 testers)              :c1, 2027-05-17, 30d
     Closed Beta (5–10k, paid early access)  :c2, 2027-07-12, 45d
     Soft launch / open beta                 :c3, 2027-08-30, 30d
     section Launch
-    Launch ("Season 0: Candy Kingdom")      :milestone, d1, 2027-10-02, 1d
-    Season 1: Nightosphere (Halloween)      :d2, 2027-10-16, 56d
+    Launch - Season 0 Candy Kingdom         :milestone, d1, 2027-10-02, 0d
+    Season 1 - Nightosphere Rising          :d2, 2027-10-16, 56d
 ```
 
 | Milestone | Exit criteria (all must pass) |
 |---|---|
-| **M0 – Greenlight** | IP path chosen (§5); pillars signed; prototype shows the M1 chain, block, dash, Breakaway and 1 awakening with good *feel* on mobile |
+| **M0 – Production gate** (4 Jan 2027; this document is the concept greenlight that starts pre-production) | IP path chosen (§5); pillars signed; Server Authority network gate passed (§18.2); prototype shows the M1 chain, block, dash, Breakaway and 1 awakening with good *feel* on mobile |
 | **M1 – Vertical Slice** | Candy Kingdom map at final art quality; 6 styles complete (Finn, Jake, PB, Marceline, Ice King, Lich); 20-player server runs at ≥ 30 fps on the low-end device reference; Wish system end-to-end with mock economy |
 | **M2 – Alpha** | All 18 launch styles playable (first-pass anim/VFX; ≥ 8 at final quality); 3 maps blocked-in, 1 final; ranked duel prototype; data persistence with session locking; analytics events firing |
-| **M3 – Beta** | Content complete; Adventure Pass Season 0; monetization live (test prices); full FTUE; localization (EN, ES, PT-BR, FR, DE, TR, ID, TH); win rates within band in internal data |
+| **M3 – Beta** | Launch content complete (Season 1 content in final production); Adventure Pass ready for **Season 1**. The 2-week launch window (S0) runs a free "Welcome to Ooo" event track instead of a pass; monetization live (test prices); full FTUE; localization (EN, ES, PT-BR, FR, DE, TR, ID, TH); win rates within band in internal data |
 | **M4 – Launch** | Crash-free sessions ≥ 99.5%; P95 server heartbeat ≥ 55 Hz under load; no S1/S2 bugs; odds disclosure audited; moderation tooling live |
 
 ### 21.3 Content production estimates
@@ -2260,11 +2272,13 @@ gantt
 | Asset | Unit effort (approx.) | Launch quantity | Total |
 |---|---|---|---|
 | Fighting Style (design + anim + VFX + SFX + balance) | ~22 person-days design/eng + ~30 person-days art/anim/VFX | 18 | ~940 person-days |
-| Arena map (blockout → final + destruction + events) | ~90 person-days | 3 full + 2 duel arenas | ~330 person-days |
-| Seasonal transform of an existing map | ~35 person-days | 1 (launch Halloween) | 35 |
-| Finale (cosmetic kill cinematic) | ~4 person-days | 24 | ~96 |
+| Battlegrounds map (blockout → final + destruction + events) | ~90 person-days | 3 | ~270 person-days |
+| Duel arena (1v1 layout + ×1.4 Duo layout) | ~25 person-days | 5 | ~125 person-days |
+| Raid (map + boss + phases) | ~70 person-days | 1 (The Lich's Well) | ~70 person-days |
+| **Season 1 pre-launch content**: Nightosphere map (90), Death + Ghost Princess (104), Hunson's Amulet raid boss (60), candy-zombie party mode (15), Candy Kingdom night overlay (35) | — | 1 season | ~304 person-days |
+| Finale (cosmetic KO flourish) | ~4 person-days | 41 (36 Mastery + 5 Pass/raid/ranked) | ~164 |
 | Emote | ~1.5 person-days | 30 | ~45 |
-| World event | ~8 person-days | 6 | ~48 |
+| World event | ~8 person-days | 9 (8 in §10.4 + Robot Castle) | ~72 |
 
 ### 21.4 Post-launch cadence
 
@@ -2306,7 +2320,7 @@ If budget is constrained:
 | R11 | **Toxicity**: teaming, spawn-farming, third-partying | High | Medium | Party cap of 2, pile-on protection, Rookie protection, anti-farming Treasure decay, reports with replay snapshots | Combat Design + Live |
 | R12 | **Age-check rules shrink social reach** | Medium | Low | Chat-independent social layer (Quick-Chat, emotes, structured invites) | UX |
 | R13 | **Kids/Select evaluation fails** (Mild label) | Low | Medium | Mild-compliant content rules (§16.1). No gambling imagery. Pre-review of Wish UI. | Producer |
-| R14 | **Balance volatility** across 17+ styles | High | Medium | Live config tuning. Balance simulator. Sneak Peek gate. Reserved HP lever. | Combat Design |
+| R14 | **Balance volatility** across 18+ styles | High | Medium | Live config tuning. Balance simulator. Sneak Peek gate. Reserved HP lever. | Combat Design |
 
 
 ## Appendix A — Move Data Template
@@ -2328,7 +2342,7 @@ return {
     {
       id = "AxeBassSwing",
       key = 1,
-      tags = { "Rush" },
+      tags = { "Rush", "Extender", "Music" },
       startup = 10, active = 5, recovery = 20,     -- frames @60 Hz
       damage = 9, guardDamage = 30, chip = 0.2,
       hitstun = 30, knockback = { dist = 18, angle = 10, ragdoll = false },
@@ -2372,9 +2386,9 @@ A single source of truth, generated from the data files by a Lune script. Column
 | Term | Meaning |
 |---|---|
 | **Algebraic Meter** | 0–100 ultimate meter; full lets you **Go Algebraic** (Awakening) |
-| **Awakening** | 60 s powered state: heal 10, +1 Breakaway pip, 4 awakened moves, passive change |
+| **Awakening** | 60 s powered state: heal 10, +1 Breakaway pip, 4 awakened moves (the passive changes only where the kit says) |
 | **Breakaway** | 2-pip escape meter; break out of stun or ragdoll with i-frames (the genre's "evasive") |
-| **Choose Goose's Shop** | Rotating Treasure-only shop that sells specific styles (deterministic path) |
+| **Choose Goose's Shop** | Rotating Treasure-only shop that sells specific non-Cosmic styles (deterministic path) |
 | **Ender** | The 4th M1 hit; knockback, uppercut, downslam or side variants |
 | **Finale** | Cosmetic KO flourish; never locks the attacker |
 | **Flair** | Cosmetic finish rolled with every Wish (Standard → Glitched) |
