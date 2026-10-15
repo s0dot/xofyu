@@ -1,0 +1,31 @@
+{
+  "_readme": "Examples for connecting an MCP client to Roblox Studio's built-in MCP server (studio/mcp.md). Copy ONE variant's mcpServers block into your client's config. The server name must be exactly Roblox_Studio. For Claude Code prefer Quick connect or the CLI commands under claudeCodeCli (scope local). Do not commit a root .mcp.json; it is OS-specific and gitignored.",
+  "windows": {
+    "mcpServers": {
+      "Roblox_Studio": {
+        "command": "cmd.exe",
+        "args": ["/c", "%LOCALAPPDATA%\\Roblox\\mcp.bat"]
+      }
+    }
+  },
+  "macos": {
+    "mcpServers": {
+      "Roblox_Studio": {
+        "command": "/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"
+      }
+    }
+  },
+  "windowsPathWithSpaces": {
+    "mcpServers": {
+      "Roblox_Studio": {
+        "command": "cmd.exe",
+        "args": ["/c", "C:\\Users\\<Your Name>\\AppData\\Local\\Roblox\\mcp.bat"]
+      }
+    }
+  },
+  "claudeCodeCli": {
+    "windows": "claude mcp add --transport stdio --scope local Roblox_Studio -- cmd.exe /c %LOCALAPPDATA%\\Roblox\\mcp.bat",
+    "macos": "claude mcp add --transport stdio --scope local Roblox_Studio -- /Applications/RobloxStudio.app/Contents/MacOS/StudioMCP",
+    "verify": "claude mcp list"
+  }
+}

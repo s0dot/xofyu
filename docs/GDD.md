@@ -9,15 +9,15 @@
 | **Genre** | Battlegrounds PvP brawler (Jujutsu Shenanigans-style) with a rolling/collection meta-layer |
 | **Platform** | Roblox: mobile (iOS/Android), PC, Mac, Xbox, PlayStation. VR not supported at launch. |
 | **Target maturity** | Roblox **Mild** |
-| **Document version** | 1.1, first complete draft with editorial review applied |
-| **Date** | 12 October 2026 |
+| **Document version** | 1.2: adds the owner's IP decision and publish gate (§5.7–§5.8), the optional Character Look toggle and 2026 platform corrections |
+| **Date** | 15 October 2026 |
 | **Status** | Concept greenlight (entry to pre-production). M0 production gate: 4 Jan 2027 (§21.2). |
 
 > **How to read this document.**
-> - **Leadership:** read §1 (Executive Summary), §5 (IP strategy, decision required), §17.7 (business case) and §22 (risks).
+> - **Leadership:** read §1 (Executive Summary), §5 (IP strategy; the owner's decision and publish gate are in §5.8), §17.7 (business case) and §22 (risks).
 > - **Designers:** §6–§11.
 > - **Artists:** §12–§14.
-> - **Engineers:** §18.
+> - **Engineers:** §18. The step-by-step build plan for an AI agent working in Roblox Studio is the companion [Studio Build Spec](STUDIO_BUILD_SPEC.md).
 >
 > Values marked as tuning targets live in remote config and are expected to change. Facts about the market, the show and the Roblox platform come from research done in October 2026 (§2, Appendix E). Items still to verify are listed in Appendix F.
 
@@ -55,7 +55,6 @@
 - [Appendix F — Open Questions and Items to Verify](#appendix-f--open-questions-and-items-to-verify)
 
 ---
-
 
 ## 1. Executive Summary
 
@@ -99,18 +98,17 @@ That design is what makes rolling compatible with a fair PvP game. The research 
 
 **Business model:** cosmetic and convenience passes (genre-standard), Wish bundles (odds-disclosed and `PolicyService`-gated), an 8-week Adventure Pass, an "Algebraic Club" subscription, cheap private servers (paid out by Roblox Plus), and rewarded ads. No sale of combat power, ever.
 
-**Decision required now (§5).** *Adventure Time* is owned by Cartoon Network. Its parent, Warner Bros. Discovery, merged with Paramount into **Skydance** on 6 Oct 2026, so the IP now sits next to Paramount's Roblox program, the most active Western enforcer of fan games on Roblox. Research found **no Adventure Time listing in Roblox's License Manager**. Cartoon Network runs its own Roblox games, and the franchise is in active production (*Side Quests*, 2026; a film in development).
+**IP decision (§5.8).** *Adventure Time* is owned by Cartoon Network. Its parent, Warner Bros. Discovery, merged with Paramount into **Skydance** on 6 Oct 2026, so the IP now sits next to Paramount's Roblox program, the most documented Western enforcer of fan games on Roblox. Research found **no Adventure Time listing in Roblox's License Manager**. Cartoon Network runs its own Roblox games, and the franchise is in active production (*Side Quests*, 2026; a film in development).
 
-We recommend a **"license-ready, IP-separable" build**:
+The owner has chosen the JJS-style **Codename** approach for development. Any *public* Codename build must pass an informed-consent publish gate. Our recommendation is unchanged: a **"license-ready, IP-separable" build**:
 - pursue an official license with a playable vertical slice
 - keep every IP-bearing asset in a swappable skin layer
 - if no license exists by Alpha, launch on an original world with the same mechanics
-- do **not** publicly launch a monetized, unlicensed *Adventure Time* game; the takedown risk would wipe out the game, progress and revenue
+- do **not** publicly launch a monetized, unlicensed *Adventure Time* game unless the owner accepts the risk through the gate (§5.8). A takedown would wipe out the game, player progress and revenue (likelihood table in §5.7).
 
 **Team and budget (§21, §17.7).** The studio-quality target is ~42 people at Beta peak (39 core plus QA scale-up). Break-even at that size needs roughly **30K–65K average CCU** for a globally distributed team, or **70K–150K** if US-based. We recommend a **lean-plus-contractors** team (8–12 core) through Closed Beta and scaling only on retention data (D1 ≥ 35%, D7 ≥ 15% targets).
 
 **Top risks:** IP/licensing, genre saturation versus JJS/TSB, gacha perception in PvP, mobile performance with 20-player VFX, and the maturity of Roblox's new Server Authority netcode. Mitigations are in §22.
-
 
 ## 2. Research Summary
 
@@ -170,8 +168,7 @@ This section condenses the research behind the design. Full source lists are in 
 | Toxicity complaints center on teaming, kill-stealing and exploiters | Pile-on protection, a party cap of 2 in FFA, server-authoritative hits and the Ban API (§6, §16, §18) |
 | 2026 Roblox **PRI rules** require full per-item odds, live-updating pity and luck odds, no empty outcomes and PolicyService gating. PRIs are blocked for UK under-18s, all Australians, Brazilian minors and unverified Brazilian adults. | §8.8 compliance table: odds are generated from server config, restricted players get free and fixed-price paths only |
 | **Chat requires age checks** (Jan 2026). Roblox Kids/Select launched in June 2026. | A social layer that doesn't depend on chat (Quick-Chat, emotes, structured invites). Target the **Mild** label (§16). |
-| No *Adventure Time* license is listed on Roblox's License Manager. Cartoon Network runs first-party Roblox games, and the franchise is in active production (*Side Quests*, a film). | A **license-ready, IP-separable** build with an original-IP fallback, and no public unlicensed launch (§5) |
-
+| No *Adventure Time* license is listed on Roblox's License Manager. Cartoon Network runs first-party Roblox games, and the franchise is in active production (*Side Quests*, a film). | A **license-ready, IP-separable** build with an original-IP fallback, and no public unlicensed launch without the owner's informed consent (§5.8) |
 
 ## 3. Vision and Design Pillars
 
@@ -225,7 +222,6 @@ Every feature, asset and tuning change has to serve at least one pillar and brea
 | Sol's RNG | Rarity reveal theatre, long-tail cosmetic chase, luck boosts | Rolls feed a real game, not just a collection |
 | Shindo Life / Project Slayers | Style rolling with rarities, slots, spin economy | No power gating, generous pity, deterministic shop path |
 | Brawl Stars / Smash Bros. (off-platform) | Readable silhouettes, telegraphs, character fantasy in 4 moves | Roblox-native social and live-ops |
-
 
 ## 4. Game Structure and Core Loops
 
@@ -305,67 +301,204 @@ This is the JJS/TSB rhythm: **neutral → opener → combo → ender → reset**
 
 All places are in one Roblox *experience* (universe). Matchmaking uses MemoryStore queues and reserved-server teleports (§18).
 
-
 ## 5. IP, Licensing and Legal Strategy
 
-> **This is the most important business decision in the document, and it comes before any content production.** *Adventure Time* is owned by Cartoon Network Studios. Its parent, Warner Bros. Discovery, was reported in October 2026 to have completed a merger into Paramount ("Skydance"). The franchise is being actively produced. This section explains why the game must be built so it can ship **with or without** a license, and how to do that.
+> **This is the most important business decision in the document. It must be made before any public launch.**
 >
-> *Not legal advice. Engage entertainment/IP counsel before M0 (§21.2).*
+> *Adventure Time* (AT) is owned by Cartoon Network. Its parent, Warner Bros. Discovery, **completed its merger with Paramount on 6 October 2026**. The combined company is **Skydance** (NYSE: SKYD). The franchise is in active production and is actively licensed into games.
+>
+> This section covers four things:
+> - why the game is built so it can ship **with or without** a license;
+> - why the popular anime games are not a safe model for AT;
+> - what the owner has decided;
+> - how the build enforces that decision.
+>
+> *This is not legal advice. Engage entertainment/IP counsel before M0 (§21.2).*
 
-### 5.1 Facts that shape the decision (research as of Oct 2026)
+### 5.1 Facts that shape the decision (research as of 12 Oct 2026)
 
 | Fact | Implication |
 |---|---|
-| **No official *Adventure Time* game exists on Roblox**, and research found **no Warner Bros. Discovery / Cartoon Network listing in Roblox's License Manager catalog**. Absence is "not found," not confirmed; re-check the live catalog. | There is no off-the-shelf license to click "apply" on today. |
-| Cartoon Network **does run first-party Roblox games**: *Ben 10: Super Hero Time* (~557M visits), *Cartoon Network Game On!*, *Gumball Haunted House*. WBD executives have publicly called Roblox a brand-affinity channel. | The rights holder values Roblox **and** has products to protect. Historically, takedowns are most likely when a rights holder has a licensed or first-party product in the space. |
-| **The franchise is live:** *Fionna and Cake* S2 (Oct–Dec 2025); *Adventure Time: Side Quests* (US premiere 29 Jun 2026 on Disney+/Hulu; S2 from 2 Oct 2026); an *Adventure Time* feature film in development; *Heyo BMO* preschool spin-off in development. | There is a fresh young audience that matches Roblox's core demographic, so licensing appetite is plausible. Active production also means active brand policing. |
-| **Roblox License Manager** launched in July 2025 (Lionsgate, Netflix, Sega, Kodansha) and opened self-serve to eligible IP holders in November 2025. Rights holders take **0–95% (typically 10–25%)** of creator payouts automatically. Roblox **scans experiences for IP use** and can offer *reactive* licenses to existing unlicensed games. | There is a credible path for a rights holder to license the game *after* it exists. Conversely, the same scanning makes an unlicensed game easy to find. |
-| **Precedents for unlicensed fan games:** *Pokémon Brick Bronze* (removed after a Nintendo DMCA in 2018, with players demanding Robux refunds); *Shinobi Life 2* (Viz Media claim in 2020, relaunched as *Shindo Life*); *Anime Adventures / Anime Fighting Simulator* (taken private in Dec 2023 amid alleged DMCA claims tied to a licensed partner). | An unlicensed game can lose everything overnight: the game, Robux-backed progress, and community trust. |
-| **JJS's codenames** ("Vessel," "Honored One") are a **community convention, not a legal shield**. JJS has had no known rights-holder action, but it also still uses "Jujutsu" in its title. | Codenames reduce *trademark-style* confusion, but **character likeness, art and story elements are copyrighted** regardless of name. |
+| **Ownership.** The Paramount–WBD merger **closed on Tue 6 Oct 2026**. The combined company trades as **Skydance** (NYSE: SKYD), with David Ellison as chairman and CEO. **WB Games and Paramount Games Studio now sit under Tony Driscoll ("president of games and experiences")**. **Cartoon Network and Nickelodeon are to be combined operationally**; this is a reported plan, not yet confirmed as done. | AT's Roblox decisions will most likely be made by the same games-and-experiences organisation that runs **Paramount's Roblox program**. Integration churn may slow *licensing* through mid-2027. It is unlikely to slow *takedowns*, which standing brand-protection teams handle. |
+| **Paramount on Roblox, as licensor.** *Nickverse* ran Jul 2022 – Oct 2023. Gamefam made *SpongeBob Simulator* (Jan 2023) and *TMNT Battle Tycoon* (Aug 2023). Wonder Works made ***SpongeBob Tower Defense*** (Dec 2024), reported in Apr 2026 as **the highest-earning existing-IP game on Roblox**. | The new owner knows how to make money from its cartoon IP on Roblox through **curated partner studios**. An AT Roblox game by Skydance or a partner is plausible around the film or *Side Quests*. |
+| **Paramount on Roblox, as enforcer.** *The Spongy Construction Project* was removed after Paramount claims on **24 Jun 2022, 29 Jun 2023 and 20 Oct 2023**. The community wiki says Paramount struck **"numerous" Nickelodeon-referencing games, parodies included**. A CBS *Survivor* game was removed in Sep 2020. | AT now sits beside **the most documented Western fan-game enforcer on Roblox**. Our situation is closer to SpongeBob than to Jujutsu Shenanigans (JJS). |
+| **Cartoon Network on Roblox.** *Ben 10: Super Hero Time* launched in 2020 (260M+ visits in 2023-era coverage; the earlier "~557M" figure needs re-checking). *Cartoon Network Game On!* (Ben 10, Gumball and others) has **no AT island**. The Gumball experiences launched in May 2024. **No official AT Roblox game exists.** No AT, Cartoon Network or Skydance listing was found in **License Manager**; the live catalog needs a Creator Hub login to confirm. | The rights holder values Roblox and has products to protect. It also has an **empty AT slot** that it may want to fill itself. |
+| **AT is an actively licensed game property.** *Fortnite* Wave 1 went live **11 Apr 2025** (Finn, Jake, Princess Bubblegum and Marceline skins). Wave 2 followed on **15 Jan 2026** (Fionna, Cake and Lemongrab, per pre-release coverage). Finn and Jake were on the *MultiVersus* launch roster (online services closed 30 May 2025). *Brawlhalla* ran an AT crossover in 2019. | There is a commercial relationship with game platforms to protect. An unlicensed AT fighting game would **compete for a slot the owner licenses**. |
+| **Cartoon Network's own enforcement record on AT fan games is quiet.** No documented C&D or DMCA was found against an AT fan game. Small free AT fan games exist on itch.io. Warner Bros.' broader pattern: it tolerates non-commercial fan work and **acts on monetisation, crowdfunding or overlap with its own products** (a Harry Potter MMO crowdfund, *Dark Knight Legacy*, a Middle-earth Skyrim mod, *Mortal Kombat 1* mods). | Absence of reports is not a tolerance policy. A Robux-monetised game with paid rolls for kids' characters hits every commercial trigger. Old WBD behaviour is also no longer the best forecast; Skydance's is. |
+| **The franchise is live.** *Fionna and Cake* S2 ran Oct–Dec 2025. *Adventure Time: Side Quests* premiered in the US on 29 Jun 2026 on Disney+/Hulu, and S2 started 2 Oct 2026. A feature film is in development, and so is a *Heyo BMO* preschool spin-off. | A young audience that matches Roblox's core is plausible, and so is licensing appetite. Active production also means **active brand policing**. |
+| **Roblox enforcement is now cheap** [Roblox creator docs]. **Rights Manager** (since Mar 2024) lets any verified rights holder with a registered copyright or trademark request removal of **up to 250 links per request**, even without a Roblox presence. A DMCA counter-notice restores content in about 14 business days unless the claimant sues. **License Manager** (launched Jul 2025 with Lionsgate, Netflix, SEGA and Kodansha; self-serve reported from Nov 2025) works like this:<br>- An **IP family** is one primary keyword, plus secondary keywords (characters and places), plus **at least 10 approved images**.<br>- Roblox matches **public, actively played games daily, using the keywords and the images**. Match pages include Roblox-captured gameplay screenshots.<br>- The rights holder sends offers. A **standard offer auto-activates after 14 days** unless disputed, at a revenue share **the rights holder sets from 0 % to 95 %**.<br>- Early use of the IP can activate an agreement early.<br>- After two disputes, the docs name a DMCA claim as the rights holder's next step. | **Codenames defeat keyword matching only.** Image matching and Roblox's own screenshots still apply to a recognisable character. For an unlicensed AT game the realistic outcome is "**licence fee or takedown**", on terms we do not control. |
+| **Precedents for unlicensed fan games.**<br>- *Pokémon Brick Bronze*: Nintendo DMCA in 2018 (some sources say 2017); players demanded Robux refunds.<br>- *Shinobi Life 2*: Viz Media claim in Nov 2020; relaunched without the likeness as *Shindo Life*.<br>- *Anime Adventures* / *Anime Fighting Simulator*: taken private in Dec 2023 amid alleged claims tied to a licensed *My Hero Academia* partner.<br>- *Kaiju Universe*: Toho DMCA in Feb 2024.<br>- *Sonic Eclipse Online*: removed by SEGA after SEGA's licensed game launched.<br>- *My Little Pony: Fighting is Magic*: Hasbro C&D in 2013; reborn as the original-IP *Them's Fightin' Herds*. | An unlicensed game can lose everything overnight: the game, Robux-backed progress and community trust. **The games that survived did so by removing the likeness and keeping the mechanics.** |
+| **The law in one row.** Renaming defeats **trademark** confusion. **Copyright protects a recognisable character, place or scene whatever it is called or however it is redrawn.** In *Disney v. Characters for Hire* (2018) the trademark claim against renamed costumes failed but the copyright claim survived. In *DC Comics v. Towle* (2015) self-built replicas still infringed. **Mechanics are free to copy** (*Capcom v. Data East*, *DaVinci v. ZiKo*). Fair use does not realistically cover a monetised fan game. | Our combat, Wish and progression systems are ours. The characters, places, catchphrases and episode moments are not. The architecture separates the two (§5.3). |
 
 ### 5.2 The three tracks
 
 | | **Track A: Licensed** | **Track B: Original "inspired-by" IP** | **Track C: Unlicensed codename fan game** |
 |---|---|---|---|
-| What ships | Real names, likenesses, locations, catchphrases, possibly official VO | An original cartoon world with the same *tone* and an original cast built on the same archetypes | AT characters under JJS-style epithets ("The Hero," "Vampire Queen") |
-| Legal risk | Low (contractual) | Low (original work; avoid substantial similarity) | **High**: DMCA takedown at any time |
-| Audience pull | Highest (brand + fandom) | Lower; must earn its brand | High until removed |
+| What ships | Real names, likenesses, locations, catchphrases, possibly official VO | An original cartoon world with the same *tone*, and an original cast built on the same archetypes | AT characters under JJS-style epithets ("The Last Human", "The Vampire Queen") with redrawn, recognisable looks |
+| Skin pack in the build | `Canon` (locked until a licence is confirmed) | `Original` | `Codename` (the dev default) |
+| Legal risk | Low (contractual) | Low (original work; avoid substantial similarity) | **High**; see the likelihood table (§5.7) |
+| Audience pull | Highest (brand plus fandom) | Lower; must earn its brand | High until removed |
 | Cost / speed | Slower: approvals add ~2–3 weeks per content beat; royalty share | Fastest; full creative control | Fast, but everything is at risk |
-| Monetization safety | Safe | Safe | Unsafe: PRI revenue and progress can vanish, with refund backlash |
-| **Recommendation** | ✅ **Target** | ✅ **Fallback (and the default build architecture)** | ❌ **Do not launch publicly** |
+| Monetisation safety | Safe | Safe | Unsafe: PRI revenue and progress can vanish, with refund backlash |
+| **Recommendation** | ✅ **Target** | ✅ **Fallback, and the recommended pack for any public build** | ❌ **Not for public launch.** The owner may override this only through the informed-consent gate (§5.8). |
 
 ### 5.3 Recommended plan: "license-ready, IP-separable"
 
-1. **Build every system IP-separable from day one.** All IP-bearing content lives in a **data-driven skin layer**: names, likeness models, VO, catchphrases, map dressing, lore cards. The game's mechanics are original. Each Fighting Style is defined by an **IP-neutral archetype** (e.g., *Sword Hero*, *Stretchy Companion*, *Candy-Science Monarch*, *Vampire Rocker*, *Ice Wizard*). Swapping a skin pack swaps the franchise without touching combat code.
-2. **Approach the rights holder with the vertical slice (M1),** not with a pitch deck. Cartoon Network Games / WBD (Skydance) Global Consumer Products is the direct route. In parallel, monitor License Manager for an *Adventure Time* listing. Lead with:
-   - a playable Candy Kingdom slice with 6 faithful styles,
-   - the **"rarity is prestige, not power"** ethics stance and odds transparency (rights holders protecting a kids' brand care about this),
-   - Mild maturity compliance and the Kids/Select publishing plan (§16),
-   - a marketing tie-in calendar aligned with *Side Quests* seasons and the film.
-3. **Decision gate at Alpha (M2):** if no license term sheet exists, switch the skin layer to **Track B** (original IP, §5.5) and launch on schedule. Keep the door open for a later reactive license.
-4. **Never put Track C on a public, monetized server.** Internal playtests with AT placeholder art are fine. Public launch with paid Wishes on unlicensed IP is not.
+1. **Build every system IP-separable from day one.**
+   - All IP-bearing content lives in a **data-driven skin layer**: names, epithets, likeness models and Style Gear, palettes, VO, catchphrases, map dressing, lore cards and store copy.
+   - The mechanics are original.
+   - Each Fighting Style is defined by an **IP-neutral archetype** (*Sword Hero*, *Stretchy Companion*, *Candy-Science Monarch*, *Vampire Rocker*, *Ice Wizard*, …).
+   - Switching `Config.SkinPack` changes the franchise without touching combat code.
+   - The build spec (Part 8) defines the three packs, the lint and the publish gate.
+2. **Approach the rights holder with the vertical slice (M1), not a pitch deck.**
+   - The direct route is now **Skydance Games & Experiences** (Tony Driscoll's games-and-experiences organisation). In parallel, contact **Skydance consumer products** or the combined Cartoon Network–Nickelodeon kids group. The org chart is in flux after the 6 Oct 2026 close (Appendix F2).
+   - A pitch should mirror **Paramount's partner model** (Gamefam, Wonder Works): an established studio with **proven DAU**. That argues for **shipping Track B first and pitching with real metrics**. License Manager eligibility also gates on 7-day DAU (> 1,000 or > 25,000).
+   - Lead with:
+     - a playable Candy Kingdom slice with 6 faithful styles (the `Canon` pack in a private build);
+     - the **"rarity is prestige, not power"** ethics stance and odds transparency, which matter to a licensor protecting a kids' brand;
+     - Mild maturity compliance and the Kids/Select publishing plan (§16);
+     - a marketing tie-in calendar aligned with *Side Quests* seasons and the film.
+   - In parallel, watch License Manager for an AT listing. **Never "pre-use" AT content in a public place while a request is pending**, because early use can activate an agreement early.
+3. **Decision gate at Alpha (M2).** If no term sheet exists, launch on schedule with the `Original` pack (Track B, §5.5) and keep the door open for a later licence.
+4. **Do not put Track C on a public, monetised server.** Internal playtests with AT placeholder art in **private** places are fine. The owner's decision about public Codename use, and the gate that enforces informed consent, are in §5.8.
+5. **Trigger watch** (risk R1/R2). Every week the Producer checks four things:
+   - the License Manager catalog;
+   - news of an official or partner AT Roblox game;
+   - Skydance games and kids-unit announcements;
+   - the AT film and *Side Quests* marketing beats.
+   
+   **If an official AT Roblox game is announced, any AT-likeness content still in a public build is switched off immediately.** The build spec §8.6 gives the response playbook.
 
 ### 5.4 What a license would require from us (plan for it)
 
-- **Approval pipeline:** licensor review of every character model, animation set, VO line, map and marketing asset. Budget **2–3 extra weeks per content beat** and a dedicated licensing producer (part of the Producer role, §21.1).
-- **Brand guidelines:** official style guide, color references, logo usage, character "do's and don'ts" (for example, no character depicted doing something off-model).
-- **VO:** official cast or approved sound-alikes, under contract. **Never use AI voice cloning of the cast.**
-- **Music:** original score only, unless the license grants specific tracks.
-- **Revenue share:** model 10–25% of payouts (License Manager norm). Direct deals may include a minimum guarantee.
-- **Brand-safety commitments:** no casino imagery, Mild maturity, transparent odds, kid-safe social features. The design already meets all of these.
+- **Approval pipeline.** The licensor reviews every character model, animation set, VO line, map and marketing asset. Budget **2–3 extra weeks per content beat**, plus a dedicated licensing producer (part of the Producer role, §21.1).
+- **Brand guidelines.** The official style guide, colour references, logo usage, and character "do's and don'ts" (for example, no character depicted doing something off-model). Paid random rolls of kids' characters will get close brand-safety scrutiny.
+- **VO.** Official cast or approved talent, under contract. **Never use AI voice cloning of the cast.**
+- **Music.** Original score only, unless the licence grants specific tracks.
+- **Revenue share.**
+  - Through **License Manager**, the rights holder sets **0–95 %** of creator payouts. Secondary sources report about 10–25 % as typical; SEGA's *Like a Dragon* licence was reported at 50 % with a 1,000-DAU minimum.
+  - Direct deals, the more likely Paramount-style route, may add a minimum guarantee.
+  - Licensed games get Roblox's automatic **licensed badge**.
+- **Brand-safety commitments.** No casino imagery, Mild maturity, transparent odds, kid-safe social features. The design already meets all of these.
 
 ### 5.5 Track B fallback: same game, original world
 
-If the license fails, *Algebraic!* ships in an original world: the **"Land of Whatever,"** a candy-and-moss post-apocalyptic dreamland. Each archetype gets an original character with distinct silhouette, colors, name and lore. For example, the *Sword Hero* becomes a kid in a frog-ear hood with a seed-sword, and the *Stretchy Companion* becomes a rubbery capybara. Maps keep their *function* (a candy capital, an ice fortress, a lava kingdom, a demon dimension) with original landmarks.
+If the licence fails, *Algebraic!* ships in an **original world**. GDD drafts used the placeholder "Land of Whatever"; it mirrors "Land of Ooo", so the build spec proposes *The Patchwork Wilds*.
+- Each archetype gets an original character with its own silhouette, palette, name and lore. Examples: the *Sword Hero* becomes a kid in a frog-ear hood with a leaf-blade, and the *Stretchy Companion* becomes a rubbery capybara. The full Original pack is in the build spec §8.3.
+- Maps keep their **function** (a candy capital, an ice fortress, a lava kingdom, a demon dimension) but get original **landmarks**.
 
-**Avoid substantial similarity:** no copied silhouettes, no exact catchphrases, no recognizable locations like the Tree Fort.
+**Avoid substantial similarity.** No copied silhouettes, exact catchphrases, show-invented slang or recognisable locations like the Tree Fort. Every style, Variant, map landmark, lore card and thumbnail must pass the **recognisability test** before it ships:
+
+| Test | Fails if… |
+|---|---|
+| Silhouette | 2 or more of 5 AT-literate testers name an AT character from a 64 px black silhouette |
+| Palette + prop | A canon palette is combined with a canon signature prop (white bear-ear hat + blue shirt + sword; pink + crown; blue skin + crown + beard) |
+| Pairing | A canon relationship is recreated (boy hero + yellow stretchy dog; vampire rocker + candy monarch) |
+| Line | Any name, line or slang matches canon ("glob", "mathematical", "shmowzow") |
+| Place | A fan can name the AT location from a screenshot |
+| Episode | A move or quest restages a specific episode beat |
+
+The Track B production bible is written **independently from the archetypes**, not by find-and-replace on AT designs.
+
+Successful pivots followed the same path: *Shinobi Life 2* → *Shindo Life*, *MLP: Fighting is Magic* → *Them's Fightin' Herds*, and reportedly *Pokémon Brick Bronze*'s studio → the original *Loomian Legacy*.
 
 ### 5.6 How this document uses names
 
 This GDD uses **canonical Adventure Time names** throughout (Track A), because that is the target and it is the clearest way to communicate design intent. Every style in §7 also lists:
-- its **IP-neutral archetype** (Track B foundation), and
-- a **public epithet** in the JJS convention. Epithets are used in-game *even on Track A*, as playful style titles ("Finn — *The Last Human*"), and they double as the codename fallback for internal tests.
+- its **IP-neutral archetype** (the Track B foundation);
+- a **public epithet** in the JJS convention.
 
+The build never uses canonical names in code. It uses IP-neutral IDs (`hero`, `stretch`, `monarch`, …) and three **skin packs**:
+
+| Pack | Content | Status |
+|---|---|---|
+| **Canon** | Canonical names and §7.3 move names verbatim. On Track A the epithets also appear in-game as playful style titles ("Finn — *The Last Human*"). | **Locked** until a licence is confirmed |
+| **Codename** | §7.2 epithets as style names. §7.3 move names with canonical proper nouns and show slang removed (e.g. "GUNTER!" → "PENGUIN!"). Codename-safe place names ("The Candy Capital"). | **Development default**, per the owner's decision (§5.8) |
+| **Original** | Original names and looks built from the archetypes | Fallback for every string; recommended for public builds |
+
+### 5.7 Why the anime games survive — and why AT is different
+
+**The common belief:** games like JJS and *Blox Fruits* survive because they rename characters and avoid official art.
+
+**What actually happens:**
+- **Renaming does two things.** It defeats trademark-confusion claims, and it keeps a game out of brand searches and keyword scanning.
+- **Avoiding official art removes the easiest claim** (literal copying).
+- **Neither change makes a recognisable character non-infringing.**
+- **The bigger reason those games survive is who owns the IP.**
+
+| Factor | JJS | *Blox Fruits* | *Algebraic!* on the Codename pack (hypothetical public build) |
+|---|---|---|---|
+| What is borrowed | Movesets, VFX and "domain" concepts, mostly on the player's own avatar, with epithet names | Mostly an *idea* (eat a fruit, gain a power). Renamed pre-emptively in its 2019 "Anti-Copyright Update". | **Canon character likenesses**, locations, catchphrase-adjacent names and episode-specific moves |
+| Title | "Jujutsu", an ordinary word (the mark is "Jujutsu Kaisen") | Original | "Algebraic!", an AT catchphrase; clearance unknown (F11) |
+| Rights-holder type | Japanese publisher and production committee with a history of tolerating fan works; no competing Roblox product found | Same | **US studio with a kids' brand, the most documented Roblox enforcement record (Paramount), partner Roblox hits, and an active franchise** |
+| Monetisation tied to the IP | Light (cosmetics, early access) | Heavy, but tied to original items | **Wishes for character styles: paying for the IP itself** |
+| Detectability | Keyword-light | Keyword-light | Keyword-light, but **image-heavy** |
+| Documented rights-holder action | None found | None found | Precedents for this owner type: Spongy ×3, *Brick Bronze*, *Sonic Eclipse*, the *Anime Adventures* cluster |
+
+**Likelihood of at least one adverse rights-holder action within 12 months of public launch.** The action can be a DMCA or Rights Manager removal, a C&D, or a licence offer we cannot accept. Assumptions: monetised with paid Wishes, launched in 2027. These are judgement estimates from the precedents above, not statistics; read them as a gradient.
+
+| Scenario | Small (< ~500 CCU) | Breakout (~5k–50k CCU) | Hit + trigger event |
+|---|---|---|---|
+| (a) **Codename build.** Recognisable AT characters under epithets. No AT words in title, thumbnail or tags. No official assets. | **3–10 %** | **20–40 %** | **50–75 %** |
+| (b) As (a), plus "Adventure Time" (or Finn, Jake, Ooo) in title, thumbnail, tags, group or Discord | **10–20 %** | **40–60 %** | **70–90 %** |
+| (c) Ripped official art or audio | **20–40 %** | **60–85 %** | **85–95 %+** |
+| Reference: **Original build** (no AT likeness) | < 1 % | ~1–3 % | ~2–5 % |
+
+**Triggers that raise the risk** (strongest first):
+1. **An official or licensed AT Roblox game is announced or launched.** This is the pattern behind the Nickverse → Spongy, Gamefam MHA → *Anime Adventures* and *Sonic Speed Simulator* → *Sonic Eclipse* cases.
+2. AT is registered in License Manager or Rights Manager.
+3. Paid randomised rolls of kids' characters.
+4. Front-page scale and creator coverage.
+5. Press naming the brand. The press uses the real name even if we don't, so (a) drifts toward (b) as the game succeeds.
+6. Off-model or brand-unsafe content.
+7. AT-likeness UGC or merch-like items.
+8. Competitor reports.
+9. Post-merger portfolio clean-ups.
+
+**What lowers it inside Track C, without removing it:**
+- no AT words in any metadata;
+- no ripped assets;
+- no paid rolls;
+- staying small;
+- keeping AT placeholder builds in **private** places away from the production group.
+
+A **Character Look toggle does not change legal exposure** if the AT-likeness assets ship in the game.
+
+**What a removal would cost:**
+- the game;
+- Robux-backed player progress and refund goodwill;
+- the publishing group's standing under Roblox's repeat-infringer policy;
+- most likely, the chance of ever getting the licence.
+
+### 5.8 Owner's decision and the publish gate
+
+**The owner's decision (12 Oct 2026).** The owner wants an AT-themed game and considers the JJS approach sufficient: rename the characters and avoid official art. The build respects that decision without hiding the trade-off:
+
+| What the build does | How |
+|---|---|
+| **Codename is the development default** | `Config.SkinPack = "Codename"`. All milestone work runs in a **private** dev universe. |
+| **The IP posture is a config switch** | `Config.SkinPack` ∈ {`Codename`, `Original`, `Canon`}. The same code ships every track. A live ConfigService override (`ALG_SkinPack`) can switch names within minutes. |
+| **Public Codename needs informed consent** | The owner, never the agent, sets `Config.PublicCodenameAcknowledged = true` and signs `docs/agent/PUBLISH_ACK.md`. The file acknowledges the §5.7 risk. It confirms no AT words in title, description, tags, thumbnails, update names, product names, group, Discord or social handles. It confirms no ripped assets or fan-made AT assets. It records a monetisation choice; turning paid random items off is recommended. It holds an operations plan. It is valid for 90 days. Without it, a public server automatically falls back to the Original pack. |
+| **Canon needs a licence** | `Config.LicenseConfirmed = true`, a licence reference, and `docs/agent/LICENSE_CONFIRMATION.md`. Otherwise the Canon pack is stripped from every public build, and at runtime it resolves to Original. |
+| **Every public build passes the gate** | A string lint covers canon names, catchphrases, near-homophones and gambling terms in code, packs, metadata and AI prompts. The packs that are not in use are stripped. A Studio scan checks instance names and text. Asset provenance and recognisability sign-offs are checked. The human publishes; the agent never does. |
+| **Response playbook** | Triggers are watched weekly. If an official AT Roblox game appears or a licence offer arrives, a public Codename build switches to Original (ConfigService, then republish). The team **never** counter-notices AT content, and never lets a licence offer auto-activate by inaction. |
+
+**The recommendation is unchanged:**
+- stay **license-ready**;
+- use the **Original pack for every public build** unless the owner explicitly accepts the risk through the gate;
+- pursue a licence with real DAU behind the pitch.
+
+Separately, the title **"Algebraic!" is itself an AT catchphrase**. Counsel should run a clearance search, and a backup title list exists (build spec §8.7; F11).
+
+In M0 and M1-G no public build is possible anyway, because graybox placeholders block release (build spec Part 7). The gate is built and dry-run now so that the decision can be taken with evidence when the game is ready.
+
+**Sources** (October 2026; full lists in the research notes and Appendix E.2):
+- Roblox creator docs (snapshot 10 Oct 2026): `ip-licensing/license-manager`, `creators`, `get-started`, `faq`; `production/publishing/rights-manager`, `ip-guidelines`.
+- Merger and games integration: LBC, Irish News and Outlook India (6 Oct 2026); VGC and Shacknews (games divisions under Tony Driscoll); Cord Cutters News (Cartoon Network–Nickelodeon combination); Axios (6 Oct 2026).
+- AT licensing: Pocket Tactics and esports.net (Fortnite Wave 1, Apr 2025); esports.gg (Wave 2, Jan 2026); MultiVersus wiki and GamingBolt; Gematsu (Brawlhalla).
+- Paramount on Roblox: Spongy Construction Project wiki; Roblox wiki "Copyright and trademark infringement"; Pro Game Guides (Gamefam × Paramount); Variety via playday.one (*SpongeBob Tower Defense*, Apr 2026).
+- Precedents: Pro Game Guides (*Shinobi Life 2*); Pocket Tactics (*Anime Adventures*); Sportskeeda (*Brick Bronze*); Game Informer (*MLP: Fighting is Magic*).
+- Case law: Loeb & Loeb summaries of *Disney v. Characters for Hire* and *DC Comics v. Towle*. Counsel should verify the case citations before external use.
 
 ## 6. Combat System
 
@@ -556,7 +689,6 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 4. Can VFX be dimmed by the **"Reduced VFX"** setting *without hiding the hitbox*?
 5. Does it work identically on **mobile** (no precise aim requirements without aim assist)?
 6. Is its damage within the move band (§6.7) and its cooldown within its band?
-
 
 ## 7. Fighting Styles (Roster)
 
@@ -804,7 +936,6 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 - **Style Moment:** Giant Swing a target into another player.
 - **Variants:** Kara (*Islands*), Hyooman tribe chief.
 
-
 #### 7.3.9 Princess Bubblegum: *"The Candy Monarch"* (Rare)
 
 **Archetype:** Candy-Science Monarch · **Role:** summoner / zoner · **Difficulty:** ★★★★☆
@@ -945,7 +1076,6 @@ Legendary, Mythic and Cosmic styles carry a **Realm** as their awakened move 4. 
 
 - **Style Moment:** a charged arrow fired straight out of Leaf Fade.
 - **Variants:** Witch-hunt Huntress, *Fionna and Cake* S2 look.
-
 
 #### 7.3.15 The Lich: *"The Undying End"* (Legendary)
 
@@ -1100,7 +1230,6 @@ A Bond Move is balanced to equal the combined value of both players' signature m
 
 Also tie-ins with **Side Quests** (2026) young Finn and Jake as Variants, and a **Heyo BMO** Variant when that show launches.
 
-
 ## 8. The Wish System (rolling for Fighting Styles)
 
 ### 8.1 Design goals
@@ -1213,7 +1342,6 @@ Robux Wish bundles (§17.3) make every Wish a **Paid Random Item (PRI)** under R
 - **Spending guardrails:** a soft confirmation appears on the 4th Wish purchase within 24 hours, and a "spent this week" summary shows in the store. Wish offers are never shown right after a lost fight.
 - **Published audits:** a monthly community "Wish Report" compares the server's observed pull distribution with the configured odds.
 
-
 ## 9. Progression
 
 Progression has **five interlocking tracks**. Each has a different time horizon, and none of them grants combat power.
@@ -1279,7 +1407,6 @@ Each style has 2–4 **Variants**: canon alternate outfits or universes that cha
 ### 9.6 Achievements and titles
 
 Around 150 achievements, named with show catchphrases where licensed. Examples: *"Mathematical!"* (first Awakening), *"Algebraic!"* (10-hit combo), *"What Time Is It?"* (play on 7 consecutive days), *"Unacceptable!"* (get Perfect Blocked 100 times), *"Everything Burrito"* (own every style in a rarity tier). Achievements give titles and Collection Book stamps. Nothing affects power.
-
 
 ## 10. Game Modes and World Events
 
@@ -1350,7 +1477,6 @@ Around 150 achievements, named with show catchphrases where licensed. Examples: 
 - **Weekly Kingdom Quests** pool member progress and pay out Treasure and cosmetic crests.
 - **Kingdom Wars** (Season 1 onward): on weekends, every KO a member earns in Battlegrounds adds points to their Kingdom on a seasonal leaderboard. The top Kingdoms get a banner displayed in the Kingdom Keep hub and on the season map.
 - **Kingdom Keep:** a social place where members show off Flairs and emotes. It has a Collection museum and a **Hall of Cosmic Wishes** that lists every Cosmic pull.
-
 
 ## 11. Maps, Arenas and Seasonal World
 
@@ -1452,7 +1578,6 @@ Seasons are **8 weeks**, six per year. Two are **seasonal transformations** of e
 - **Lighting style:** Roblox `Lighting.LightingStyle = Soft` (a flatter look) as the base for every map, with `EnvironmentSpecularScale ≈ 0` and boosted ambient so the scene reads painted, not rendered. `Realistic` is only for showcase moments such as Fire Kingdom glow and Nightosphere set pieces, gated by device tier.
 - **Time of day:** Battlegrounds maps cycle **day → golden hour → night** over 45 minutes. Each phase has its own **color-model swap**: different painted textures and tints, not dynamic lights (§12.4). For example, night Candy Kingdom has candle-lit windows and a candy-zombie variant in Season 1.
 - **Weather:** map-scripted only (snow in the Ice Kingdom, ash in the Nightosphere, sun showers in the Grasslands), all particle-budgeted.
-
 
 ## 12. Art Direction
 
@@ -1558,7 +1683,6 @@ Blender → FBX (rigs, hulls, LODs) → Roblox Studio import (Asset Manager / Op
 - **Naming convention:** `STY_<Style>_<Asset>_<Variant>`, `MAP_<Map>_<Zone>_<Asset>`.
 - Every asset passes **silhouette review**, **mobile performance review** and (Track A) **licensor review** before merge.
 
-
 ## 13. Animation and VFX
 
 ### 13.1 Animation principles (from the show)
@@ -1618,7 +1742,6 @@ Ragdoll physics runs **client-side, cosmetic only**. The server owns position an
 - Beyond **160 studs**, only the telegraphs render.
 
 A **VFX scheduler** on the client degrades gracefully under load: it lowers emitter rates first and never drops telegraphs.
-
 
 ## 14. Audio
 
@@ -1682,7 +1805,6 @@ Highest to lowest:
 7. Ambience
 
 Ducking reduces music by 4 dB during your combos and by 8 dB during Realm casts. Loudness target is −16 LUFS integrated on mobile.
-
 
 ## 15. UI/UX, Controls and Onboarding
 
@@ -1773,7 +1895,6 @@ The goal is a player who has **landed a combo, felt an awakening, made a wish an
 - New players get **protected spawn** (no damage for 8 s, or until they attack) and a **"Rookie" nameplate** for the first 2 hours. Veterans earn no Treasure from killing Rookies more than twice per 10 minutes, which discourages spawn-farming newbies.
 - Every tutorial step can be skipped. Skipping still grants the 3 wishes.
 
-
 ## 16. Player Safety, Maturity and Accessibility
 
 ### 16.1 Content maturity target: **Mild**
@@ -1808,7 +1929,6 @@ The game must therefore be fully social **without chat**:
 - Server-side bans through the **Roblox Ban API** (`Players:BanAsync`), including alt-account detection where Roblox supports it.
 - **Anti-farming:** reduced Treasure for repeat kills on the same player, AFK detection that zeroes XP, and Rookie protections (all in §15.5).
 
-
 ### 16.3 Accessibility
 
 | Feature | Detail |
@@ -1823,7 +1943,6 @@ The game must therefore be fully social **without chat**:
 | **Input** | Full remapping; hold-to-toggle for block and run; mobile layout editor; one-hand mobile preset (moves on a radial wheel) |
 | **Cognitive** | "Simple HUD" preset; move tooltips with looping GIF previews in the Style Wheel; tutorials can be replayed from Training Grounds |
 | **Localization** | Launch: EN, ES, PT-BR, FR, DE, TR, ID, TH. Fan-favorite catchphrases keep a localized variant, using the official dub translation where licensed. |
-
 
 ## 17. Monetization and Economy
 
@@ -1940,7 +2059,6 @@ Creator net ≈ **22–28% of gross player spend** after Roblox's purchase prici
 A licensed track must also subtract the royalty (model 10–25%).
 
 **Recommendation:** staff to the lean-plus-contractors profile until Closed Beta retention data (§20) justifies scaling up.
-
 
 ## 18. Technical Design
 
@@ -2121,8 +2239,6 @@ The agent-executable build plan lives in **`docs/STUDIO_BUILD_SPEC.md`** and **`
 
 The plan covers milestones M0 (feel prototype) and M1-G (graybox vertical slice). Every step the agent cannot do is a human checklist item: Avatar Settings, `AuthorityMode`, asset publishing, product creation, prices and publishing.
 
-
-
 ## 19. Live Operations
 
 ### 19.1 Cadence
@@ -2179,7 +2295,6 @@ The plan covers milestones M0 (feel prototype) and M1-G (graybox vertical slice)
 - **Live-Ops Producer** owns the calendar. The **Data Analyst** owns the weekly balance and economy review. The **Community Manager** owns codes, patch notes and Discord.
 - **On-call:** an engineer rotation during the 48 h after every Saturday release. Error Report and Alerts webhook into the on-call channel. Rollbacks happen via restoring the previous ConfigService revision or place version, then a rolling restart.
 
-
 ## 20. Analytics, KPIs and Success Criteria
 
 ### 20.1 North-star metric
@@ -2231,7 +2346,6 @@ These are internal targets, not platform benchmarks. Compare against the **Creat
 | `perf_sample` (1% of clients) | `LogCustomEvent` | device_tier, fps_p50, fps_p5, memory_mb, vfx_degrade_level |
 
 **Privacy:** no personal data in analytics. All events are keyed by Roblox user ID through the platform API, and roll-ups stay within the rate limits (120 + 20 × CCU per minute).
-
 
 ## 21. Production Plan
 
@@ -2318,13 +2432,12 @@ If budget is constrained:
 - Outsource VFX packs and animations to vetted Roblox contractors. Keep combat design and engineering in-house: **feel is the product**.
 - Timeline: about 8–9 months to launch.
 
-
 ## 22. Risk Register
 
 | # | Risk | Likelihood | Impact | Mitigation | Owner |
 |---|---|---|---|---|---|
 | R1 | **IP: no license; a takedown or forced license offer on an unlicensed AT game** | High (if unlicensed and successful; see the §5.7 likelihood table) | Critical | Track A/B strategy (§5). Skin-pack architecture with a publish gate (build spec Part 8). The owner decides on public Codename use with informed consent. Legal counsel at M0. | Director + Producer |
-| R2 | **Licensor reorganization** (the Paramount–WBD "Skydance" merger closed 6 Oct 2026; Cartoon Network is being combined with Nickelodeon) stalls approval | Medium | High | Lead with a playable slice. Set a decision gate at Alpha with an automatic switch to Track B. Monitor License Manager listings. | Producer |
+| R2 | **Licensor reorganization** (the Paramount–WBD "Skydance" merger closed 6 Oct 2026; Cartoon Network and Nickelodeon are reported to be combining) stalls approval | Medium | High | Lead with a playable slice. Set a decision gate at Alpha with an automatic switch to Track B. Monitor License Manager listings. | Producer |
 | R3 | **Genre saturation**: JJS and TSB own the audience | High | High | Clear differentiation (art direction, Wishes + Flairs, Realms, duos, seasonal world). Target AT fans and RNG players, not just battlegrounds regulars. | Director |
 | R4 | **Gacha backlash / P2W perception** in a PvP game | Medium | High | Rarity ≠ power with *published* win-rate data. Training Grounds trials. Free rotation. Choose Goose deterministic path. Monthly Wish Report. | Systems Designer |
 | R5 | **PRI policy tightens further** or more regions restrict | Medium | Medium | All gating reads `PolicyService` (no hard-coded countries). A complete non-paid path. Cosmetic and pass revenue does not depend on Wishes. | Systems + Eng |
@@ -2337,7 +2450,6 @@ If budget is constrained:
 | R12 | **Age-check rules shrink social reach** | Medium | Low | Chat-independent social layer (Quick-Chat, emotes, structured invites) | UX |
 | R13 | **Kids/Select evaluation fails** (Mild label) | Low | Medium | Mild-compliant content rules (§16.1). No gambling imagery. Pre-review of Wish UI. | Producer |
 | R14 | **Balance volatility** across 18+ styles | High | Medium | Live config tuning. Balance simulator. Sneak Peek gate. Reserved HP lever. | Combat Design |
-
 
 ## Appendix A — Move Data Template
 
@@ -2423,7 +2535,6 @@ A single source of truth, generated from the data files by a Lune script. Column
 | **Wishmaker's Promise** | The pity system |
 | **WAF** | Weekly Active Fighters, the north-star metric |
 
-
 ## Appendix D — Episode Reference Index
 
 Every canon reference used in the design, grouped by series. Season numbers follow common broadcast numbering; post-S5 numbering varies between sources. **(v)** means verify before production (Appendix F9).
@@ -2501,7 +2612,6 @@ Every canon reference used in the design, grouped by series. Season numbers foll
 | "The Bear and the Rose" | *Fionna and Cake* S2 | Huntress Wizard *Variant Bloom* |
 | *Side Quests* | 2026 series | Young Finn and Jake Variants; storybook art reference |
 
-
 ## Appendix E — Research Sources
 
 Research was conducted in October 2026.
@@ -2549,5 +2659,3 @@ Research was conducted in October 2026.
 | F8 | JJS block durability and Black Flash mechanics (unverified in research) | Competitive parity checks | Combat Design |
 | F9 | Character lore details marked "verify" in §7 against licensor bible | Track A approvals | Narrative/IP liaison |
 | F10 | Roblox benchmark retention figures for the fighting genre | Calibrate §20 targets | Data Analyst |
-
-
