@@ -1,9 +1,5 @@
 [← Build spec index](../STUDIO_BUILD_SPEC.md) · **Part 6 of 8** · sections §6.x · Part 0 contracts (§0.x) are in the index file
 
-> ⚠️ **DRAFT — pre-review snapshot.** An editorial/technical review of this spec found ~200 issues and the fixed
-> v1.0 is still being prepared. **Agents: do not execute any task card beyond the P0 human-setup steps (H-01…H-12)
-> until this banner is gone.** Humans can start the one-time setup in Part 1 §1.2 now.
-
 ## 6. World, UI and presentation
 
 This part specifies everything the player sees and hears, and the places they fight in:
@@ -12,7 +8,7 @@ This part specifies everything the player sees and hears, and the places they fi
 - the client presentation layer: RenderController, AnimController, VfxController, SfxController, CameraController, the cosmetic ragdoll, and appearance rendering (Character Look modes, the Style Tell, UI-drawn faces);
 - the UI system (`UI/Create.luau`, `UI/Theme.luau`, every M1-G screen);
 - the placeholder audio map;
-- the `Defaults.Perf` config section (VFX and presentation budgets) and the values of `Defaults.Appearance`.
+- the `Defaults.Perf` config section (VFX and presentation budgets); `Defaults.Appearance` is owned by Part 5 §5.10 and includes the keys this part reads.
 
 **Relationship to other parts (binding).**
 - Part 3 owns the simulation and the RenderController *contract* (Part 3 §3.11.8): the transition table, the 15-frame undo rule, `RenderController.onRollback(f)`, and "no `GetAttributeChangedSignal` for one-shots". Part 3 also owns combat animation playback (`Adapter.animate` inside `BindToAnimation`). This part implements the render side and never writes HRP attributes.
@@ -21,7 +17,7 @@ This part specifies everything the player sees and hears, and the places they fi
 - Part 5 owns appearance data and replication (`AppearanceService`), Wish/Shop/Store semantics and payloads. This part renders them.
 
 **Conventions.**
-- Frames are 60 Hz. `fNow = Frames.fromTime(time())` sampled once per render step. `e = fNow − StF` (Part 3).
+- Frames are 60 Hz. `fNow = Frames.fromTime(time())` sampled once per render step. `e = fNow − StF` (Part 3) for the **local** character's view only; remote views, bots and carriers not owned by the local player use observation time `eR`/`ageR` (§6.6.1 "Timing per view").
 - Distances are studs, times seconds (`Sec` suffix). Map coordinates are **map-local**: relative to the map Model's origin (§6.1.1), with **+Y up, North = −Z, East = +X**. A centre `(x, y, z)` is a Part's `Position`.
 - UI sizes are **reference units** on the 1334 × 750 canvas (§6.9.3).
 - `(td)` marks a tuning default chosen here because the GDD gives no number. GDD numbers are cited "GDD §x.y" and never changed.
@@ -38,7 +34,8 @@ This part specifies everything the player sees and hears, and the places they fi
 | `src/StarterPlayerScripts/Controllers/RenderController, AnimController, VfxController, SfxController, CameraController, AppearanceController, HudController` | Presentation (§6.6–§6.8) |
 | Part 6 sections of `UiController.luau`, `SettingsController.luau`, `InputController.luau` | Screen router, toasts, settings application, touch layout (§6.9) |
 | `src/StarterPlayerScripts/UI/Create.luau`, `Theme.luau`, `Screens/*.luau` | UI system (§6.9) |
-| `Defaults.Perf` (complete) and `Defaults.Appearance` values in `src/Shared/Config/Defaults.luau` | §6.11 |
+| `Defaults.Perf` (complete) in `src/Shared/Config/Defaults.luau` (`Defaults.Appearance` is Part 5 §5.10's, including this part's keys) | §6.11 |
+| `tools/studio/map_stats.luau`, `tools/studio/export_anim.luau`, `tools/upload_anims.luau`, `tools/base64.luau`, `tests/core/upload_anims.spec.luau` | Map stats snippet (§6.1.9); animation upload pipeline, H-07 route (§6.6.9; built by conditional card T143) |
 | Specified here, implemented inside Part 3 files: `Movement.volumeEffect` (`Core/Movement.luau`), volume application (`Sim/Adapter.luau`), the world runtime block (`Services/CombatService.luau`) | §6.1.7, §6.1.8 |
 
 ---
@@ -56,6 +53,13 @@ Every map is a `Model` with fixed child folders. Ownership follows Part 1 §1.6.
 | `training` | `Workspace.Map.Training` (Model) | `BuildTraining` | `(2600, 0, 0)` | `Workspace.Map.Training` |
 
 The origins keep every pair of map footprints more than 2,000 studs apart (Part 2 §2.2), so StreamingEnabled never streams two maps to one client.
+
+**Root creation.** `Workspace.Map` is a **container** owned by `BuildAll`'s containers step (Part 1 §1.6.1, §1.6.6 step 0): a Folder stamped `AlgBuilder = "BuildAll"`, never pruned and never destroyed by `reset`. The map builders own only their Model under it and never prune or stamp the container:
+- `BuildMap_CandyKingdom`: `local root = Util.ensureRootOf(Util.ensureContainer(workspace, "Map", c), "CandyKingdom", "Model", NAME, c, opts.reset)`.
+- `BuildTraining`: `local root = Util.ensureRootOf(Util.ensureContainer(workspace, "Map", c), "Training", "Model", NAME, c, opts.reset)`.
+- `BuildArena`: `Workspace.Arena` is its own Folder root (`Util.ensureRoot`), and `DuelArena` is an owned child Model inside it.
+
+`Util.ensureContainer(parent, name, c, quiet?)` (Part 1 §1.6.4) finds or creates the Folder (stamped `AlgBuilder = "BuildAll"`, ignoring `reset`). The map builders call it with three arguments: if `Workspace.Map` was missing, `ensureContainer` itself adds the warning `container Workspace.Map missing; run BuildAll` to the builder's counter (only `BuildAll`'s containers step passes `quiet = true`); the map builder adds no second warning. Idempotency rule 2 (prune unproduced children) applies to the owned Model roots only, so `BuildMap_CandyKingdom` never deletes `Workspace.Map.Training` and vice versa.
 
 Children of each map Model (every name is fixed):
 
@@ -176,7 +180,7 @@ Gameplay-relevant kinds (`Breakable`, `Hazard`, `Spawn`, `Event`, `KillVolume`, 
 | `SpawnFor` | spawn Parts | string (MapId) | builder | Part 3 `pickSpawn`; the part's CFrame faces the map centre |
 | `HubId` | spawn Parts, Totem Models | string `"N"`/`"S"`/`"E"`/`"W"`/`"T"` | builder | Groups spawns with their hub |
 | `StyleTotem` | Totem Model and its `Pillar` part | boolean | builder | §6.3.6 |
-| `TotemRadius` | Totem Model | number | builder | 12 (td); also the ProximityPrompt `MaxActivationDistance` |
+| `TotemRadius` | Totem Model | number | builder (from `Progression.TotemRangeStuds`, 12, Part 5 §5.10) | Used **only** for the ProximityPrompt `MaxActivationDistance`. The server range rule is Part 5 §5.1.3 (distance from the requester's HRP to the Totem **Model pivot** ≤ `Progression.TotemRangeStuds`); the server never reads `TotemRadius` (§6.3.6) |
 | `Vol` | `Zones.Volumes` parts | string `"Spring"`/`"Slow"`/`"Boundary"` | builder | §6.1.7 |
 | `LaunchVy` / `SlowMult` / `Inward`, `BandStuds`, `MinMult` | volume parts | number / number / Vector3, number, number | builder | §6.1.7 |
 | `KillVolume` | `Zones.KillVolumes` parts | boolean | builder | §6.1.8 |
@@ -187,7 +191,7 @@ Gameplay-relevant kinds (`Breakable`, `Hazard`, `Spawn`, `Event`, `KillVolume`, 
 
 #### 6.1.5 Collision groups
 
-Part 3 §3.12.1 registers six groups. This part needs two more. They are added to `Combat/Hurtbox.ensureGroups()` (Part 3's single registration point) so the matrix is set in one place and persists in the place file (§6.13 item 2). That makes 8 of 32.
+Part 3 §3.12.1 lists all eight groups (8 of 32), and `Combat/Hurtbox.ensureGroups()` (Part 3's single registration point) registers them and sets the full matrix, so the matrix lives in one place and persists in the place file (§6.13 item 2). Two of the eight exist for this part; Part 6 adds no second registration point:
 
 | Group | Members | Collidable with | Why |
 |---|---|---|---|
@@ -212,7 +216,7 @@ Only `candy_kingdom` uses Terrain. The arena and Training are part-only.
   | `Sand` | `#E6EE9C` | Earldom border, hills |
   | `Rock` | `#CE93D8` | Decorative hills outside the boundary |
 
-- `Terrain.Decoration = false` (GDD §12.5: no realistic 3D grass).
+- **`Terrain.Decoration` is human-set at H-04** (unchecked; GDD §12.5: no realistic 3D grass). The property is tagged `NotScriptable` (`Terrain.yaml`), so no Luau (builder, command bar or `execute_luau`) can read or write it; the builder never touches it.
 - **No Terrain water.** The chocolate river is a part channel plus a `Slow` volume (§6.3.5). Swimming would change Humanoid state and physics under prediction.
 - Fill order (deterministic; a `reset` build first clears the full region with `Terrain:FillBlock(cf, size, Enum.Material.Air)`):
   1. `Grass` slab: `FillBlock` region x[−360, 360] × z[−360, 360], y[−4, 0].
@@ -221,7 +225,7 @@ Only `candy_kingdom` uses Terrain. The arena and Training are part-only.
   4. Hills: `FillBall` with `Sand`: centres `(−250,−6,150)` r 16, `(−180,−8,230)` r 18, `(−130,−6,160)` r 14, `(−240,−8,270)` r 16. Outside the boundary, `Rock` hills at the four corners `(±340, −10, ±340)` r 30.
 - Terrain voxels are not instances, so terrain writes do not increment `created`/`updated`. The idempotency test (Part 1 §1.6.8) still passes.
 
-**Verify:** `verify()` checks `Terrain:GetMaterialColor(m)` for the six materials (tolerance 1/255), `Terrain.Decoration == false`, and reads 6 sample voxels with `Terrain:ReadVoxels` (one per zone plus the plaza hole, which must be `Air`).
+**Verify:** `verify()` checks `Terrain:GetMaterialColor(m)` for the six materials (tolerance 1/255) and reads 6 sample voxels with `Terrain:ReadVoxels` (one per zone plus the plaza hole, which must be `Air`). It does **not** read `Terrain.Decoration` (NotScriptable); it adds the non-failing reminder line `[ALG][BUILD] reminder Terrain.Decoration is human-set at H-04 (NotScriptable)` to its output (not a problem string).
 
 #### 6.1.7 Predicted volumes (springs, chocolate river, soft boundary)
 
@@ -310,7 +314,7 @@ export type WorldApi = {
 
 **Void and kill volumes.** On each scan tick, for every ready roster entry (`Adapter.list()`) whose `St ≠ KO` and that has not already been killed this life:
 - if `root.Position.Y − mapOrigin.Y < map:GetAttribute("KillY")`, or the root is inside any `KillVolume` AABB of its map → `CombatService.killAsync(target, "environment")` once, and log `[ALG][World] void_kill rid=<n> map=<mapId>`.
-- KO credit: GDD §11.1 says hazards and environment KOs credit "the last attacker within 5 s". Part 3's general window is 10 s (`Streak.KoCreditWindowSec`, td). This part asks Part 3 to apply a 5 s window for `cause = "environment"` (§6.13 item 4).
+- KO credit: GDD §11.1 says hazards and environment KOs credit "the last attacker within 5 s". Part 3 owns the rule: `Combat.Streak.EnvKoCreditWindowSec = 5` (Part 3 §3.17) and §3.13.2 credit `lastHit.rid` for `killAsync(…, "environment")` only if `f − lastHit.f ≤ toFrames(EnvKoCreditWindowSec)` (the general 10 s `KoCreditWindowSec` applies to all other KOs). The world runtime only passes `cause = "environment"`; `Perf.World.Hazard` holds no credit window (§6.11, §6.13 item 4). Scenario `combat.env_ko_credit` (Part 3 §3.13 Verify).
 
 **Breakables.** A Breakable is a `Model` with `Breakable = true` holding pre-split chunk Parts (kind `Breakable`).
 
@@ -543,10 +547,10 @@ There are no cover or breakables within 30 studs of a hub centre, and no breakab
 - `Base`: Totem kind, Cylinder Ø4 × 1 at y 0.5.
 - `Pillar`: Totem kind, 2 × 8 × 2 at y 5. Attributes `StyleTotem = true`, `HubId`.
 - `Orb`: Decor Ball Ø3 at y 10.5. The client cycles its colour through the palettes of the viewer's owned styles at 1 Hz.
-- `ALG_TotemPrompt` (ProximityPrompt) under `Pillar`: `KeyboardKeyCode = Enum.KeyCode.E`, `GamepadKeyCode = Enum.KeyCode.DPadLeft` (free in Part 3's map), `HoldDuration = 0`, `MaxActivationDistance = 12`, `RequiresLineOfSight = false`, `ActionText = ""`, `ObjectText = ""`. The client fills the texts from `Skin.text("ui.totem.action")` / `Skin.text("ui.totem.object")`, because builders never write player-visible literals.
-- Model attributes `StyleTotem = true`, `HubId`, `TotemRadius = 12`.
+- `ALG_TotemPrompt` (ProximityPrompt) under `Pillar`: `KeyboardKeyCode = Enum.KeyCode.E`, `GamepadKeyCode = Enum.KeyCode.DPadLeft` (free in Part 3's map), `HoldDuration = 0`, `MaxActivationDistance = Progression.TotemRangeStuds` (12, Part 5 §5.10; read from `Defaults` the same way as `Perf.World`, rule 1 of §6.1.2), `RequiresLineOfSight = false`, `ActionText = ""`, `ObjectText = ""`. The client fills the texts from `Skin.text("ui.totem.action")` / `Skin.text("ui.totem.object")`, because builders never write player-visible literals.
+- Model attributes `StyleTotem = true`, `HubId`, `TotemRadius = Progression.TotemRangeStuds` (12). `TotemRadius` exists only to size the prompt (§6.1.4).
 - Client: `ProximityPromptService.PromptTriggered` with a prompt named `ALG_TotemPrompt` → `UiController.open("StyleWheel", {mode = "totem", hubId = …})`.
-- Server: StyleService infers a totem equip when the requester's root is within `TotemRadius` of a `StyleTotem` part of its current map and `CombatService.canTravel(player)` is true. A totem equip applies **now**: respawn at that hub (§6.13 item 8, Part 5).
+- Server (Part 5 §5.1.3 is canonical): StyleService treats an equip as a totem equip when the distance from the requester's HRP to a Totem **Model pivot** (`Totem_<id>:GetPivot().Position`) of its current map is ≤ `Progression.TotemRangeStuds` (12) and the swap gate passes (`CombatService.canTravel(player)`). A totem equip applies **now**: the swap respawns the player through Part 3's random safe spawn on the same map (not necessarily that totem's hub; Part 5 DES-3 pending) (§6.13 item 8).
 
 **Volumes** (`Zones.Volumes`; sorted by `Name` when cached):
 
@@ -571,7 +575,8 @@ Spring speeds (td) come from apex = v² / (2g) with g = 196.2 (Part 3 `Chassis.G
 | `Boundary_W/E` | Boundary | 4 × 200 × 620 | (∓306, 100, 0) | |
 | `FogWall_N/S/W/E` | Decor `#D1C4E9`, transparency 0.55 | 660 × 60 × 2 / 2 × 60 × 660 | (0, 30, ∓318), (∓318, 30, 0) | "Painted fog wall" (GDD §11.1) |
 | `Zones.KillVolumes.Kill_Under` | KillVolume | 800 × 10 × 800 | (0, −70, 0) | Map `KillY = −60` |
-| `Guardian_N`, `Guardian_S` (Models) | Cover `#F48FB1` | Base 12 × 6 × 12 at y 3; Ball Ø16 at y 14 | (−40, ·, −108), (40, ·, 108) | `GuardianStub = true`. GDD §11.2 A Gumball Guardians at two gates; the world event is a future hook (`Features.WorldEvent = false`) |
+| `Guardian_N`, `Guardian_S` (Models) | Cover `#F48FB1` | Base 12 × 6 × 12 at y 3; Ball Ø16 at y 14 | (−40, ·, −108), (40, ·, 108) | `GuardianStub = true`. GDD §11.2 A Gumball Guardians at two gates; the world event is a future hook (`Features.WorldEvent = false`). **Original look set:** see the variant row below |
+| `Guardian_N`, `Guardian_S` (Models), **Original look set** | Cover, default `Util.KIND.Cover` colour `#3A7BD5` (no pink) | Generic gate tower: `Tower` Block 12 × 22 × 12 at y 11, plus 4 `Merlon_<k>` Blocks 3 × 3 × 3 on the top corners (y 23.5, offsets ±4.5 in x and z): a crenellated top. **No head, no eye, no Ball** | same | Built instead of the row above when the look set is Original. `BuildMap_CandyKingdom.build(opts)` reads `opts.lookSet`, which defaults to `"Original"` when `Defaults.SkinPack == "Original"`, else `"Codename"` (same rule as `BuildTemplates`, Part 8 §8.5.6). Same Model names, `GuardianStub = true`, 5 parts per Model. The function (gate marker, event stub) is kept; the canon landmark is not |
 | `Zones.EventZones.Guardian_N/S` | Event | 30 × 1 × 30 | (0, 0.05, ∓120) | `EventZone = "guardian_n" / "guardian_s"` |
 | `Zones.EventZones.Inspection` | Event | 100 × 1 × 100 | (−210, 0.05, 230) | `EventZone = "inspection"` (GDD §11.2 A event trigger stub) |
 | `Earldom_Stone_<n>` (3) | Cover `#C0CA33`, `WallSplat` | 10 × 10 × 10 | (−200, 5, 140), (−150, 5, 280), (−270, 5, 210) | |
@@ -580,7 +585,7 @@ Spring speeds (td) come from apex = v² / (2g) with g = 196.2 (Part 3 `Chassis.G
 
 "Sugar-rush candies" (GDD §11.2 A) are a future hook. They need a pickup system that M1-G does not have.
 
-**Verify (§6.3):** `BuildMap_CandyKingdom.verify()` `{ok = true}` with: 16 spawns, 4 totems, 42 breakables (40 houses + 2 hatches), 11 springs, 1 slow volume, 4 boundary bands, 6 zones, the sightline audit clean, per-zone wall-splat and layer-2 checks passing, and ≤ 2,500 BaseParts. Scenarios `map.ck_zone_label` (teleport to one point per zone → HUD zone label shows `map.candy_kingdom.zone.<id>`), `map.ck_boundary_soft` (walk outward from (0, 0, 270): WalkSpeed falls to ≤ 3.6 at the wall, root never beyond z = 304), `map.ck_totem_prompt` (prompt within 12 studs; triggering it opens the Style Wheel in totem mode). MCP `screen_capture` ×3 for human review (H-10): plaza from the south ramp, the streets at head height, the gardens from a canopy.
+**Verify (§6.3):** `BuildMap_CandyKingdom.verify()` `{ok = true}` with: 16 spawns, 4 totems, 42 breakables (40 houses + 2 hatches), 11 springs, 1 slow volume, 4 boundary bands, 6 zones, the sightline audit clean, per-zone wall-splat and layer-2 checks passing, and ≤ 2,500 BaseParts; built with the Original look set, `Guardian_N/S` each hold the gate-tower parts (`Tower` + 4 `Merlon_<k>`) and no `Ball` part (Part 8 §8.5.6). Scenarios `map.ck_zone_label` (teleport to one point per zone → HUD zone label shows `map.candy_kingdom.zone.<id>`), `map.ck_boundary_soft` (walk outward from (0, 0, 270): WalkSpeed falls to ≤ 3.6 at the wall, root never beyond z = 304), `map.ck_totem_prompt` (prompt within 12 studs; triggering it opens the Style Wheel in totem mode). MCP `screen_capture` ×3 for human review (H-10): plaza from the south ramp, the streets at head height, the gardens from a canopy.
 
 ---
 
@@ -614,9 +619,9 @@ All Training UI lives in `UI/Screens/Hud.luau`, shown only while `Player.MapId =
 
 | Panel | Anchor / position (ref units) | Contents | Actions |
 |---|---|---|---|
-| `TrainingPanel` | left-middle `(0, 0.5)`, offset (16, 0), 300 × 380 | Nearest dummy slot (by distance to `DummyPoints`, ≤ 40 studs) with its current `Mode`; 5 mode buttons (`idle`, `block`, `perfect_block`, `m1_spam`, `dash_spam`; labels `ui.training.mode_<mode>`); [Try styles]; [Reset]; [Back to battle] | Mode → `Net.client.fire("Training.Dummy", {behavior = <mode>})` (Part 3 enum). [Try styles] → `UiController.open("StyleWheel", {mode = "trial"})`. [Reset] → `World.Travel {mapId = "training"}`. [Back] → `World.Travel {mapId = <battle map>}` (§6.2.2) |
+| `TrainingPanel` | left-middle `(0, 0.5)`, offset (16, 0), 300 × 380 | Nearest dummy slot (by distance to `DummyPoints`, ≤ 40 studs) with its current `Mode`; 5 mode buttons (`idle`, `block`, `perfect_block`, `m1_spam`, `dash_spam`; labels `ui.training.mode_<mode>`); a **Damage numbers** toggle (`ui.training.damage_numbers`); [Try styles]; [Reset]; [Back to battle] | Mode → `Net.client.fire("Training.Dummy", {behavior = <mode>})` (Part 3 enum). Damage numbers → `SettingsController.set("damageNumbers", not current)`. [Try styles] → `UiController.open("StyleWheel", {mode = "trial"})`. [Reset] → `World.Travel {mapId = "training"}`. [Back] → `World.Travel {mapId = <battle map>}` (§6.2.2) |
 | `FrameDataPanel` | right-middle `(1, 0.5)`, offset (−16, 0), 340 × 320 | Last action of the local player (below) | [Pin] keeps the panel open in Candy Kingdom only while in Studio (dev aid) |
-| Damage numbers | world BillboardGuis | Damage per contact (HP delta of the victim) | On by default in Training (GDD §15.3); elsewhere only if `simpleHud` is off and the accessibility toggle is on (§6.9.11) |
+| Damage numbers | world BillboardGuis | Damage per contact (HP delta of the victim) | **Off by default** (GDD §15.3: "off by default; can be enabled in Training Grounds and accessibility settings"). Shown when the settings key `damageNumbers` (boolean, default `false`, Part 2 §2.8.6) is true, in any map. Two toggles write that one key through `Settings.Set`: the `TrainingPanel` row `ui.training.damage_numbers` and Settings ▸ Accessibility `ui.settings.damage_numbers` (§6.9.9). RenderController reads it (§6.9.11); `Perf.Ui.DamageNumbersDefault = false` is the fallback before settings load |
 | Placards | world SurfaceGuis | `Skin.text("ui.training.slot", {n})` and the slot `Mode` | Updated on the `Mode` attribute change |
 
 **Frame-data readout.** Updated when the local character leaves an `ATTACK` state, and when a contact is observed. Data comes from the same source as `tools/export_framedata.luau` (GDD §18.9): the MoveDef (`Styles.forConfig(cfg).move(id)`) or Part 3's `Combat.M1` tables from the character's pinned config (`Runtime.at(CombatCfg)`).
@@ -626,7 +631,7 @@ All Training UI lives in `UI/Screens/Hud.luau`, shown only while `Player.MapId =
 | Name | `Skin.move(moveId)`, or `ui.training.m1_<sub>` / `ui.training.ender_<sub>` / `ui.training.dash_<sub>` |
 | Startup / Active / Recovery / Total (f) | MoveDef `startup/active/recovery`; M1 rows from `Combat.M1.Hits[n]`, `Ender`, `Air`, `Downslam`, `DashM1` |
 | On hit / on block (f) | `onHitAdv = hitstun − (A − 1) − R`, `onBlockAdv = blockstun − (A − 1) − R` (GDD Appendix B; same formula as Part 4 §4.6.4). For M1 hits the block advantage is `BlockAdv` from config |
-| Observed first contact | `e` at the local `Cnt` 0→1 transition (`hit @ e = <n>`). Should equal `startup` (shown red when it does not) |
+| Observed first contact | `HsF − StF`, read on the render frame where the local `Cnt` becomes non-zero (`hit @ e = <n>`). The contact patch sets `HsF = f + hs` and `StF = StF_old + hs` in the same step (Part 3 §3.5.6), so `HsF − StF = f − StF_old` is exactly the contact `e` on any frame during hitstop; `fNow − StF` would read `startup − hs` and must not be used. Should equal `startup` (shown red when it does not) |
 | Damage / combo | Victim HP delta for this action; the dummy's `CHits` and the combo total (max HP − HP at combo end) |
 | Cooldown | MoveDef `cooldown` (s) |
 
@@ -634,7 +639,7 @@ All Training UI lives in `UI/Screens/Hud.luau`, shown only while `Player.MapId =
 
 **Reset.** `World.Travel {mapId = "training"}` respawns at a Training spawn (HP, cooldowns and Breakaway reset by a new life). Part 3's `canTravel` blocks travel for 8 s after combat (`Chassis.CombatTagSec`). This part asks that travel **from `training` to `training`** skip the combat-tag check, keeping only the STUN/KO check (§6.13 item 6). Dummies reset themselves (Part 3 `Respawn.Dummy`).
 
-**Verify:** `BuildTraining.verify()` `{ok = true}` (100 tiles, 5 dummy points with `DummySlot` 1–5, 2 spawns, 1 totem). Scenarios `training.dummy_mode_ui` (pressing [Block] near slot 3 → slot 3 `Mode` attribute `"block"` within 0.5 s; placard text updates), `training.framedata_m1` (four M1 presses on an idle dummy → panel rows 6/3/12, 6/3/12, 7/3/13, 10/4/22 and observed contacts at e = 6, 6, 7, 10), `training.trial_equip` (select `monarch` → respawn with `EquippedStyle = "monarch"` in ≤ 6 s), `training.reset_travel` (Reset 2 s after hitting a dummy succeeds once §6.13 item 6 is implemented).
+**Verify:** `BuildTraining.verify()` `{ok = true}` (100 tiles, 5 dummy points with `DummySlot` 1–5, 2 spawns, 1 totem). Scenarios `training.dummy_mode_ui` (pressing [Block] near slot 3 → slot 3 `Mode` attribute `"block"` within 0.5 s; placard text updates), `training.framedata_m1` (four M1 presses on an idle dummy → panel rows 6/3/12, 6/3/12, 7/3/13, 10/4/22 and observed contacts at e = 6, 6, 7, 10), `training.trial_equip` (select `monarch` → respawn with `EquippedStyle = "monarch"` in ≤ 6 s), `training.damage_numbers_toggle` (fresh profile: hitting a dummy shows no damage BillboardGui; the panel toggle → `settings.damageNumbers == true` in the next delta and the next hit shows one; Settings ▸ Accessibility shows the same value), `training.reset_travel` (Reset 2 s after hitting a dummy succeeds once §6.13 item 6 is implemented).
 
 ---
 
@@ -680,13 +685,13 @@ RunService (client)
 ```
 
 Rules (all controllers in this section):
-1. Never write HRP attributes, constraint properties or Humanoid properties of any character. Presentation writes only client-local instances, `LocalTransparencyModifier`, and `Lighting`/`SoundService` locally.
+1. Never write HRP attributes, constraint properties or Humanoid properties of any character. Presentation writes only client-local instances, `LocalTransparencyModifier`, `Lighting`/`SoundService` locally, and the local `Animator.PreferLodEnabled` override on remote characters (§6.6.1 "Animator LOD").
 2. Never use `GetAttributeChangedSignal` for combat one-shots (Part 3 §3.11.8). Poll snapshots once per frame.
 3. Guard every render step with `if RunService:IsResimulating() then return end` (the resim replays sim steps only, but the guard is cheap and protects shared handlers).
 4. Effects started for **predicted** transitions (the local character's own state, or `Cnt` contact) are undoable within `UNDO_WINDOW = 15` frames (Part 3 `Render.UndoWindowFrames`; a constant, not config).
-5. No yields in render handlers (Part 2 §2.10.6). Asset loading (`ContentProvider:PreloadAsync`) runs in `task.spawn` at `start()`.
+5. No yields in render handlers (Part 2 §2.10 item 6). Asset loading (`ContentProvider:PreloadAsync`) runs in `task.spawn` at `start()`.
 6. All client-created instances live under `Workspace.ALG_Local` (Folder, created by RenderController `init()`; sub-folders `Vfx`, `Looks`, `Ragdolls`, `Debris`, `Sfx`). It never exists in Edit (`Verify` reports it as a leftover).
-7. Timing comes from **frame data, not animation markers.** Keyframe markers (Part 4 §4.6.1) are kept for artists and the timing-lock check only. The render side computes `e` and fires VFX/SFX/faces at the data-defined frames. This differs from Part 4 §4.2.0.7, which prefers markers with a frame-counter fallback (§6.14 item 5).
+7. Timing comes from **frame data, not animation markers.** Keyframe markers (Part 4 §4.6.1) are kept for artists and the timing-lock check only. The render side computes `e` (remote views: `eR`, §6.6.1) and fires VFX/SFX/faces at the data-defined frames. Part 4 §4.2.0.7 follows the same rule (decision D-03: clip markers exist only for the §4.6.4 timing-lock check); combat animations themselves are played by Part 3's `Adapter.animate` in `BindToAnimation` on both peers, never from RenderStepped and never gated on `IsResimulating()`.
 
 #### 6.6.1 RenderController
 
@@ -700,14 +705,25 @@ local Adapter = require(Shared.Sim.Adapter)
 local Frames = require(Shared.Core.Frames)
 
 export type Snap = {
-	St: number, StF: number, Sub: number, Cnt: number, HsF: number, HP: number, BkP: number, BkProg: number,
-	BkLockF: number, AwkF0: number, AwkEndF: number, RlmId: number, Flg: number, CFlags: number, CHits: number,
-	Grd: number, ProtF: number, Buffs: string, Debuffs: string, Kit: number,
+	St: number, StF: number, Sub: number, M1Idx: number, Cnt: number, HsF: number, HP: number, BkP: number,
+	BkProg: number, BkLockF: number, AwkF0: number, AwkEndF: number, RlmId: number, Flg: number, CFlags: number,
+	CHits: number, Grd: number, ProtF: number, Buffs: string, Debuffs: string, Kit: number,
 }
-export type Effect = { stF: number, st: number, startF: number, predicted: boolean, kind: string, stop: (fade: number?) -> () }
+export type Effect = {
+	actionId: number,          -- the view's action instance when the effect started (§6.6.1 "Action identity")
+	st: number, stF: number, startF: number,
+	endF: number?,             -- natural end frame of the effect state (StF + duration), when known
+	contactF: number?,         -- contact effects only: the frame of the Cnt 0→1/2 transition
+	predicted: boolean, kind: string, stop: (fade: number?) -> (),
+}
 export type CharView = {
 	model: Model, root: BasePart, rid: number, isLocal: boolean, isBot: boolean,
 	styleId: string, last: Snap?, cur: Snap?, effects: { Effect }, dist: number, lastHitF: number,
+	actionId: number,          -- +1 only on entry (St or Sub changed, or M1Idx for St = M1); never on a hitstop shift
+	entryStF: number,          -- StF observed at entry; StF − entryStF = accumulated hitstop shift
+	seenF: number,             -- fNow when this action (or reaction refresh) was first observed
+	firedMax: number,          -- highest one-shot threshold already fired for actionId (−1 after entry)
+	reachedActive: boolean,    -- the action reached its first active frame (telegraph is over)
 }
 export type RenderControllerApi = {
 	init: () -> (), start: () -> (),
@@ -728,8 +744,8 @@ local views: { [Model]: CharView } = {}
 local function read(root: BasePart): Snap
 	local a = root:GetAttributes()
 	return {
-		St = a.St or 1, StF = a.StF or 0, Sub = a.Sub or 0, Cnt = a.Cnt or 0, HsF = a.HsF or 0, HP = a.HP or 100,
-		BkP = a.BkP or 2, BkProg = a.BkProg or 0, BkLockF = a.BkLockF or 0, AwkF0 = a.AwkF0 or 0,
+		St = a.St or 1, StF = a.StF or 0, Sub = a.Sub or 0, M1Idx = a.M1Idx or 0, Cnt = a.Cnt or 0, HsF = a.HsF or 0,
+		HP = a.HP or 100, BkP = a.BkP or 2, BkProg = a.BkProg or 0, BkLockF = a.BkLockF or 0, AwkF0 = a.AwkF0 or 0,
 		AwkEndF = a.AwkEndF or 0, RlmId = a.RlmId or 0,
 		Flg = a.Flg or 0, CFlags = a.CFlags or 0, CHits = a.CHits or 0, Grd = a.Grd or 100, ProtF = a.ProtF or 0,
 		Buffs = a.Buffs or "", Debuffs = a.Debuffs or "", Kit = a.Kit or 0,
@@ -751,8 +767,10 @@ local function step(_dt: number)
 end
 
 function RenderController.onRollback(f: number)
-	-- Mark predicted effects with startF > f as unverified; the next step re-checks identity (St, StF):
-	-- if the identity is gone and the new StF <= effect.stF, stop the effect (Part 3 §3.11.8 undo rule).
+	-- Contact effects with contactF >= f are undone at once (the rollback rewound past the contact).
+	-- Other predicted effects with startF > f are marked unverified; the next step applies the undo rule
+	-- (§6.6.1 "Undo rule", Part 3 §3.11.8): stop when the actionId is gone and the new StF <= effect.stF,
+	-- or when the view entered a STUN/KO state before effect.endF, regardless of StF ordering.
 end
 
 function RenderController.start()
@@ -765,25 +783,43 @@ end
 return RenderController
 ```
 
-**Entry detection.** `entered = cur.St ≠ last.St or cur.Sub ≠ last.Sub`. `refreshed = same St and Sub and cur.StF > last.StF`. A refresh in an `ATTACK` state is the hitstop shift (Part 3 §3.5.6: the attacker's `StF += hs`) and is **ignored**. A refresh in `Hitstun`/`BlockStun`/`Stagger` replays the hit reaction. This avoids treating hitstop as a new action.
+**Entry detection** (Part 3 §3.11.8). Entry = `St` or `Sub` changed, or, for `St = M1`, `M1Idx` changed (under an `m1Chain` status M1 hits 4–5 reuse `Sub = 3`, Part 3 §3.5.1): `entered = cur.St ≠ last.St or cur.Sub ≠ last.Sub or (cur.St == S.M1 and cur.M1Idx ≠ last.M1Idx)`. `refreshed = same St, Sub (and M1Idx) and cur.StF > last.StF`. A refresh in an `ATTACK` state is the hitstop shift (Part 3 §3.5.6: the attacker's `StF += hs`) and is **ignored**. A refresh in `Hitstun`/`BlockStun`/`Stagger` is a hit refresh and replays the hit reaction. This avoids treating hitstop as a new action.
+
+**Action identity and one-shot keys.** Each view carries an action instance id `actionId`. It is incremented **only when `entered`**, never by an ATTACK refresh. On increment: `entryStF = cur.StF`, `seenF = fNow`, `firedMax = −1`, `reachedActive = false`. (A hit refresh in a STUN state only resets `seenF`, `entryStF` and the reaction one-shots.)
+- Every one-shot (swing, `def.vfx`/`def.sfx`, barrage hits, face changes, the M1 swing at `e = startup`) is keyed by **`(actionId, threshold)`**. It fires on the first render frame where the view's elapsed frame (`e` local, `eR` remote; below) is `≥ threshold`, and only when `threshold > firedMax`; then `firedMax = threshold`. A threshold `≤ firedMax` never fires again for the same `actionId`, so the hitstop shift (which drops `e` back by `hs`) cannot re-fire it.
+- The telegraph is drawn only while `cur.Cnt == 0` and `reachedActive == false`. `reachedActive` becomes true on the first frame where elapsed `≥ S` (the move's first active frame) and stays true for that `actionId`, so the telegraph never reappears during or after hitstop.
+
+**Timing per view.** Under Server Authority the client's `time()` is its predicted frame, which runs ahead of the server, while remote characters' attributes arrive about one RTT plus buffering later (Part 3 §3.11.8; creator-docs `server-authority`: other characters "render slightly in the past"). Using `fNow − StF` for them would put the first observation ~9–12 frames into the action at 150 ms, skipping 8–10f telegraphs (GDD §6.14: a tell is shown for ≥ 8f).
+- **Local view** (`isLocal == true`; predicted): `e = fNow − StF`.
+- **Remote views and bots** (`isLocal == false`): `eR = fNow − seenF − (cur.StF − entryStF)`. `seenF` is the render frame where the new `actionId` was first observed; subtracting the accumulated `StF` shift pauses `eR` during hitstop exactly like `e`. Telegraph windows and one-shot thresholds use `eR`. Other absolute-frame comparisons on a remote view (the `ProtF > fNow` shimmer, `AwkEndF`, `BkLockF` greying) use `fNow − lagR`, where `lagR = (seenF − entryStF)` is the view's observation lag measured at its last entry (0 for the local view).
+- **Carriers** (`Workspace.Sim` children): own carriers use `age = fNow − F0` (carrier attribute `F0`, Part 3 §3.11.5); carriers not owned by the local player use `ageR = fNow − seenF(carrier)`, where `seenF(carrier)` is the render frame of the carrier's `ChildAdded` observation. Carrier telegraphs keyed on `age < armF` / `age < flightF` (Part 4 §4.2.0.6) use `ageR` for them.
+
+**Undo rule** (Part 3 §3.11.8 contract; rule 4 of §6.6.0). Within `UNDO_WINDOW` (15f) of its start:
+- A **contact** effect (`Cnt` 0→1/2) is undone only if `Cnt` returns to 0 **while `actionId` is unchanged**, or if `RunService.Rollback` fires with a frame `≤ contactF`. A `Cnt` reset caused by entering a new action (an air M1 or Hop Cancel ~6–7f after contact) is **not** an undo.
+- Any **predicted** effect is undone when its `actionId` is gone and the new `StF ≤ effect.stF` (rollback), **or** when, within 15f, the view enters a `STUN` or `KO` state before the effect state's natural end (`effect.endF = StF + duration`), regardless of `StF` ordering (the server pre-empted the action with a same-frame hit: `StF = f + hs + 1` is larger).
+
+**Haptics** (GDD §18.4 "`HapticEffect` waveforms for hits on phones and pads"). RenderController `init()` creates one client-local `HapticEffect` `ALG_Haptic` under `Workspace.ALG_Local` with `Type = Enum.HapticEffectType.GameplayCollision` [Docs `HapticEffect.yaml`, `input/gamepad.md`]. It calls `ALG_Haptic:Play()` on the local attacker's `Cnt` 0→1 and on a local-victim `HP` decrease, at most once per 6 frames, only when `UserInputService.GamepadEnabled or UserInputService.TouchEnabled`, and never with Reduced Motion on. It is cosmetic and skipped while `IsResimulating()` like every render handler.
+
+**Animator LOD** (GDD §18.4; Part 3 §3.11.2 contract). The server sets `Animator.PreferLodEnabled = false` on every player and bot character at `Hurtbox.prepare`, so attacker startups (the telegraphs) are never LOD-throttled. Every 0.5 s, from the `ALG_Render` step (outside the sim; the property is not Sim-Access), RenderController overrides it locally on each **remote** view's Animator (other players and bots; never the local character): `false` when the view's root is within 60 studs of the current `Camera.CameraSubject`'s position, `true` beyond. It writes only when the value changes, and skips the pass while `IsResimulating()`.
 
 **Transition dispatch** (implements Part 3 §3.11.8; P = predicted for the local character):
 
 | Detect | P | Vfx | Sfx (§6.10) | Camera | Appearance / face | Notes |
 |---|---|---|---|---|---|---|
 | enter `M1`/`Ender` | yes | `vfx.<style>.m1` swing (Slash_Smear on the right hand) at e = startup | `sfx.<style>.m1` at e = startup | — | `grit` → `shout` at active | |
-| enter `Move` (Sub → slot) | yes | telegraph (§6.6.3) from `e = S − leadFrames` to `S − 1`; `def.vfx` at hitbox centre at `e ≥ S` (and at each `S + hitFrames[i] − 1` for barrages); `vfx.dash.puff` for Rush/Mobility | `sfx.tele.windup` at telegraph start if `damage > 10` (GDD §14.4); `def.sfx` at `e ≥ S` | — | `face.windup/active/recovery` from `Styles.anim(style)[slot].face` (Part 4) | One-shots keyed on `(StF, threshold)`, fired on the first frame where `e ≥ threshold` |
+| enter `Move` (Sub → slot) | yes | telegraph (§6.6.3) from `e = S − leadFrames` to `S − 1`; `def.vfx` at hitbox centre at `e ≥ S` (and at each `S + hitFrames[i] − 1` for barrages); `vfx.dash.puff` for Rush/Mobility | `sfx.tele.windup` at telegraph start if `damage > 10` (GDD §14.4); `def.sfx` at `e ≥ S` | — | `face.windup/active/recovery` from `Styles.anim(style)[slot].face` (Part 4) | One-shots keyed on `(actionId, threshold)`, fired on the first frame where `e ≥ threshold` (remote: `eR`) and `threshold > firedMax`; telegraph only while `Cnt == 0` and not `reachedActive` (see "Action identity") |
 | enter `Dash` / `TechRoll` | yes | `vfx.dash.puff` | `sfx.dash.whoosh` | — | — | |
 | enter `Block` | yes | `vfx.guard.bubble` (owner + everyone ≤ 40 studs) | `sfx.block.raise` | — | `block` | Bubble alpha follows `Grd` (0.2 → 0.6) |
-| `Cnt` 0→1 (local attacker) | yes | `vfx.hit.light` (M1) or `vfx.hit.heavy` (Ender/move) at hitbox centre; impact frame if `def.signature` (§6.6.6) | `sfx.hit.light`/`heavy`, pitch rising with the local combo count | `light` (M1) / `medium` (Ender/move); hitstop kick (§6.6.6) | — | Undo: `Cnt` back to 0 within 15f → fade |
+| `Cnt` 0→1 (local attacker) | yes | `vfx.hit.light` (M1) or `vfx.hit.heavy` (Ender/move) at hitbox centre; impact frame if `def.signature` (§6.6.6) | `sfx.hit.light`/`heavy`, pitch rising with the local combo count | `light` (M1) / `medium` (Ender/move); hitstop kick (§6.6.6) | — | Undo: `Cnt` back to 0 within 15f **with `actionId` unchanged**, or `Rollback` to a frame ≤ `contactF` → fade (a `Cnt` reset by a new action is not an undo). Haptic pulse (see "Haptics") |
 | `Cnt` 0→2 (blocked) | yes | `vfx.hit.block` | `sfx.hit.block` | `light` | — | |
-| victim `HP` decrease | no | Highlight hit flash (3f, §6.6.3); damage number (if enabled) | local victim: `sfx.vo.hurt` (throttled as a bark) | local victim: `light` if < 8 damage else `medium` | `hurt_light` / `hurt_heavy` | Combo counter update if this view is the focus target |
+| victim `HP` decrease | no | Highlight hit flash (3f, §6.6.3); damage number when the `damageNumbers` setting is true (§6.4.2, §6.9.11); local victim: haptic pulse | local victim: `sfx.vo.hurt` (throttled as a bark) | local victim: `light` if < 8 damage else `medium` | `hurt_light` / `hurt_heavy` | Combo counter update if this view is the focus target |
 | enter `Hitstun`/`Stagger`/`Launched`/`Grabbed` | no | — | — | — | `hurt_*` | |
 | `Flg` gains `PBHIT` (defender) | no | `vfx.pb.star` + gold outline flash (6f) | `sfx.block.perfect` (top priority after telegraphs, GDD §14.6) | `light` both | `perfect_block` | |
 | enter `GuardBroken` | no | `vfx.guard.break` | `sfx.guard.break` | `medium` if local | `dizzy` | |
 | enter `WallSplat` | no | `vfx.wallsplat.splat` at the wall contact (root + facing × −1.1) | `sfx.wallsplat.splat` | `medium` if local attacker/victim | `hurt_heavy` | |
 | enter `Ragdoll` | no | — | `sfx.ragdoll.land` on first landing (`Sub` 0→n) | — | — | Ragdoll presenter `begin` at e ≥ 12 (§6.7) |
-| leave `Ragdoll` | no | — | — | — | — | Presenter `finish` (blend back) |
+| leave `Ragdoll` → `Idle` | no | — | — | — | — | Presenter `finish(blend)` (wake-up, §6.7.1) |
+| leave `Ragdoll` → any other state except `KO`; or Ragdoll re-entry (`Sub` reset to 0, or `StF` increased) | no | — | — | — | — | Presenter `finish(instant)`, then the normal `begin` rule for a new Ragdoll (§6.7.1) |
 | enter `Breakaway` | yes | `vfx.breakaway.burst` | `sfx.breakaway.burst` | — | `determined` | Presenter `finish(instant)` |
 | enter `Awakening` | yes | `vfx.awaken.burst` + persistent `vfx.awaken.aura` (palette) | `sfx.awaken.sting` + bark `ui.vo.awaken` | local: 1.2 s cinematic (GDD §6.9) + `heavy`; others ≤ 30 studs: `medium` | `awaken` | Aura lives while `AwkF0 > 0` |
 | `AwkF0` > 0 → 0 | no | power-down puff | — | — | `neutral` | |
@@ -796,7 +832,7 @@ return RenderController
 
 **Focus target** (GDD §15.3 "current lock/last-hit target"): the view whose `HP` or `CHits` changed within 6 frames after the local attacker's `Cnt` 0→1, picked as the nearest such view in front of the attacker (dot > 0) within 15 studs. It is held for `Perf.Ui.FocusHoldSec` (4 s) after the last contact. HUD, nameplates and VFX LOD use it.
 
-**Verify:** scenarios `render.undo_spark` (Part 3), `render.no_attrchanged_oneshots` (Lune lint `render.no_attr_signal` on `RenderController.luau`: no `GetAttributeChangedSignal(` text), `render.hitstop_not_reentry` (local M1 hits a dummy → exactly one swing effect per M1 state despite the `StF` shift), `render.focus_target` (hit a dummy → `focusTarget()` is that dummy for 4 s).
+**Verify:** Lune lint `render.no_attr_signal` (on `RenderController.luau`: no `GetAttributeChangedSignal(` text; a Lune check, not a Studio scenario); scenarios `render.undo_spark` (Part 3), `render.hitstop_not_reentry` (local M1 hits a dummy → exactly one swing effect per M1 state despite the `StF` shift), `render.no_double_move_vfx` (`hero.3` hits a dummy → exactly one `vfx.hero.3` and one `sfx.hero.3` play, and no telegraph is drawn after the contact frame), `render.remote_telegraph_full` (under the Part 7 `M0Gate` net profile, ≈ 150 ms RTT: a bot uses `hero.2`; the observer client draws the Arc telegraph for 8 ± 1 render frames before the move's VFX), `render.focus_target` (hit a dummy → `focusTarget()` is that dummy for 4 s), `render.haptic_gate` (a test seam counts `ALG_Haptic:Play()` calls: gamepad emulation + one M1 contact → 1; with `reducedMotion = true` → 0; KBM-only → 0).
 
 #### 6.6.2 AnimController
 
@@ -845,7 +881,7 @@ export type Layer = "fx" | "telegraph"
 export type Tint = { core: Color3, mid: Color3, ink: Color3 }
 export type VfxSpec = {
 	key: string,                          -- Assets key, e.g. "vfx.hit.light" → "tpl:VFX/VFX_HitSpark_Light"
-	at: CFrame?, attach: BasePart?,       -- world placement, or weld to a part (auras)
+	at: CFrame?, attach: BasePart?,       -- world placement (stays anchored), or weld to a part (auras): un-anchored first (below)
 	owner: Model?,                        -- whose effect (LOD, tint, Flair, Reduced VFX opacity)
 	tint: Tint?, flair: string?, scale: number?, lifeSec: number?,
 	predicted: boolean?,                  -- registers with RenderController.trackEffect
@@ -864,6 +900,10 @@ export type VfxControllerApi = {
 	stats: () -> { emitters: number, particles: number, beamsTrails: number, highlights: number, level: number },
 }
 ```
+
+**Attached effects (`spec.attach`).** Every VFX template part is built anchored (§6.6.7), and welding an anchored part into a character makes it the assembly root and implicitly anchors the whole character [Docs `physics/assemblies.md`: "When one of an assembly's parts is anchored … all of the other parts become implicitly anchored with it"]. The predicted local character would then stop moving client-side and rubber-band. So when `spec.attach` is set, VfxController takes the pooled clone and, **before** parenting or welding it, sets on every `BasePart` descendant: `Anchored = false`, `Massless = true`, `CanCollide = false`, `CanQuery = false`, `CanTouch = false`, `CollisionGroup = "CosmeticNoQuery"`. It then positions the root at `spec.attach.CFrame` and welds it with one `WeldConstraint` (`Part0 = spec.attach`, `Part1 = <template root>`) parented under the clone. World-placed effects (`spec.at`) stay anchored. A pooled clone returned to the pool keeps its un-anchored flags and is re-anchored only if it is reused with `at` (pools are keyed per key and placement mode). This rule covers `vfx.awaken.aura`, `vfx.streak.aura`, `vfx.spawn.shimmer`, status visuals and the Style Tell ring (§6.8.4).
+
+**Perf sample sender** (GDD §20.4 `perf_sample`; Part 5 §5.8.3; Part 2 §2.7.4 row 18). While `Players.LocalPlayer:GetAttribute("PerfSampled") == true` (written by Telemetry at join; Part 2 §2.5.2), VfxController records `RenderStepped` dt into a ring covering `Runtime.get().Telemetry.PerfWindowSec` (120 s). Once per `Telemetry.PerfSendEverySec` (300 s), the first send only after the first full window, it computes fps P50 and P5 by nearest rank over `1/dt`, reads `Stats:GetTotalMemoryUsageMb()` [Docs `Stats.yaml`], and fires `Net.client.fire("Telemetry.Perf", {deviceTier = <current tier>, fpsP50 = …, fpsP5 = …, memoryMb = …, vfxDegradeLevel = <degrade level 0–5>})` (`TelPerfSample`). The work runs in the existing render step (no extra binding, no yields). When the attribute is false or absent, nothing is recorded or sent.
 
 **Palette and Flair.** The tint is `core = palette.accent`, `mid = palette.primary`, `ink = #1A1A1A` (Part 4 §4.7.1; GDD §13.4 three tones plus an ink rim). Emitters get `ColorSequence(core → mid)`; ink parts keep ink. The Flair overlay is applied to the owner's effects only and never changes shape (GDD §8.7, §13.4):
 
@@ -902,7 +942,7 @@ Telegraphs are never pooled out, never LOD'd, never reduced, never tinted by Fla
 | `impact` | Fill ink `#1A1A1A` at 0, outline `#FFFFFF`, `DepthMode = Occluded` | 2 (§6.6.6) |
 | `pulse` | Fill off, outline `#FFFFFF`, outline transparency 0 → 1 | 15 (Reduced Motion replacement) |
 
-**Verify:** scenario `vfx.budget_tiers` (spawn 30 hit sparks per frame from bots for 3 s at tier Low → `stats().emitters ≤ 120` and `particles ≤ 1500`; with Reduced VFX ≤ 48 / 600); `vfx.telegraph_never_reduced` (Reduced VFX + degrade level 5 → a move telegraph still renders with fill transparency 0.35); `vfx.highlight_cap` (20 simultaneous hits → never more than 12 Highlights with `Enabled = true`); `vfx.lod_distance` (an enemy effect at 120 studs uses `Lod1`; at 170 studs only its telegraph exists); Lune `theme.contrast` (ink vs `#F8BBD0` ≥ 4.5; ink vs `#3A2F3F` < 4.5 → white chosen).
+**Verify:** scenario `vfx.budget_tiers` (spawn 30 hit sparks per frame from bots for 3 s at tier Low → `stats().emitters ≤ 120` and `particles ≤ 1500`; with Reduced VFX ≤ 48 / 600); `vfx.telegraph_never_reduced` (Reduced VFX + degrade level 5 → a move telegraph still renders with fill transparency 0.35); `vfx.highlight_cap` (20 simultaneous hits → never more than 12 Highlights with `Enabled = true`); `vfx.lod_distance` (an enemy effect at 120 studs uses `Lod1`; at 170 studs only its telegraph exists); `vfx.attach_unanchored` (attach `vfx.awaken.aura` and the Style Tell ring to the local character → every attached `BasePart` has `Anchored == false` and `Massless == true`, `HRP.AssemblyRootPart == HRP`, `HRP.Anchored == false`, and a 2 s scripted walk moves the root ≥ 10 studs with `RunService:GetPredictionStatus(root)` still `Predicted`); `tel.perf_sample_sent` (Part 5 §5.8.3: seam `Telemetry._setPerfSampled(P, true)` with `setConfig Telemetry {"PerfWindowSec":5,"PerfSendEverySec":10}` → a `perf_sample` record within 15 s); Lune `theme.contrast` (ink vs `#F8BBD0` ≥ 4.5; ink vs `#3A2F3F` < 4.5 → white chosen).
 
 #### 6.6.4 SfxController
 
@@ -987,7 +1027,7 @@ end
 #### 6.6.7 `BuildVfxTemplates` (`ReplicatedStorage.VFX`)
 
 Every template is a Model named after its recipe. Rules:
-- An invisible root part `Anchor` (0.2 stud cube, `Transparency = 1`, `Anchored = true`, all collision/query/touch off, `CastShadow = false`, `CollisionGroup = "CosmeticNoQuery"`) with Attachments `A0`/`A1`, plus visual parts with the same flags.
+- An invisible root part `Anchor` (0.2 stud cube, `Transparency = 1`, `Anchored = true`, all collision/query/touch off, `CastShadow = false`, `CollisionGroup = "CosmeticNoQuery"`) with Attachments `A0`/`A1`, plus visual parts with the same flags. Templates stay anchored for world-placed (`at`) effects; VfxController un-anchors and sets `Massless = true` on every part of a clone **before** welding it to a character (`attach`, §6.6.3). Templates never contain welds or constraints to a character.
 - `LightInfluence = 0` on every ParticleEmitter, Beam and Trail. `LightEmission` only for magic (Beam_Magic, Awaken_Aura). Default particle texture only (agent-assets §2.6).
 - Root attributes `Recipe`, `Layer`, `Emitters`, `ParticlesEst`, `BeamsTrails`, `Lod1`, `Tintable`.
 - CSG at **Edit time only** (`GeometryService:SubtractAsync`, `UnionAsync`, `IntersectAsync`, `FragmentAsync`; security None, yields [Docs `GeometryService.yaml`]). Results are cached in the template and never computed at runtime.
@@ -1064,6 +1104,26 @@ Counts: M0 = 2 × 22 + 19 = 63 sequences; M1-G = 6 × 22 + 19 = 151.
 
 **Verify:** `BuildPlaceholderAnims.verify()` (count, unique `AssetKey`, `Frames` equals the last keyframe frame); Part 4 scenario `anim.placeholders_built`; MCP `search_game_tree` under `ReplicatedStorage.Anim` returns 151 KeyframeSequences in M1-G.
 
+#### 6.6.9 Animation upload pipeline (H-07 route)
+
+Placeholder KeyframeSequences only play in Studio until they are published (§0.5). Part 1 H-08 publishes them by hand; this pipeline is the alternative the owner may pick at T014 (Part 1 H-07 key; built by card **T143**, conditional: `skipped (H-08 chosen)` otherwise). The agent never creates products, never publishes the place, and never sees the key.
+
+| Step | Where | What |
+|---|---|---|
+| 1. Export | Studio, **Edit** datamodel: snippet `tools/studio/export_anim.luau` (ARGS `{key, offset?, len?}`; ≤ 1.5 KB) | Resolves `Assets.entry(key)` → `ReplicatedStorage.Anim.<Name>` (a KeyframeSequence). `local buf = SerializationService:SerializeInstancesAsync({seq})` (returns a `buffer` of `.rbxm` content; yields; usable from plugins, so from `execute_luau`) [Docs `SerializationService.yaml`]. Base64-encodes the bytes `[offset, offset + len)` with a small pure-Luau encoder over `buffer.readu8` (not `HttpService:JSONEncode(buffer)`, which may compress). Returns `{ok, key, size = buffer.len(buf), offset, b64}` as JSON. Read-only: it changes nothing in the place |
+| 2. Save | Host (agent) | The agent writes the returned `b64` chunks, in order, to `build/anims/<key>.b64` (`build/` is git-ignored, Part 1 §1.2.7) and records `size`. Chunk length is fixed by spike S-P6-14 (default one chunk) |
+| 3. Upload | Host: Lune `tools/upload_anims.luau [--only <key>]` | Reads `ALG_OPEN_CLOUD_API_KEY` from `process.env` and **never prints, logs or writes it** (missing → `[ALG][CHECK] upload_anims FAIL missing ALG_OPEN_CLOUD_API_KEY`, exit 1). Reads `groupId` from `docs/agent/dev-place.json`. For each `build/anims/*.b64` without a line in `build/anims/ids.txt`: decode base64 (pure Luau) → `build/anims/<key>.rbxm` (byte length must equal the recorded `size`), then `POST https://apis.roblox.com/assets/v1/assets` with header `x-api-key` and a `multipart/form-data` body: part `request` = `{"assetType":"Animation","displayName":"<key>","description":"Algebraic placeholder","creationContext":{"creator":{"groupId":"<groupId>"}}}`, part `fileContent` = the `.rbxm` bytes with content type `model/x-rbxm` [Docs `cloud/guides/usage-assets.md`: Animation accepts `.rbxm`, `model/x-rbxm`]. The response `{"path":"operations/<id>"}` is polled with `GET https://apis.roblox.com/assets/v1/operations/<id>` every 2 s up to 60 s (td) until `done == true`; then `response.assetId` is appended to `build/anims/ids.txt` as `key=id`. One upload at a time, ≥ 1 s apart (td). Prints `[ALG][CHECK] upload_anims key=<key> id=<id>` or `… FAIL key=<key> reason=<status message>`; finally `[ALG][CHECK] upload_anims SUMMARY ok=<n> fail=<m>` |
+| 4. Patch | Host (agent) | For each `key=id` line, the agent edits `src/Shared/Assets.luau`: `id = "rbxassetid://<id>"`, `status = "placeholder"` (content is still placeholder), `source = "agent"`, `kind = "anim"`. Then the host gate and the sync gate |
+
+Rules:
+- **Every run of step 3 is human-approved.** The tool refuses to upload unless invoked with `--approve <n>` where `n` equals the number of pending keys it prints in a dry pass without the flag (so the human sees exactly what will be uploaded). Part 1's example permissions file keeps `lune run tools/upload_anims.luau` on **ask** (§6.13 item 23).
+- The uploaded clips belong to the **dev group** only (Part 8 §8.2.6: production assets are re-uploaded at release).
+- `lint_rules` `secrets` covers `tools/upload_anims.luau`; the env var name is the only key-related literal in it.
+- The tool writes `build/anims/<key>.rbxm` and `ids.txt` only through `tools/lib/SafeWrite.luau` (Part 8 §8.4.5; Lune `ip.no_tool_writes_signed_files` scans `tools/**`).
+- Re-running is idempotent: keys already in `ids.txt` are skipped. A failed key is retried only on the next approved run.
+
+**Verify:** spike **S-P6-14** (export size vs the `execute_luau` result limit and the 2 KB payload cap: in T143 export the shortest and the longest existing clip (`anim.common.*`; `anim.hero.m1_1` does not exist before T174, which repeats the check on it); pass when one chunk round-trips byte-exactly, i.e. the decoded `.rbxm` length equals `size`; otherwise set the chunk length so every call returns ≤ the measured limit; if neither works, fall back to H-08 and mark T143 `skipped`). Lune `anims.base64_roundtrip` in `tests/core/upload_anims.spec.luau` (pure helper `tools/base64.luau`, loaded with `@tools/`, used by `upload_anims.luau`; encoding then decoding a 3-byte, a 4-byte and a 1 KB seeded-random buffer is lossless); Lune `anims.upload_refuses_without_approve` (a dry pass with a fake key prints the pending count and makes no request). After a real run (T143): `[ALG][CHECK] upload_anims SUMMARY ok=<n> fail=0`, `Assets.isPlaceholder` unchanged, and a two-client playtest plays an uploaded clip on the observer (`AnimationTrack.IsPlaying` true on the remote rig; in T143 an `anim.common.*` clip, from T174 also `anim.hero.m1_1`).
+
 ---
 
 ### 6.7 Cosmetic ragdoll presenter
@@ -1077,8 +1137,8 @@ GDD §13.3: a hybrid ragdoll. The authored tumble (10–14f) plays first, then a
 | Tumble | enter `Ragdoll` | Nothing here: `Adapter.animate` plays `anim.common.tumble` for the first 12 frames (`Combat.Ragdoll.TumbleAnimFrames`, Part 3) |
 | Begin | `St == Ragdoll` and `e ≥ Perf.Ragdoll.TumbleSwitchFrames` (12) | If the view is within `Perf.Ragdoll.LodStuds` (120) and the active ragdoll count < `Perf.Tiers[tier].MaxRagdolls` (4 / 8 / 12): build the clone (§6.7.2). Otherwise keep the tumble pose (no physics) |
 | Simulate | each frame | `AlignPosition` on the clone's `LowerTorso` pulls toward `root.Position − (0, Perf.Ragdoll.FloorOffset, 0)` in **XZ only** (`ForceLimitMode = PerAxis`, `MaxAxesForce = (F, 0, F)` with `F = AlignForcePerMass × clone mass`, `Responsiveness = 25`). The flop never drifts from the authoritative hurtbox; gravity handles Y |
-| Finish (blend) | leave `Ragdoll` to `Idle` (wake-up) | Anchor every clone part; over `GetUpBlendSec` (0.25 s) lerp each clone part's CFrame from its captured pose to the matching real (or proxy) part's live CFrame; then destroy the clone, restore visibility, and `AnimController.play(model, "anim.common.getup", {speed = 24 / (GetUpBlendSec × 60)})` |
-| Finish (instant) | leave `Ragdoll` to `Breakaway`, `TechRoll` or `ShakeOff` | Destroy the clone and restore at once; the burst or roll VFX hides the pop |
+| Finish (blend) | leaving `Ragdoll` to `Idle` (wake-up) | Anchor every clone part; over `GetUpBlendSec` (0.25 s) lerp each clone part's CFrame from its captured pose to the matching real (or proxy) part's live CFrame; then destroy the clone, restore visibility, and `AnimController.play(model, "anim.common.getup", {speed = 24 / (GetUpBlendSec × 60)})` |
+| Finish (instant) | leaving `Ragdoll` to **any other state except `KO`**: `WallSplat` (it can start at e < 18 while the clone exists from e ≥ 12), `Hitstun`, `Launched`, `Stagger`, `Grabbed`, `Breakaway`, `TechRoll`, `ShakeOff`; **and** a Ragdoll re-entry (still `Ragdoll` but `Sub` reset to 0 or `StF` increased: a juggle hit on an airborne ragdolled victim, or `WallSplat` → `Ragdoll`) | Destroy the clone and restore visibility at once (the new state's VFX/animation hides the pop). On a re-entry the presenter then runs `begin` again under the normal rule (`e ≥ 12` of the new Ragdoll). `begin` never runs on a view that still has a clone: it first calls `finish(instant)` |
 | KO | `KO` while ragdolled | Keep the clone until the poof at `BodyHideSec`, then destroy |
 | Safety | clone age > `MaxLifeSec` (6 s), or the model is removed | Destroy and restore |
 
@@ -1146,7 +1206,7 @@ end
 - The face `SurfaceGui` travels with the cloned head, so expressions keep working (`ko`, `hurt_heavy`).
 - Under Server Authority, client-created unanchored parts are simulated locally; this is spike S-P6-9.
 
-**Verify:** scenario `ragdoll.clone_lifecycle` (bot Ender on a dummy within 30 studs: a clone Model appears under `ALG_Local.Ragdolls` 12 ± 2 frames after `Ragdoll` entry; every clone part has `CanQuery == false` and `CollisionGroup == "RagdollFx"`; it is gone ≤ 0.3 s after the dummy's `Ragdoll` ends; the real rig's parts have `LocalTransparencyModifier == 0` again); `ragdoll.cap` (6 dummies ragdolled at once at tier Low → ≤ 4 clones); `ragdoll.no_misprediction` (the local player is ragdolled 10 times; the Part 7 misprediction log shows no entries attributable to `RagdollFx` parts).
+**Verify:** scenario `ragdoll.clone_lifecycle` (bot Ender on a dummy within 30 studs: a clone Model appears under `ALG_Local.Ragdolls` 12 ± 2 frames after `Ragdoll` entry; every clone part has `CanQuery == false` and `CollisionGroup == "RagdollFx"`; it is gone ≤ 0.3 s after the dummy's `Ragdoll` ends; the real rig's parts have `LocalTransparencyModifier == 0` again); `ragdoll.cap` (6 dummies ragdolled at once at tier Low → ≤ 4 clones); `ragdoll.wallsplat_handoff` (Training: an Ender toward `SplatWall` from 18 studs, splat at e ≈ 14 → on the first render frame where the dummy's `St == WallSplat`, or the next one, no clone exists under `ALG_Local.Ragdolls` for it and its real rig parts have `LocalTransparencyModifier == 0`); `ragdoll.juggle_rebegin` (a Ragdoll refresh by an air hit → the old clone is destroyed at once and at most one clone exists per view at any time); `ragdoll.no_misprediction` (the local player is ragdolled 10 times; the Part 7 misprediction log shows no entries attributable to `RagdollFx` parts).
 
 ---
 
@@ -1184,12 +1244,16 @@ The local player's own character uses `AsChosen` regardless of `OthersAppearance
 
 | Mode | Body | Props | Face | Source |
 |---|---|---|---|---|
-| `Character` | Proxy rig (§6.8.3) in the style palette: torso `primary`, limbs `secondary`, head `secondary` | **Always** the style's Style Gear (`StyleDef.kitProps` → `model.<style>.gear_*`, Part 4 §4.7.4): the "signature read" (GDD §12.3) | UI face (§6.8.5), expressions on | GDD §12.3 "Character Look On" |
-| `Oosona` | Proxy rig in `OosonaSpec.color`; species props; hat and outfit props | Style Gear if `ShowStyleGear` | UI face, variant `OosonaSpec.face` | GDD §12.3 "Ooo-sona" |
+| `Character` | Proxy rig (§6.8.3) in the palette `Theme.stylePalette(styleId, variantId)` (§6.9.4; `variantId` = the owner's `Variant` attribute, `""` = base): torso `primary`, limbs `secondary`, head `secondary` | **Always** the style's Style Gear (`StyleDef.kitProps` → `model.<style>.gear_*`, Part 4 §4.7.4): the "signature read" (GDD §12.3). Gear colours also come from `Theme.stylePalette(styleId, variantId)` | UI face (§6.8.5), expressions on | GDD §12.3 "Character Look On" |
+| `Oosona` | Proxy rig in the Part 5 §5.7.1 three-colour rule: head and arms `Appearance.OosonaSpecies[spec.species].skin`; torso `spec.color`; legs `Appearance.OutfitColors[spec.outfit]`, or `spec.color` darkened by `Appearance.NoOutfitDarken` (0.65) when `outfit = 0`. Species props (by `OosonaSpecies[spec.species].id`); hat and outfit props | Style Gear if `ShowStyleGear` | UI face, variant `OosonaSpec.face` | GDD §12.3 "Ooo-sona"; Part 5 §5.7.1 |
 | `Avatar` | The real Roblox avatar as loaded (no proxies) | Style Gear if `ShowStyleGear`, attached to the real parts | The avatar's own face (UI face hidden) | GDD §12.3 "Roblox Avatar". The toon post-process is a future hook |
-| `Simplified` | Proxy rig: torso `primary`, limbs `primary` × `SimplifiedLimbShade` (0.75), head `secondary` | None | UI face, `neutral` only | §0.4 viewer override; Part 4 §4.7.6 |
+| `Simplified` | Proxy rig: torso `primary`, limbs `primary` × `Appearance.SimplifiedLimbShade` (0.75, Part 5 §5.10), head `secondary` (palette from `Theme.stylePalette(styleId, variantId)`) | None | UI face, `neutral` only | §0.4 viewer override; Part 4 §4.7.6 |
 
 All modes keep the **Style Tell** (§6.8.4). The hurtbox is never touched (§0.4, GDD §6.2).
+
+**Variants (graybox render).** A Variant is a palette change only; shapes never change (GDD §8.7). `Theme.stylePalette(styleId, variantId)` returns the base palette for `""` (the active pack's `Skin.look` override, else `StyleDef.palette`; Part 8 §8.2.7); for `v1` it swaps `secondary` and `accent`; for `v2` it darkens every colour by 25 % (`Color3:Lerp(black, 0.25)`, applied to `primary`, `secondary` and `accent`). Proxy body, Style Gear, the Style Tell ring and chip, and the owner's VFX tint (§6.6.3) all read it, so a variant is visible in every mode where the style palette shows. Variant ids beyond `v2` (future content) fall back to `v2`'s rule until Part 4 defines per-variant palettes.
+
+**Codename looks kill switch** (`Features.CodenameLooks`, Part 2 §2.6.2; Part 8 §8.2.6 / §8.6.3; overridable live through `ALG_Features`). AppearanceController reads `Runtime.get().Features.CodenameLooks` and re-applies on `Runtime.changed`. When it is **false**: every `Gear_*` and `Summon_*` clone whose template has `LookSet == "Codename"` (Part 8 §8.5.6) is hidden (`LocalTransparencyModifier = 1`, effects disabled); summons render as a neutral Ball (Ø3, `primary` of the **Original** palette); `Character` mode renders as `Simplified` for every viewer; and `Theme.stylePalette` returns the Original pack's palette whatever pack is active (§6.9.4), so proxies, chips, rings and VFX tints all switch to Original colours. It takes effect within 1 s with no respawn (Part 8 scenario `ip.pack_switch_live` asserts no Codename-look part is visible within 1 s).
 
 #### 6.8.3 Proxy rig and attachment strategy
 
@@ -1198,7 +1262,7 @@ All modes keep the **Style Tell** (§6.8.4). The hurtbox is never touched (§0.4
 - Gear Accessories (Part 4 §4.7.4) are cloned per character. Each `Handle` is welded so that its named attachment matches the same-named attachment on the target part (proxy or real). This is the `Humanoid:AddAccessory` alignment rule done by hand, because the proxy is not in the Humanoid's model. Handles are `Massless`, `CosmeticNoQuery`.
 - The welds make the engine handle interpolation of remote characters. Whether a client-local, massless part welded into the **local predicted** character causes mispredictions is spike S-P6-2. The fallback is no welds: a single `workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)` per frame in the `ALG_Render` step.
 - **LOD** (`Perf.Looks`): beyond `ProxyDetailStuds` (100) the face SurfaceGui is disabled and gear hidden. Beyond `TellOnlyStuds` (160) proxies are hidden too (ring and chip remain).
-- **Refresh triggers:** the owner's `EquippedStyle`, `CharacterLook`, `OwnLook`, `ShowStyleGear`, `OosonaCode`, `Flair` attribute changes; the viewer's `othersAppearance` setting; `CharacterAdded`. These are not combat one-shots, so attribute-changed signals are fine here.
+- **Refresh triggers:** the owner's `EquippedStyle`, `CharacterLook`, `OwnLook`, `ShowStyleGear`, `OosonaCode`, `Flair`, `Variant` attribute changes; the viewer's `othersAppearance` setting; `CharacterAdded`; `Runtime.changed` (`Features.CodenameLooks`, §6.8.2); `Skin.onChanged` (pack switch: palettes and nameplate text, §6.8.4). These are not combat one-shots, so attribute-changed signals are fine here.
 - Part 3's `Hurtbox.prepare` is asked to set `Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None` server-side (§6.13 item 11), so the default name/health display never competes with the nameplate.
 
 #### 6.8.4 Style Tell (always on)
@@ -1206,10 +1270,11 @@ All modes keep the **Style Tell** (§6.8.4). The hurtbox is never touched (§0.4
 Rendered for every character in every mode and for every viewer (§0.4; GDD §12.3 readability guarantee):
 1. **Nameplate chip.** BillboardGui `ALG_Nameplate` on the head (proxy or real): `AlwaysOnTop = false`, `MaxDistance = Perf.Looks.TellChipStuds` (150, matching the GDD §11.1 sightline cap), `LightInfluence = 0`, `StudsOffset = (0, 2.6, 0)`, `Size = UDim2.fromOffset(220, 72)`. Rows:
    - **Chip row (always):** a circle in the style `primary` with the rarity shape glyph (§6.9.4) and `Skin.style(id).name` in Body font 14; a Flair glint (✦ in the Flair colour) when `Flair ≠ "standard"`.
-   - **Name row (≤ 60 studs):** `Player.DisplayName`, title (`Skin.text("title.<Title>")`), Rookie tag (`ui.nameplate.rookie` when `Rookie`), prestige stars, VIP stroke (gold `UIStroke` when `Vip`).
+   - **Name row (≤ 60 studs):** `Player.DisplayName`, title (`Skin.text("title." .. Title)` **only when `Title ~= ""`**; otherwise the title element is omitted, so no `title.` key is ever resolved), Rookie tag (`ui.nameplate.rookie` when `Rookie`), prestige stars, VIP stroke (gold `UIStroke` when `Vip`).
    - **Info row (GDD §15.3: focus target, or ≤ `NameplateInfoStuds` 25 studs):** thin HP bar, 2 Breakaway pips (`BkP`, refill sweep from `BkProg / 1500`), block-crack icon when `Grd < 40` while blocking, broken icon in `GuardBroken`.
-2. **Ground ring.** `vfx.tell.ring` in `primary`, welded to the HRP at foot level (`−(Humanoid.HipHeight + root.Size.Y / 2) + 0.05`). Hidden beyond `TellOnlyStuds` 160.
-3. **VFX palette.** All of the owner's effects are tinted from the palette (§6.6.3).
+2. **Ground ring.** `vfx.tell.ring` in `primary`, placed at foot level (`−(Humanoid.HipHeight + root.Size.Y / 2) + 0.05` below the HRP) through `VfxController.play{attach = HRP}`, so the §6.6.3 attach rule applies: every ring part is set `Anchored = false`, `Massless = true`, `CanCollide/CanQuery/CanTouch = false`, `CollisionGroup = "CosmeticNoQuery"` **before** the `WeldConstraint` to the HRP is created (an anchored ring would anchor the whole character). If spike S-P6-2 shows welds into the local predicted character mispredict, the ring uses the same fallback as the proxies: no weld, moved once per frame with `workspace:BulkMoveTo` in the `ALG_Render` step. Hidden beyond `TellOnlyStuds` 160.
+3. **VFX palette.** All of the owner's effects are tinted from `Theme.stylePalette(styleId, variantId)` (§6.6.3, §6.8.2).
+4. **Text refresh.** Chip and name rows re-render on `Skin.onChanged` (live pack switch; Part 2 §2.9.2), on the owner's `Title`, `Rookie`, `Prestige`, `Vip` attribute changes, and on the refresh triggers of §6.8.3.
 
 **Stealth** (Part 4 §4.7.6 / Part 4 Q9): for enemy viewers beyond 12 studs of an owner with status `iv`, the nameplate **name and info rows** and the ring are hidden; the chip is hidden too and the Tell is carried by `VFX_Stealth_Shimmer` in the owner's style colour. This follows Part 4's proposal and is an exception to "always on" (§6.14 item 3).
 
@@ -1258,12 +1323,12 @@ The Oosona face variants 1–6 change the `neutral`/`blank` eye shapes only: 1 d
 | `ServerStorage.Templates.Fragments.*` | Optional fracture cache (§6.1.8) |
 | `ReplicatedStorage.Looks.LookRig_R15` | §6.8.3 |
 | `ReplicatedStorage.Looks.Face_UI` | §6.8.5 |
-| `ReplicatedStorage.Looks.Gear_<style>_<name>`, `Summon_*` | Part 4 §4.7.4 / §4.7.5 recipes (Edit-time `GeometryService:UnionAsync`/`SubtractAsync`) |
+| `ReplicatedStorage.Looks.Gear_<style>_<name>`, `Summon_*` | Part 4 §4.7.4 / §4.7.5 recipes (Edit-time `GeometryService:UnionAsync`/`SubtractAsync`). One look set per build (`opts.lookSet`, attribute `LookSet`, Part 8 §8.5.6); both look sets stay in the builder as plain data (per key, a list of primitives `{ shape, size, offset, role }`) so the Lune test `ip.gear_not_codename_clone` compares them without Studio |
 | `ReplicatedStorage.Looks.Oosona_Species_<id>` (10), `Oosona_Hat_<n>` (6), `Oosona_Outfit_<n>` (4) | Primitive Accessories (table below) |
 
 Oosona catalog (GDD §12.3 species templates; graybox primitives; keys `model.oosona.species_<id>`, `model.oosona.hat_<n>`, `model.oosona.outfit_<n>`):
 
-| Species (`Appearance.OosonaSpecies` index) | Props | Hats | Outfits |
+| Species (index into `Appearance.OosonaSpecies`, Part 5 §5.10; the builder and UI read `OosonaSpecies[i].id`; skin colour from `.skin`) | Props | Hats (`Appearance.OosonaHats = 6`) | Outfits (`OosonaOutfits = 4`) |
 |---|---|---|---|
 | 1 `human` | none | 1 cap (Cylinder + Wedge brim) | 1 vest (Block front/back) |
 | 2 `candy` | gumdrop cap (Ball 1.4 × 0.9 × 1.4) | 2 beanie (Ball half) | 2 scarf (Cylinder ring) |
@@ -1274,9 +1339,9 @@ Oosona catalog (GDD §12.3 species templates; graybox primitives; keys `model.oo
 | 7 `lumpy` | 3 Balls on the torso | | |
 | 8 `wizard` | beard (white Wedge) | | |
 | 9 `ghost` | proxy transparency 0.35 locally; leg proxies hidden | | |
-| 10 `penguin` | white belly plate + orange beak Wedge; body forced `#212121` | | |
+| 10 `penguin` | white belly plate + orange beak Wedge (head/arms take the species `skin` `#2E3440`; torso and legs follow the §5.7.1 rule like every species) | | |
 
-**Verify:** `BuildTemplates.verify()` (both rigs have 15 body parts and a Humanoid; `LookRig_R15` has 15 parts with RigAttachments; every Part 4 gear key and every Oosona key resolves through `Assets.template`); scenarios `look.modes_matrix` (two clients; owner sets each of Character/Oosona/Avatar × gear on/off; viewer sets each `OthersAppearance` → the expected mode per §6.8.1; the hurtbox `Size` is unchanged in all 16 cases), `look.style_tell_always` (in every mode, the viewer sees the chip and ring for an enemy at 100 studs), Part 4 `look.gear_silhouette` and `look.stealth_ranges`, `look.face_expressions` (each of the 24 `set` calls produces the frame layout in the table; screen capture for human review).
+**Verify:** `BuildTemplates.verify()` (both rigs have 15 body parts and a Humanoid; `LookRig_R15` has 15 parts with RigAttachments; every Part 4 gear key and every Oosona key resolves through `Assets.template`); scenarios `look.modes_matrix` (level **`multi`**: runs only through `multi(2, Baseline30, look.modes_matrix)`, never in solo `studio(…)`; owner sets each of Character/Oosona/Avatar × gear on/off; viewer sets each `OthersAppearance` → the expected mode per §6.8.1; the hurtbox `Size` is unchanged in all 16 cases), `look.style_tell_always` (in every mode, the viewer sees the chip and ring for an enemy at 100 studs), `look.oosona_three_colour` (spec `{species = 2, color = "#F48FB1", outfit = 0}` → head/arm proxies `#F7A8C8`, torso `#F48FB1`, legs `#F48FB1` × 0.65 within 1/255; outfit 3 → legs `#8B3A3A`), `look.variant_render` (owner on `hero` in Character mode; the server-side harness step sets the owner's Player attribute `Variant = "v1"` (render-only check; ownership is covered by `ui.wheel_variant_equip`) → the torso proxy stays `primary` and limb proxies show the base `accent`; `v2` → the torso is `primary` darkened 25 %; switching back to base restores the colours within 1 s), Part 4 `look.gear_silhouette` and `look.stealth_ranges` (level `multi`: `multi(2, Baseline30, look.stealth_ranges)` only), `look.face_expressions` (each of the 24 `set` calls is asserted **programmatically**: eye/mouth shape, size and offset of the `Face_UI` frames match the table; then **one** `screen_capture` of a 3×3 grid of sample expressions goes to human review, within the 3-captures-per-task cap).
 
 ---
 
@@ -1310,6 +1375,8 @@ export type Screen = {
 	onData: ((sections: { string }) -> ())?,     -- UiController.changed forwarding (Types.Section names)
 }
 ```
+
+**Live pack switch** (Part 2 §2.9.2 `Skin.activePack()` / `Skin.onChanged`). UiController registers one `Skin.onChanged` callback at `start()`. On a pack change it unmounts and re-mounts the open screens with the same `args` (screens read every string at mount time), re-renders toasts' pending text, and HudController rebuilds its labels; nameplates refresh themselves (§6.8.4). No screen caches `Skin.text` results across mounts. **Verify:** Part 8 scenario `ip.pack_switch_live` (open Style Wheel and HUD, switch the pack → visible labels change within 1 s and `Skin.missing()` stays empty).
 
 Load rule: UiController **requires screen modules lazily** inside `open()`, never at load. Screens may then require any controller by relative path (`require("../../Controllers/SettingsController")`) without breaking the init-order rule (Part 2 §2.3.3), because they load after every controller has started.
 
@@ -1358,7 +1425,7 @@ Rules:
 - **Thumb zones.** Nothing interactive in the left 40 % × bottom 45 % (thumbstick) on touch.
 - **Text** ≥ 14 reference px; body 18; headers 24–36; combo 48–72 (Impact).
 - **Motion.** Every appear animation is `Create.boing`. Reduced Motion disables boing, panel slides and UI shakes.
-- **Simple HUD** (GDD §16.3 "Cognitive"): hides kill feed, combo counter, zone label, nameplate name rows and edge indicators; keeps HP, pips, meter, hotbar/cluster and toasts.
+- **Simple HUD** (GDD §16.3 "Cognitive"): hides kill feed, combo counter, zone label, the Quests panel, nameplate name rows and edge indicators; keeps HP, pips, meter, hotbar/cluster, Wallet & level and toasts.
 
 #### 6.9.4 `UI/Theme.luau` (tokens and pure helpers)
 
@@ -1431,7 +1498,51 @@ end
 return Theme
 ```
 
-**Verify:** Lune `tests/core/theme.spec.luau`: `theme.contrast` (ink/paper ≥ 15; the telegraph default vs ink ≥ 4.5), `theme.reveal_durations` (all 7 rarities from `Defaults.Perf.Ui.Reveal` match GDD §8.6), `theme.cooldown_frac`, `theme.touch_no_overlap` (§6.9.5 table: no two circles overlap; all inside 1334 × 750; none in the jump reserve).
+**Style palette helper** (canonical code in Part 8 §8.2.7, reproduced here: `Theme.stylePalette(styleId, variantId?)` with this part's variant rule and the `CodenameLooks` switch, §6.8.2; under the switch it reads `Skin.look(styleId, "Original")`). Every presentation colour that depends on a style (proxy rig, Style Gear, nameplate chip and ring, Style Wheel chips, VFX tints, Shop cards) goes through it; nothing reads `StyleDef.palette` directly.
+
+```lua
+--!strict
+-- Theme.stylePalette — style colours for presentation. Spec §6.9.4 (canonical code: Part 8 §8.2.7).
+-- Excerpt of UI/Theme.luau: the requires go at the top of the module; `Theme` is the module table above.
+-- Variant rule: §6.8.2 (v1 swaps secondary/accent; v2 and later darken 25 %). Kill switch: Part 8 §8.6.3.
+local Skin = require("@game/ReplicatedStorage/Shared/Skin")
+local Styles = require("@game/ReplicatedStorage/Shared/Styles")
+local Runtime = require("@game/ReplicatedStorage/Shared/Config/Runtime")
+
+export type StylePalette = { primary: Color3, secondary: Color3, accent: Color3 }
+local BLACK = Color3.new(0, 0, 0)
+
+function Theme.stylePalette(styleId: string, variantId: string?): StylePalette
+	-- Features.CodenameLooks == false: Original palettes whatever pack is active.
+	local pack: Skin.PackId? = nil
+	if Runtime.get().Features.CodenameLooks == false then -- Runtime is applied before any presentation runs
+		pack = "Original"
+	end
+	local o = Skin.look(styleId, pack) -- one pack only, no fallback (Part 8 §8.2.7)
+	local base: StylePalette = Styles.get(styleId).palette
+	if o ~= nil and o.palette ~= nil then
+		base = {
+			primary = Color3.fromHex(o.palette.primary),
+			secondary = Color3.fromHex(o.palette.secondary),
+			accent = Color3.fromHex(o.palette.accent),
+		}
+	end
+	if variantId == nil or variantId == "" then
+		return base
+	elseif variantId == "v1" then
+		return { primary = base.primary, secondary = base.accent, accent = base.secondary } -- swap secondary/accent
+	end
+	return { -- "v2" and any later id: every colour darkened 25 %
+		primary = base.primary:Lerp(BLACK, 0.25),
+		secondary = base.secondary:Lerp(BLACK, 0.25),
+		accent = base.accent:Lerp(BLACK, 0.25),
+	}
+end
+```
+
+`Color3.fromHex` and `Color3:Lerp` are verified in the offline docs [Docs `ui/styling/index.md` (`Color3.fromHex("FF0099")`), `ui/3D-drag-detectors.md` (`COLOR2:Lerp(COLOR1, t)` on `Color3` values)]. The requires are pure modules, so Theme stays load-pure.
+
+**Verify:** Lune `tests/core/theme.spec.luau`: `theme.contrast` (ink/paper ≥ 15; the telegraph default vs ink ≥ 4.5), `theme.reveal_durations` (all 7 rarities from `Defaults.Perf.Ui.Reveal` match GDD §8.6), `theme.cooldown_frac`, `theme.touch_no_overlap` (§6.9.5 table: no two circles overlap; all inside 1334 × 750; none in the jump reserve), `theme.style_palette_variants` (base = `Styles.get("hero").palette` under Codename; `v1` swaps secondary/accent; `v2` = each channel × 0.75 within 1e-6; with `Features.CodenameLooks = false` the base equals the Original pack's `looks.hero.palette` even while Codename is active).
 
 #### 6.9.5 HUD (`UI/Screens/Hud.luau`, mounted by `HudController.start()`)
 
@@ -1441,12 +1552,14 @@ Data: the local view snapshot (`RenderController.localView()`), Player attribute
 |---|---|---|---|---|
 | Kill feed | (1, 0); (−16, 16); 420 × 140 | same | `Combat.Feed`: 4 lines, newest on top, 6 s each; killer and victim names (`Players:GetPlayerByUserId` → `DisplayName`; bots `ui.feed.bot`), style chips, Flair glint from the killer's `Flair`, assists `+n`, streak tag | §15.3 |
 | Event banner | (0.5, 0); (0, 16); 640 × 56 | same | `Notify kind = "announce"`: 4 s each, queued | §15.3 |
-| Menu strip | (0, 0); (16, 16); 5 × 64 + gaps | same | Buttons: Style (Tab / View), Wish, Shop, Settings, Travel (Training ↔ battle). Wish shows a badge with the `Wishes` count | §15.4 |
+| Menu strip | (0, 0); (16, 16); 5 × 64 + gaps | same | Buttons: Style (Tab / View), Wish, Shop, Settings, Travel (Training ↔ battle). Wish shows a badge with the `Wishes` count. **Gamepad access:** see "Gamepad menu focus" below | §15.4 |
+| Wallet & level | (0, 0); (16, 96); 360 × 56 | same | Row 1: `Skin.text("ui.hud.level", {level})` plus a thin XP bar (`Create.bar`, 200 × 8) filled `xpInto / toNext` from `Pity.accountLevel(account.xpTotal, Runtime.get().Progression.Account)` (full bar at level 100, `toNext = 0`). Row 2: `ui.hud.treasure {n}`, `ui.hud.shards {n}`, `ui.hud.sparks {n}` from `PrivateView.currencies` (`Treasure`, `Shards`, `CosmicSparks`), Number font. Updated on `UiController.changed` for `currencies`/`account`; a `+n` float (boing) on increase. Kept in Simple HUD | §0.0 (Account Level "simple UI"); GDD §17.2 |
+| Quests | (0, 0); (16, 160); 360 × 132 | same | Header `ui.hud.quests`; 3 rows from `PrivateView.quests.daily` (in order): `Skin.text("ui.quest." .. q.id, {goal = q.goal})`, a progress bar `q.progress / q.goal`, a tick when `q.claimed`. Rewards are auto-claimed by the server (Part 5 §5.5.9), which also sends the `Notify` reward toast `ui.notify.quest_done`; the HUD only animates the row's tick (no second toast). Hidden when `Progression.Quests.Enabled == false`, when the list is empty, and in Simple HUD | GDD §17.5; Part 5 §5.5.9 (`Quests.Enabled = true` in M1-G) |
 | Zone label | (0.5, 0); (0, 80); 400 × 28 | (0.5, 0); (0, 150) | `map.<id>.zone.<ZoneId>` from the local root position; fades after 2 s; shown on zone change | §11.1 |
-| HP bar | (0.5, 1); (0, −120); 480 × 28 | (0.5, 0); (0, 88); 420 × 24 | `HP / maxHp`; white drain over 0.4 s; low colour ≤ 30; shield overlay when a shield buff is active | §15.3 |
-| Breakaway pips | (0.5, 1); (0, −96); 2 × (40 × 14) | (0.5, 0); (0, 118) | `BkP`; a full pip sparkles (boing at 1 Hz); an empty pip shows a refill sweep `BkProg / 1500`; pips are tinted grey while `fNow < BkLockF` (Breakaway lockout, HRP attribute) | §15.3, §6.8 |
+| HP bar | (0.5, 1); (0, −120); 480 × 28 | (0.5, 0); (0, 88); 420 × 24 (**deviation**, see below) | `HP / maxHp`; white drain over 0.4 s; low colour ≤ 30; shield overlay when a shield buff is active | §15.3 |
+| Breakaway pips | (0.5, 1); (0, −96); 2 × (40 × 14) | (0.5, 0); (0, 118) (**deviation**) | `BkP`; a full pip sparkles (boing at 1 Hz); an empty pip shows a refill sweep `BkProg / 1500`; pips are tinted grey while `fNow < BkLockF` (Breakaway lockout, HRP attribute) | §15.3, §6.8 |
 | Protection tag | (0.5, 1); (0, −150); 220 × 24 | (0.5, 0); (0, 140) | `ProtF > fNow` → `ui.hud.protected` with whole seconds | §6.2 |
-| Hotbar | (0.5, 1); (0, −16); 6 × 72 + 5 × 8 | hidden | Slots M1, 1, 2, 3, 4, Quirk: move name tooltip on hover, key label from the binding (`settings.binds` override, else Part 3 defaults; gamepad glyph text `X Y B RB LB →`), radial wipe `Theme.cooldownFrac(Cd<n>, toFrames(def.cooldown), fNow)` from the awakened set when `AwkF0 > 0` | §15.3 |
+| Hotbar | (0.5, 1); (0, −16); 6 × 72 + 5 × 8 | hidden | Slots M1, 1, 2, 3, 4, Quirk: move name tooltip on hover, key label from the binding (`settings.binds["<Action>.KBM"]` / `["<Action>.Pad"]` override for the current device, else Part 3 defaults; gamepad glyph text `X Y B RB LB →`), radial wipe `Theme.cooldownFrac(Cd<n>, toFrames(def.cooldown), fNow)` from the awakened set when `AwkF0 > 0`. **Kill-switched move:** when the slot's move id is in `Runtime.get().Features.DisabledMoves`, the slot (and its touch-cluster button) is greyed (60 % transparency) with a lock glyph (Frame-drawn padlock: a rounded body plus a `UICorner` shackle; no image, no text); cosmetic only (the sim refuses the move through `StyleRuntime.disabled`, Part 3 §3.4.2) | §15.3; GDD §18.6 |
 | Awaken button | (0.5, 1); (300, −16); 88 × 88 | in the cluster | The ring fills with `Meter / 100` (Player attribute, Part 3); at `AwkRdy` a rainbow `UIGradient` rotates (static with Reduced Motion). While awakened, the ring shows the remaining time `(AwkEndF − fNow) / (AwkEndF − AwkF0 − 72)` | §15.3, §6.9 |
 | Combo counter | (1, 0.5); (−260, −120); 320 × 96 | (1, 0); (−16, 170) | Shown when the focus target's `CHits ≥ 3` (GDD §15.3): `ui.hud.combo {n}`, `ui.hud.combo_big {n}` at ≥ 10 ("ALGEBRAIC 12 HIT!"), Impact font growing 48 → 72; hides 1 s after the combo ends | §15.3 |
 | Toasts | `ALG_Toasts` (0, 1); (16, −220); 360 wide | (0, 0.5); (16, 0) | `Notify` toast/reward/error: auto-stacking, max 4, 4 s each | §15.3 |
@@ -1455,6 +1568,10 @@ Data: the local view snapshot (`RenderController.localView()`), Player attribute
 | Training panels | §6.4.2 | same | Only when `MapId == "training"` | §4.5 |
 
 **Dash/Breakaway swap** (Part 3 §3.10.5): while the local `St ∈ STUN` and `BkP ≥ 1`, the Dash slot (cluster button and hotbar hint) shows `ui.hud.breakaway` with a sparkle border.
+
+**Touch HP and pips deviation (owner sign-off).** GDD §15.3 places HP and Breakaway pips bottom-centre above the hotbar, and GDD §15.1 says mobile defines the layout. On touch, the bottom-centre band between the thumbstick zone (left 40 %) and the cluster (`BlockBtn` left edge at x ≈ 686 of 1334) is only ≈ 150 reference units wide, too narrow for a 420-wide bar. The touch HUD therefore puts them top-centre. This is a recorded deviation from GDD §15.3 that the owner signs off at the H-10 feel gate (§6.14 item 9); if rejected, the fallback is a 140-wide HP bar at (0.5, 1); (0, −40) with pips above it, re-checked by `theme.touch_no_overlap`.
+
+**Gamepad menu focus** (Part 3 §3.10.1: `InputController.init()` disables CoreGui `Backpack` and `PlayerList` and sets `GuiService.AutoSelectGuiEnabled = false`, so `Tab`/`ButtonSelect` no longer toggle the player list or UI-selection mode). The `UI` context gains a Bool action `MenuFocus` (Pad `DPadDown`, free in Part 3's map). Pressing it while no modal screen is open calls `InputController.setCombatEnabled(false)` and sets `GuiService.SelectedObject` to the menu strip's Style button; the strip buttons are `Selectable` with `NextSelectionLeft/Right` chained (Wish, Shop, Settings, Travel). `ButtonB` (or `DPadDown` again) clears `SelectedObject` and re-enables combat; activating a button opens its screen as usual (modal screens keep combat disabled until closed). `ButtonB` is `Move2` in combat, but combat contexts are disabled while the strip has focus, so it cannot fire a move. `DPadDown` is not used for anything else (Quick-Chat is a future hook, §6.15).
 
 **Mobile touch cluster** (`ALG_Touch`; centre offsets from the **bottom-right** of the canvas in reference units; negative = left/up). Buttons are created at runtime with `Name` = the Part 3 touch id and bound with `InputController.bindTouch(action, button)` (Part 3 §3.10.3, `InputBinding.UIButton` [Docs]). The layout editor and the one-hand preset are deferred (GDD §15.2, §16.3).
 
@@ -1475,9 +1592,9 @@ Data: the local view snapshot (`RenderController.localView()`), Player attribute
 
 After layout, if the default `JumpButton`'s absolute rectangle intersects any cluster button, the whole cluster shifts left by the overlap + 16. `ALG_Touch.Enabled = (UserInputService.PreferredInput == Enum.PreferredInput.Touch)`; the hotbar shows otherwise. Both update on `PreferredInput` changes.
 
-**UI input context.** Part 3 assigns Emote and Style Wheel to "Part 6's `UI` context". InputController (Part 6 section) creates a client-local `InputContext` named `UI` under `Players.LocalPlayer` (`Priority = 1000`, `Sink = false`) with three Bool actions: `StyleWheel` (KBM `Tab`, Pad `ButtonSelect`, GDD §15.2 "View"), `ShiftLock` (KBM `LeftShift`) and `Emote` (KBM `B`, Pad `DPadUp`; M1-G only shows the toast `ui.toast.emotes_soon`). Touch uses the menu-strip buttons and `ShiftLockBtn` directly. It reacts to `InputAction.Pressed`. Whether a client-created context fires under Server Authority is spike S-P6-7; fallback: `UserInputService.InputBegan`.
+**UI input context.** Part 3 assigns Emote and Style Wheel to "Part 6's `UI` context". InputController (Part 6 section) creates a client-local `InputContext` named `UI` under `Players.LocalPlayer` (`Priority = 1000`, `Sink = false`) with four Bool actions: `StyleWheel` (KBM `Tab`, Pad `ButtonSelect`, GDD §15.2 "View"; usable because Part 3's `InputController.init()` disables the CoreGui PlayerList and UI auto-selection first), `ShiftLock` (KBM `LeftShift`), `Emote` (KBM `B`, Pad `DPadUp`; M1-G only shows the toast `ui.toast.emotes_soon`; the emote wheel is a future hook, §6.15) and `MenuFocus` (Pad `DPadDown`; above). Touch uses the menu-strip buttons and `ShiftLockBtn` directly. It reacts to `InputAction.Pressed`. Whether a client-created context fires under Server Authority is spike S-P6-7; fallback: `UserInputService.InputBegan`.
 
-**Verify:** scenarios `hud.hp_drain` (dummy deals 15 → fill snaps; drain reaches the fill within 0.5 ± 0.05 s), `hud.cooldown_wipe` (use `hero.1` → its radial fraction is 1.0 ± 0.02 at use and 0 at `Cd1`), `hud.meter_ring` (`Dev.Command setMeter 100` → rainbow gradient present), `hud.breakaway_swap` (hitstun → the Dash label reads `ui.hud.breakaway`), `hud.touch_binding` (touch emulation: `Players.LocalPlayer.Combat.M1.Touch.UIButton == PunchBtn`), `hud.combo_counter` (3-hit M1 string on a dummy → "3" shown), `hud.simple_preset`. MCP `screen_capture` at the Studio device emulator "iPhone SE" profile (human selects the profile; H-12) for review.
+**Verify:** scenarios `hud.hp_drain` (dummy deals 15 → fill snaps; drain reaches the fill within 0.5 ± 0.05 s), `hud.cooldown_wipe` (use `hero.1` → its radial fraction is 1.0 ± 0.02 at use and 0 at `Cd1`), `hud.meter_ring` (`Dev.Command setMeter 100` → rainbow gradient present), `hud.breakaway_swap` (hitstun → the Dash label reads `ui.hud.breakaway`), `hud.touch_binding` (touch emulation: `Players.LocalPlayer.Combat.M1.Touch.UIButton == PunchBtn`), `hud.combo_counter` (3-hit M1 string on a dummy → "3" shown), `hud.simple_preset`, `hud.wallet_level` (`Dev.Command grant Treasure 100` → the Treasure label rises by 100 after the next delta; `Dev.Command setLevel 2` → the level label reads `Skin.text("ui.hud.level", {level = 2})`), `hud.quests_progress` (fresh profile on a battle map; drive row 1 to its goal with the Part 5 seam that matches its id — `simActivity {sec, dmg}` for `active_minutes`/damage quests, `simKo` for `kos` — then `flushProgress {}` → its bar reads 1.0, the row shows a tick and exactly one `ui.notify.quest_done` toast appears; Simple HUD hides the panel), `hud.move_lock_glyph` (`setConfig Features {"DisabledMoves":["hero.1"]}` → slot 1 shows the lock glyph within 1 s); `mcp.gamepad_menu_nav` (gamepad emulation: `DPadDown` → `GuiService.SelectedObject` is the Style button; one DPad-right → the Wish button; `ButtonA` opens Wish; after closing it, `ButtonB` clears focus, and the next `ButtonB` press (Move2) leaves Idle). This HUD also relies on Part 7's `mcp.tab_no_playerlist` (Part 7 §7.4.10, M0: CoreGui `PlayerList` and `Backpack` disabled and `GuiService.AutoSelectGuiEnabled == false` after `Tab`; once the Style Wheel exists, `Tab` also opens it). MCP `screen_capture` at the Studio device emulator "iPhone SE" profile (human selects the profile; H-12) for review.
 
 #### 6.9.6 Style Wheel (`UI/Screens/StyleWheel.luau`)
 
@@ -1497,20 +1614,24 @@ Layout ("rings" are rows; 1334 × 750): a centred panel 1180 × 640. Rows top to
 | Owned, implemented | style chip in the palette, name, `M<level>`, Flair glint | `PrivateView.styles[id]`; level from `masteryXp` with `Progression.Mastery` (XpBase + XpPerLevel·m curve, Part 2 §2.6.2), computed by the same formula as `ProgressionService.masteryLevel` |
 | Owned, `implemented = false` | chip at 60 % + **In development** badge (`ui.wheel.in_dev`); Equip disabled | §0.10 |
 | Trial | chip + `ui.wheel.trial` badge | `MapId == "training"` and `Progression.TrainingTrialAllStyles` |
-| Free rotation | `ui.wheel.free` badge | `Progression.FreeRotation.Enabled` (false in M1-G: the badge code exists, never shown) |
+| Free rotation | `ui.wheel.free` badge | `Progression.FreeRotation.Enabled` (true in M1-G: badge shown for rotation styles; Part 5 §5.1.4, DES-6) |
 | Not owned | silhouette (palette primary at 20 %, "?"), rarity badge, hint `ui.wheel.get_hint` (Wishes or Choose Goose) | |
 | Cosmic, not owned | "???" (GDD §8.3: secret) | |
 | Equipped / next | thick ink ring / dashed ring | `EquippedStyle` / `NextStyle` |
 
-Detail pane: name and epithet (`Skin.style(id)`), move list (`Skin.move` for 1–4, q; tags as chips), Flair picker (owned Flairs → `Style.SetFlair`), **Character Look quick toggle** (segmented Inherit / On / Off → `Appearance.Set {styleOverride = {styleId, value}}`; current from `settings.characterLookByStyle[id]`), [Equip].
+Detail pane: name and epithet (`Skin.style(id)`), move list (`Skin.move` for 1–4, q; tags as chips), Flair picker (owned Flairs → `Style.SetFlair`), **Variant picker**, **Character Look quick toggle** (segmented Inherit / On / Off → `Appearance.Set {styleOverride = {styleId, value}}`; current from `settings.characterLookByStyle[id]`), **Mastery and Shards**, [Equip].
+- **Variant picker** (owned styles; GDD §8.7, §9.3): label `ui.wheel.variant`; a row of swatch chips: `ui.wheel.variant_base` (Base, `variantId = ""`) plus one chip per owned variant in `PrivateView.styles[id].variants` (sorted `v1`, `v2`, …), each chip drawn in `Theme.stylePalette(id, vid)` with its name `Skin.text("variant.<styleId>.<vid>.name")`. Selected = `styles[id].equippedVariant` (thick ink ring). Tapping a chip sends `Style.SetVariant {styleId, variantId}` (Part 2 §2.7.4 row 6); on success the owner's `Variant` attribute changes and the look refreshes (§6.8.3). Hidden when the style owns no variants.
+- **Mastery and Shards** (owned styles; GDD §9.2): `M<level>` with an XP bar (`Pity.masteryLevel` / `Pity.masteryXpToReach` with `Progression.Mastery`), the line `ui.wheel.shards {n}` (`currencies.Shards`), and while `level < Progression.Mastery.ShardCapLevel` (20) a stepper (1 … `ceil((Pity.masteryXpToReach(20) − masteryXp) / Progression.Mastery.ShardXp)`, clamped to the balance) with [`ui.wheel.convert`] → `Mastery.SpendShards {styleId, shards}`; the response `MasterySpendRes` shows a reward toast with `xpGained` and the new `level`. At level ≥ 20 the stepper is replaced by the disabled text `ui.wheel.mastery_combat_only` (Mastery 21–30 is earned in combat).
 
-**Verify:** scenarios `ui.wheel_death_autoconfirm` (KO → wheel opens within 0.2 s; untouched → closes at 3 ± 0.1 s; no `Style.Equip` sent), `ui.wheel_equip_next` (pick `stretch` → `NextStyle == "stretch"`; after respawn `EquippedStyle == "stretch"`), `ui.wheel_in_dev_badge` (grant `sentry` via `Dev.Command giveStyle` → badge shown, Equip disabled), `ui.wheel_cl_toggle` (Off for `hero` → `settings.characterLookByStyle.hero == false` in the next delta), `ui.mastery_level_matches_server` (10 XP values: the client formula equals `ProgressionService.masteryLevel` via `execute_luau`).
+**Verify:** scenarios `ui.wheel_death_autoconfirm` (KO → wheel opens within 0.2 s; untouched → closes at 3 ± 0.1 s; no `Style.Equip` sent), `ui.wheel_equip_next` (pick `stretch` → `NextStyle == "stretch"`; after respawn `EquippedStyle == "stretch"`), `ui.wheel_in_dev_badge` (grant `sentry` via `Dev.Command giveStyle` → badge shown, Equip disabled), `ui.wheel_cl_toggle` (Off for `hero` → `settings.characterLookByStyle.hero == false` in the next delta), `ui.mastery_level_matches_server` (10 XP values: the client formula equals `ProgressionService.masteryLevel` via `execute_luau`), `ui.wheel_variant_equip` (read cosmetic slot 4's `itemId` `<styleId>/<vid>` from `Shop.Get`; `Dev.Command giveStyle <styleId>`, `grant Treasure` and buy slot 4 as in `ui.shop_buy_variant`; equip `<styleId>` → the picker shows Base + `<vid>`; tapping `<vid>` → `styles[<styleId>].equippedVariant == <vid>` in the next delta and the owner's `Variant` attribute equals `<vid>`; tapping Base → `""`), `ui.wheel_spend_shards` (`Dev.Command setMastery hero 0`, `grant Shards 400` → the stepper max is `ceil(masteryXpToReach(20) / 60)`; converting the max → level 20, the remaining Shards equal 400 minus the shards the server reports spent, and the stepper is replaced by `ui.wheel.mastery_combat_only`).
 
 #### 6.9.7 Wish screen (`UI/Screens/Wish.luau`)
 
 GDD §8 / §15.4: 1× / 10×, the odds button always visible, pity counters, reveal theatre; a wish jar and shooting stars, never gambling imagery (GDD §16.1).
 
 Layout (modal panel 1240 × 680): left, the wish jar (rounded Frame 420 × 420, glass `UIStroke`, floating ★ particles drawn as TextLabels); bottom centre, [Wish ×1] and [Wish ×10] with costs and the `Wishes` balance; top right, **[Odds]** (always visible, never disabled); right column, pity counters; bottom left, Lucky Jar status (`passes.lucky_jar`).
+
+**PRI-restricted wallet** (Part 5 §5.2.10, §5.2.14; GDD §17.1). When `PrivateView.policy.paidRandomRestricted` is true, the balance shown is the **spendable** count `currencies.Wishes − wishStats.paidUnspent` (never below 0), and when `paidUnspent > 0` a second line `Skin.text("ui.wish.locked_paid", {n = paidUnspent})` appears under it. [Wish ×1] / [Wish ×10] are disabled while spendable < 1 / < 10. A response `{ok = false, err = "restricted", detail = "paid_wishes_locked"}` is shown as that same locked-paid line (pulsed once), not as the generic `ui.error.restricted` toast. Unrestricted players see the plain `Wishes` balance.
 
 | Pity row | Value | Max | Note |
 |---|---|---|---|
@@ -1521,7 +1642,7 @@ Layout (modal panel 1240 × 680): left, the wish jar (rounded Frame 420 × 420, 
 
 Part 5 owns the `Wish.Pity` key names; this screen reads them by those names (§6.15).
 
-**Odds panel** (modal over the screen): from `Wish.GetOdds` → `OddsView`, refetched on open and after every Wish (GDD §8.8 "update live"). Sections: per-tier rows (badge, name, %), expandable per-style rows (`OddsStyle.pct`, owned tick, **In development** badge when `implemented = false`); the Flair table (`OddsView.flairs`); a "Current effective odds" block: Legendary+ now `legendaryPlusPctNow`, Lucky Jar active, and pity guarantees. A Studio check logs `[ALG][UI] ERROR odds_sum` when the style %s or Flair %s do not sum to 100 ± 0.01.
+**Odds panel** (modal over the screen): from `Wish.GetOdds` → `OddsView`, refetched on open and after every Wish (GDD §8.8 "update live"). Sections: per-tier rows (badge, name, %), expandable per-style rows (`OddsStyle.pct`, owned tick, **In development** badge when `implemented = false`; the **Cosmic** style row shows `ui.wish.secret` ("???") instead of its name and chip unless the viewer owns it (GDD §8.3: secret until the first global pull), with its % still printed so the odds list every item and sum to 100 %); the Flair table (`OddsView.flairs`); below it the fake-out disclosure `Skin.text("ui.wish.fakeout_note")` shown as-is with no arguments (GDD §8.6: fake-outs are pre-announced; the pack text carries no `{pct}` token); a "Current effective odds" block: Legendary+ now `legendaryPlusPctNow`, Lucky Jar active, and pity guarantees. A Studio check logs `[ALG][UI] ERROR odds_sum` when the style %s or Flair %s do not sum to 100 ± 0.01.
 
 **Making a Wish.** Capture `seenBefore[r] = flags.seenReveals[r]` from the store **before** sending `Wish.Make {count}`. On the response (`WishBatchResult`):
 
@@ -1529,7 +1650,7 @@ Part 5 owns the `Wish.Pity` key names; this screen reads them by those names (§
 |---|---|
 | 1× | Reveal `results[1]` |
 | 10× | Reveal `results[best]` first, then a 5 × 2 summary grid (best highlighted); duplicates faded (`CanvasGroup.GroupTransparency = 0.4`) with `ui.wish.shards {n}`; Flair labels; **In development** badges (GDD §8.6) |
-| Error | `ui.error.<err>` toast (`insufficient` → [Shop] button; never a Robux offer right after a lost fight, GDD §8.8) |
+| Error | `ui.error.<err>` toast (`insufficient` → [Shop] button; never a Robux offer right after a lost fight, GDD §8.8: the [Shop] button is omitted while `now − lastLocalKoAt < Economy.NoOfferAfterLossSec`, §6.9.10); `restricted` + `paid_wishes_locked` → the locked-paid line above |
 
 Reveal theatre per rarity (durations from `Perf.Ui.Reveal`, GDD §8.6 first / repeat; `Theme.revealDuration`):
 
@@ -1544,17 +1665,26 @@ Reveal theatre per rarity (durations from `Perf.Ui.Reveal`, GDD §8.6 first / re
 
 Skip: a tap skips **only** when `seenBefore[rarity]` was true; first views play in full (GDD §8.6). `skipSeenReveals` (default true) selects the repeat duration. Fake-outs (`WishResult.fakeOut`): the card first shows the next lower rarity, then glitches up to the real one at 50 % of the duration; it only ever upgrades. Photosensitivity: no element flashes more than 3 times per second (GDD §16.3).
 
+**Quick Wish pass** (`PrivateView.passes.quick_wish`; Part 5 §5.6.5; GDD §17.3 "instant reveals, auto-10× wishing"). While the pass is owned:
+- Reveals of a rarity already seen (`seenBefore[r]`) use duration 0: the result card (1×) or the 10× summary grid appears directly, with no theatre. A rarity's **first** view still plays in full once (GDD §8.6 "skip after the first time you've seen a given rarity's reveal"); the pass removes every later delay.
+- An **[Auto ×10]** toggle (`ui.wish.auto10`) appears next to [Wish ×10]. While on, it sends `Wish.Make {count = 10}` repeatedly, each request only after the previous response and ≥ 2.0 s after the previous send (`1 / perSec` of the remote's `{burst = 2, perSec = 0.5}` bucket, Part 2 §2.7.4 row 8, so a long auto run never hits `rate_limited`), while the spendable balance is ≥ 10. It stops on any tap, when the screen closes, on any `legendary` or rarer result, on a style the player did not own before the batch, and on any error response. Each batch is a normal `Wish.Make`; nothing is batched or skipped server-side.
+- Without the pass neither behaviour exists (the toggle is not created).
+
 **Contract for Part 5** (§6.13 item 8): WishService sets `flags.seenReveals[rarity] = true` for every rarity in the batch inside the same `DataService.update` as the roll.
 
-**Verify:** scenarios `ui.wish_odds_live` (open Odds; `Dev.Command setPity 0 70 0` → the Legendary+ now value updates on the next fetch), `ui.wish_reveal_first_unskippable` (fresh profile, `Dev.Command grant Wishes 1`, a tap during the first common reveal does not skip; the second common reveal skips on tap and lasts ≤ 0.5 s), `ui.wish_10x_grid` (10 cards, best first), `ui.wish_no_gambling_terms` (Part 8 lint: Wish screen Skin values contain none of "slot", "spin", "jackpot", "roulette", "casino", "bet").
+**Verify:** scenarios `ui.wish_odds_live` (open Odds; `Dev.Command setPity 0 70 0` → the Legendary+ now value updates on the next fetch; the fake-out note label exists with the text `Skin.text("ui.wish.fakeout_note")`; on a profile without the Cosmic style its row reads `Skin.text("ui.wish.secret")` and no label contains the Cosmic style's `Skin.style` name), `ui.quick_wish_instant` (`Dev.Command setPass quick_wish true`, `grant Wishes 2`; after one 1× whose rarity was already seen, the second 1× shows its result card ≤ 0.1 s after the response; [Auto ×10] exists only with the pass), `ui.wish_restricted_wallet` (`simulatePurchase wishes_10` while unrestricted, then `setPolicy true` on a profile with 0 free Wishes → balance label 0, the locked line shows 10, ×1 and ×10 are disabled), `ui.wish_reveal_first_unskippable` (fresh profile, `Dev.Command grant Wishes 1`, a tap during the first common reveal does not skip; the second common reveal skips on tap and lasts ≤ 0.5 s), `ui.wish_10x_grid` (10 cards, best first), `ui.wish_no_gambling_terms` (Part 8 lint: Wish screen Skin values contain none of "slot", "spin", "jackpot", "roulette", "casino", "bet").
 
 #### 6.9.8 Shop (`UI/Screens/Shop.luau`)
 
 Tabs **[Choose Goose]** and **[Store]**.
-- **Choose Goose** (GDD §8.5): `Shop.Get` → `ShopView`. Three style cards (300 × 380: chip, rarity badge, name, price in Treasure, Owned/Bought state, [Buy]); four cosmetic slots shown as "Coming soon" while `Shop.CosmeticSlotsEnabled = false`; a refresh countdown `refreshAt − workspace:GetServerTimeNow()`; the merchant's rhyme line `ui.shop.goose_line_<n>`. Buy → `Shop.Buy {slot, rotationId, price}`: `stale` → refetch and toast `ui.error.stale`; `insufficient` → toast.
-- **Store** (GDD §17.3, §8.8): `Store.Get` → `StoreView`. Wish packs and passes with `priceRobux`, a **Mock** badge when `StoreView.mock`; items with `hidden = true` are never shown (PRI items are hidden when restricted, Part 2 §2.11.4). [Buy] → `Store.Prompt {key, entryPoint = "shop_tab"}`: `prompted` → wait for the delta; `needs_confirm` → confirm modal (`ui.store.confirm_4th`) then resend with `confirmed = true`; `mock_granted` → reward toast. A "spent this week" line shows `wishBuysLast24h` (GDD §8.8 guardrail).
+- **Header** (both tabs): the Treasure balance `Skin.text("ui.shop.balance", {n = currencies.Treasure})`, updated on `currencies` deltas, so players always see what they can spend.
+- **Choose Goose** (GDD §8.5): `Shop.Get` → `ShopView`.
+  - **Style slots 1–3** (`ShopSlot.kind == "style"`): cards 300 × 380: chip, rarity badge, name, price in Treasure, Owned/Bought state, [Buy]. When `Styles.get(itemId).implemented == false` the card carries the **In development** badge (`ui.wheel.in_dev`, §0.10), and [Buy] first opens a confirm modal with `ui.shop.confirm_in_dev` ("This style is still in development. Collect it now and play it when it ships?"); only its confirm sends `Shop.Buy`.
+  - **Cosmetic slots 4–7** (`ShopSlot.kind == "cosmetic"`, `itemId = "<styleId>/<variantId>"`, Part 5 §5.4.3), shown while `Shop.CosmeticSlotsEnabled` (true in M1-G): cards 220 × 300 with the style chip drawn in `Theme.stylePalette(styleId, variantId)`, `Skin.text("variant.<styleId>.<variantId>.name")`, price in Treasure, Owned/Bought state, [Buy] → `Shop.Buy {slot, rotationId, price}`. Empty slots (no `ShopSlot` at that index) are hidden. The "Coming soon" placeholder (`ui.shop.coming_soon`) is shown only while `CosmeticSlotsEnabled == false`. A bought variant is equipped from the Style Wheel Variant picker (§6.9.6).
+  - A refresh countdown `refreshAt − workspace:GetServerTimeNow()`; the merchant line `ui.shop.goose_line_<n>` (n picked uniformly from 1 to the highest n for which `Skin.has` is true, Part 8 §8.3.7). Buy → `Shop.Buy {slot, rotationId, price}`: `stale` → refetch and toast `ui.error.stale`; `insufficient` → toast.
+- **Store** (GDD §17.3, §8.8): `Store.Get` → `StoreView`. Wish packs and passes with `priceRobux`, a **Mock** badge when `StoreView.mock`; items with `hidden = true` are never shown (PRI items are hidden when restricted, Part 2 §2.11.4). [Buy] → `Store.Prompt {key, entryPoint = "shop_tab"}`: `prompted` → wait for the delta; `needs_confirm` → confirm modal (`ui.store.confirm_4th`) then resend with `confirmed = true`; `mock_granted` → reward toast. A "spent this week" line shows `Skin.text("ui.store.spent_week", {robux = StoreView.spentThisWeekRobux})` (R$, UTC Monday week; GDD §8.8 guardrail). `StoreView.wishBuysLast24h` drives only the 4th-purchase confirm modal.
 
-**Verify:** scenarios `ui.shop_buy_flow` (grant 20,000 Treasure; buy slot 1 → the card shows Bought; Treasure decreases by the price), `ui.store_restricted_hidden` (`Dev.Command setPolicy true` → no Wish pack or Lucky Jar card), `ui.store_confirm_4th` (4th mock Wish purchase in 24 h → the confirm modal appears).
+**Verify:** scenarios `ui.shop_buy_flow` (grant 20,000 Treasure; buy slot 1 → the card shows Bought; the header balance and Treasure decrease by the price), `ui.shop_in_dev_badge` (a rotation whose style slot holds an unimplemented style, e.g. `sentry` → the card shows `ui.wheel.in_dev`; [Buy] opens the `ui.shop.confirm_in_dev` modal and sends no `Shop.Buy` until confirmed), `ui.shop_buy_variant` (grant Treasure; buy cosmetic slot 4 → the card shows Bought; `styles[<styleId>].variants[<variantId>] == true` in the next delta; empty cosmetic slots are not rendered), `ui.store_restricted_hidden` (`Dev.Command setPolicy true` → no Wish pack or Lucky Jar card), `ui.store_confirm_4th` (4th mock Wish purchase in 24 h → the confirm modal appears), `ui.store_week_spend` (mock purchases of `wishes_10` then `wishes_55`, as in Part 5 `store.week_spend` → the spent-this-week line reads `Skin.text("ui.store.spent_week", {robux = 548})`).
 
 #### 6.9.9 Settings (`UI/Screens/Settings.luau`)
 
@@ -1562,22 +1692,36 @@ Left tabs; right `ScrollingFrame` (`AutomaticCanvasSize = Y`) with a `UIListLayo
 
 | Tab | Controls (setting key) | Applied by |
 |---|---|---|
-| Appearance (§0.4, GDD §12.3) | Character Look global (`characterLook`); per-style overrides list (owned styles: Inherit/On/Off → `styleOverride`); Your look (`ownLook`: Ooo-sona / Roblox Avatar); Style Gear (`showStyleGear`); Show other players as (`othersAppearance`: As chosen / Always characters / Always their own looks / Simplified); Ooo-sona editor: species ◀▶ (10), colour swatches (12, `Appearance.OosonaColors`), face 1–6, hat 0–6, outfit 0–4 → `setAppearance({oosona = spec})`, with a live preview in a `ViewportFrame` (a local `LookRig_R15` clone rotating at 30°/s, static with Reduced Motion) | AppearanceController |
+| Appearance (§0.4, GDD §12.3) | Character Look global (`characterLook`); per-style overrides list (owned styles: Inherit/On/Off → `styleOverride`); Your look (`ownLook`: Ooo-sona / Roblox Avatar); Style Gear (`showStyleGear`); Show other players as (`othersAppearance`: As chosen / Always characters / Always their own looks / Simplified); Ooo-sona editor: species ◀▶ (10; label `Skin.text("ui.oosona.species." .. Appearance.OosonaSpecies[i].id)`), colour swatches (12, `Appearance.OosonaColors`, Part 5 §5.10), face 1–6, hat 0–6, outfit 0–4 → `setAppearance({oosona = spec})`, with a live preview in a `ViewportFrame` (a local `LookRig_R15` clone rotating at 30°/s, static with Reduced Motion) | AppearanceController |
 | Graphics | `graphicsTier` (Auto/Low/Mid/High); `outlineThickness` (0–2; graybox: nameplate stroke only, hulls are future) | VfxController.setTier, AppearanceController |
-| Accessibility (GDD §16.3) | `reducedMotion`, `reducedVfx`, `cameraShake` (0–1, step 0.1), `colorblind` (None/Deuteranopia/Protanopia/Tritanopia), `telegraphColor` (6 swatches), `textScale` (0.8–1.5, step 0.1), `dyslexiaFont`, `simpleHud`, `subtitles`, `glitchedCalm`, `holdToToggleBlock`, `skipSeenReveals` | §6.9.11 |
-| Audio | `volMaster`, `volMusic`, `volSfx`, `volVo`, `volUi` (0–1) | SfxController |
-| Controls | Rebind rows for `M1, Move1–4, Quirk, Awaken, Block, Dash, Jump, Run` × KBM/Pad: [Change] captures the next `UserInputService.InputBegan` key → `binds.<Action> = KeyCode.Name`; [Reset] → `""`. Duplicate keys within a column are refused with a toast. Mobile: `ui.settings.layout_editor_soon` | InputController rewrites the `KBM`/`Pad` bindings on the client's own context (Part 3 §3.10.1) |
+| Accessibility (GDD §16.3) | `reducedMotion`, `reducedVfx`, `cameraShake` (0–1, step 0.1), `colorblind` (None/Deuteranopia/Protanopia/Tritanopia), `telegraphColor` (6 swatches), `textScale` (0.8–1.5, step 0.1), `dyslexiaFont`, `simpleHud`, `subtitles`, `glitchedCalm`, `holdToToggleBlock`, `holdToToggleRun` (`ui.settings.hold_toggle_run`), `damageNumbers` (`ui.settings.damage_numbers`; GDD §15.3), `skipSeenReveals` | §6.9.11 |
+| Audio | `volMaster`, `volMusic`, `volSfx`, `volVo`, `volUi` (0–1); `quietBarks` (`ui.settings.quiet_barks`; GDD §14.5: own barks only when on) | SfxController |
+| Controls | Rebind rows for `M1, Move1–4, Quirk, Awaken, Block, Dash, Jump, Run` × KBM/Pad: [Change] captures the next `UserInputService.InputBegan` key (KBM column: keyboard/mouse inputs only; Pad column: gamepad inputs only) → `SettingsController.set("binds.<Action>.<Device>", KeyCode.Name)` with `<Device>` = `KBM` or `Pad`; [Reset] → `""` (Part 3 default). Duplicate keys within a column are refused with a toast. Mobile: `ui.settings.layout_editor_soon` | **SettingsController** (single owner, Part 2 §2.3.7 rule 6) applies `binds.<Action>.<Device>` to `Player.Combat.<Action>.<Device>.KeyCode`; InputController never writes binding KeyCodes (Part 3 §3.10.1) |
+| Safety (`ui.settings.tab_safety`; GDD §16.2) | The list of other players in the server, each with a [`ui.report.button`] button that opens the Report flow (§6.9.12) | UiController |
 
-**Verify:** scenarios `ui.settings_roundtrip` (each key set via the UI → the store shows the value after the next delta; `textScale 1.5` → a 14 px label becomes 21), `ui.rebind_m1` (binding M1 to `E`, the Totem prompt key, is refused with `ui.toast.key_in_use`; binding it to `V` → `Players.LocalPlayer.Combat.M1.KBM.KeyCode == Enum.KeyCode.V`), `ui.oosona_preview` (species → penguin: preview body `#212121`).
+**Verify:** scenarios `ui.settings_roundtrip` (each key set via the UI → the store shows the value after the next delta; `textScale 1.5` → a 14 px label becomes 21), `ui.rebind_m1` (binding M1 to `E`, the Totem prompt key, is refused with `ui.toast.key_in_use`; binding it to `V` → the store holds `binds["M1.KBM"] == "V"` and `Players.LocalPlayer.Combat.M1.KBM.KeyCode == Enum.KeyCode.V`; then rebinding Pad M1 through a `binds.M1.Pad` set leaves `M1.KBM.KeyCode == V`, proving the two devices are stored separately), `ui.oosona_preview` (species → penguin, colour swatch 1, outfit 0: preview head/arms `#2E3440`, torso `#F2C14E`, legs `#F2C14E` × 0.65; Part 5 §5.7.1), `ui.settings_new_toggles` (`quietBarks`, `damageNumbers`, `holdToToggleRun` each toggle via the UI and read back from the store after the next delta).
 
 #### 6.9.10 Results, notifications, subtitles, FTUE-lite
 
-- **Results card** (`UI/Screens/Results.luau`; not modal): on `Life.Summary`, a 520 × 200 card at top-centre for 6 s or until respawn. Killer chip and name (or `ui.results.environment`), damage dealt and taken, KOs, assists, life time, Treasure / XP / Mastery XP earned. It never contains Store entry points (GDD §8.8: no offers right after a lost fight).
+- **Results card** (`UI/Screens/Results.luau`; not modal): on `Life.Summary`, a 520 × 200 card at top-centre for 6 s or until respawn. Killer chip and name (or `ui.results.environment`), damage dealt and taken, KOs, assists, life time, Treasure / XP / Mastery XP earned. When the killer is a **player** (not a bot, not the environment, not self), the killer chip carries a small [`ui.report.button`] button that opens the Report flow with that player preselected (§6.9.12). It never contains Store entry points (GDD §8.8: no offers right after a lost fight).
 - **Notify** (Part 2 §2.7.4 row 22): `toast` / `reward` → toast stack; `error` → red toast; `announce` → banner (Mythic/Cosmic announcements use the rarity gradient). Text = `Skin.text(key, args)`; `ttl` overrides 4 s.
 - **Subtitles** (GDD §14.5, §16.3): every bark and cinematic line, when `subtitles` is on.
 - **FTUE-lite** (GDD §15.5; the full tutorial path is a future hook): while `account.level == 1` and `account.xpTotal == 0`, one-time contextual hint toasts per session: `ui.tip.punch` at spawn, `ui.tip.block` after the first hit taken, `ui.tip.dash` after 20 s, `ui.tip.awaken` on the first `AwkRdy`, `ui.tip.wish` when `Wishes ≥ 1` and out of combat for 10 s (with a [Make a Wish] button).
+- **FTUE steps** (Part 5 §5.8.4 `Ftue.Step`, C2S event, rate 5 / 1). UiController sends `Net.client.fire("Ftue.Step", {step = n, skipped = false})` once per milestone, in increasing order (the server ignores non-increasing steps), only while `flags.ftueDone == false`:
 
-**Verify:** scenarios `ui.results_card` (`Dev.Command kill` → card within 0.5 s of `Life.Summary`, gone after respawn), `ui.notify_kinds` (server fires each kind → the expected container).
+  | Step | First time the local player … | Detected by |
+  |---|---|---|
+  | 2 | sees `ui.tip.punch` | FTUE-lite toast shown |
+  | 3 | lands an M1 contact | local `Cnt` 0→1 in an `M1` state (§6.6.1) |
+  | 4 | enters `Block` | local `St` enters `Block` |
+  | 5 | dashes | local `St` enters `Dash` |
+  | 6 | breaks away | local `St` enters `Breakaway` |
+  | 7 | awakens | local `St` enters `Awakening` |
+
+  Step 1 (cold open) and steps 8–9 are server-side or not emitted in M1-G. A milestone reached out of order (e.g. a Dash before the first Block) is sent when it happens; the skipped lower steps are then never sent for that profile.
+- **No offer after a loss** (GDD §8.8 "Wish offers are never shown right after a lost fight"; Part 5 §5.6.4 `Economy.NoOfferAfterLossSec`, 30 s). UiController records `lastLocalKoAt = os.clock()` when the local `St` enters `KO` (presentation clock; not sim). While `os.clock() − lastLocalKoAt < Runtime.get().Economy.NoOfferAfterLossSec`, `ui.tip.wish` and any other **unsolicited** Wish or Store prompt (tip buttons, the `insufficient` → [Shop] shortcut, any future offer banner) are suppressed; a suppressed `ui.tip.wish` is re-evaluated after the window. Screens the player opens deliberately (menu strip) are never blocked.
+
+**Verify:** scenarios `ui.results_card` (`Dev.Command kill` → card within 0.5 s of `Life.Summary`, gone after respawn; with a bot killer no report button; with a player killer in a two-client run the button exists), `ui.notify_kinds` (server fires each kind → the expected container), `ui.no_offer_after_loss` (`grant Wishes 1`; `Dev.Command kill`; respawn and stay out of combat → no `ui.tip.wish` toast within `NoOfferAfterLossSec` of the KO; it appears once after the window plus 10 s out of combat), `ui.ftue_steps` (fresh profile: punch tip, M1 contact, block, dash → `flags.ftueStep` reads 2, 3, 4, 5 in order in the deltas).
 
 #### 6.9.11 Accessibility matrix (GDD §16.3)
 
@@ -1591,8 +1735,21 @@ Left tabs; right `ScrollingFrame` (`AutomaticCanvasSize = Y`) with a `UIListLayo
 | Text scale / dyslexia font | `Create.label` rules; `restyleAll` on change | `ui.settings_roundtrip` |
 | Audio buses, subtitles, visual sound indicators | SfxController buses; subtitles; HUD edge indicators | `sfx.bus_volumes`, `hud.edge_indicators` |
 | Hold-to-toggle block | With `holdToToggleBlock`, InputController clears the `Block` action's `KBM`/`Pad`/`Touch` bindings on the client's own context and instead toggles the `Script` binding (`InputBinding:Fire`) on each press | `input.block_toggle` |
+| Hold-to-toggle run | With `holdToToggleRun` (GDD §16.3 "hold-to-toggle for block and run"), a Run press latches `RunAuto` on (InputController fires the `RunAuto` Script binding) until the next Run press, a stop of movement input for ≥ 0.25 s, or any non-NEUTRAL state | `input.run_toggle` (key on: one Run tap while moving → `RunAuto` stays true for 2 s of held movement; a second tap → false) |
 | Simple HUD | §6.9.3 | `hud.simple_preset` |
-| Damage numbers | Off by default except Training (GDD §15.3); a Settings toggle is a future hook (no Part 2 key) | `training.framedata_m1` |
+| Damage numbers | Settings key `damageNumbers` (boolean, default `false`; Part 2 §2.8.6): **off by default everywhere** (GDD §15.3); enabled from the Training panel toggle (`ui.training.damage_numbers`) or Settings ▸ Accessibility (`ui.settings.damage_numbers`), both writing the same key. RenderController shows them only while it is true; `Perf.Ui.DamageNumbersDefault = false` is used before settings load. Simple HUD does not override an explicit `true` | `ui.settings_new_toggles`, `training.damage_numbers_toggle` |
+| Haptics | Short `HapticEffect` on own contact and on being hit (gamepad/touch only), off with Reduced Motion (§6.6.1) | `render.haptic_gate` |
+
+#### 6.9.12 Report (panel inside `UI/Screens/Settings.luau`)
+
+GDD §16.2: "In-game report (exploits, teaming, harassment)". The server half is Part 5 §5.9.1 (`Report.Submit`, Part 2 §2.7.4 row 17; ModerationService ring; thank-you Notify). The flow is a sub-panel of the Settings screen, so the §0.3 screen list and `Types.ScreenId` are unchanged: it is opened with `UiController.open("Settings", {tab = "safety", reportUserId = <userId>?})`.
+
+- **Entry points.** (1) The [`ui.report.button`] button on the Results card killer chip (§6.9.10; players only), which calls `UiController.open("Settings", {tab = "safety", reportUserId = killer.UserId})`. (2) Settings ▸ **Safety** tab (`ui.settings.tab_safety`, §6.9.9), which lists every other player in the server (`Players:GetPlayers()` minus the local player; `DisplayName` and a style chip) with a [`ui.report.button`] button each. Bots never appear and have no button.
+- **Flow** (modal panel 560 × 420, title `ui.report.title`): the target's `DisplayName` (preselected from the entry point) → a reason `Create.segmented` with four options `ui.report.reason_exploit`, `ui.report.reason_teaming`, `ui.report.reason_harassment`, `ui.report.reason_other` (values `exploit`, `teaming`, `harassment`, `other`; none preselected) → [`ui.report.send`] (enabled once a reason is picked) → `Net.client.fire("Report.Submit", {targetUserId = target.UserId, reason = <value>})` → close. The thank-you toast is the server's `Notify` `ui.notify.report_thanks`; the client shows no toast of its own. No free text is collected.
+- **Disabled** (button not created) for self, for bots, and while `Runtime.get().Features.Reports == false`. A target who left the server before [Send] closes the panel without sending.
+- Client-side guard: at most one report per target per 60 s (td) from this panel; the server's `2 / 0.02` rate limit still applies.
+
+**Verify:** scenario `ui.report_submit` (level `multi`: `multi(2, Baseline30, ui.report_submit)`; client A opens Settings ▸ Safety, reports client B with reason `teaming` → `ModerationService.reports(1)` has `{reporter = A, target = B, reason = "teaming"}` and A receives a `ui.notify.report_thanks` toast; `Features.Reports = false` via `setConfig` → the Safety list shows no report buttons).
 
 ---
 
@@ -1635,7 +1792,7 @@ TTS barks (`SfxController.bark`; Studio only; subtitled): `ui.vo.awaken` ("Algeb
 
 ---
 
-### 6.11 `Defaults.Perf` and `Defaults.Appearance`
+### 6.11 `Defaults.Perf`
 
 JSON-safe (Part 2 §2.6.1): numbers, strings, booleans, arrays, string-keyed tables; colours as hex; vectors as arrays. §0.9 gives Part 6 only the `Perf` key, so presentation and world tuning live in `Perf` sub-sections (§6.14 item 1).
 
@@ -1717,7 +1874,7 @@ JSON-safe (Part 2 §2.6.1): numbers, strings, booleans, arrays, string-keyed tab
 			Reveal = { common = { 1.2, 0.5 }, uncommon = { 1.2, 0.5 }, rare = { 2.0, 0.8 }, epic = { 3.0, 1.2 },
 				legendary = { 4.5, 2.0 }, mythic = { 6.0, 3.0 }, cosmic = { 8.0, 4.0 } }, -- GDD §8.6 {first, repeat}
 			FakeOutUpgradeAt = 0.5,                                  -- (td) fraction of the reveal
-			DamageNumbersInTraining = true,                          -- GDD §15.3
+			DamageNumbersDefault = false,                            -- GDD §15.3 (off by default; the `damageNumbers` setting enables them)
 		},
 		Audio = {
 			PoolSize = 32, PitchJitter = 0.05, ComboPitchStep = 0.03, ComboPitchMaxSteps = 10, -- (td); GDD §6.13
@@ -1746,23 +1903,15 @@ JSON-safe (Part 2 §2.6.1): numbers, strings, booleans, arrays, string-keyed tab
 				InflateStuds = 1.5, MinVy = 40, SpawnClearStuds = 60 }, -- (td)
 			ScanHz = 10,                                             -- (td)
 			Sightline = { MaxStuds = 150, GridStuds = 20, EyeY = 5 }, -- GDD §11.1; (td)
-			Hazard = { MaxDamage = 15, MinTelegraphSec = 1.5, KoCreditSec = 5 }, -- GDD §11.1
+			Hazard = { MaxDamage = 15, MinTelegraphSec = 1.5 },     -- GDD §11.1 (KO credit window: Part 3 Combat.Streak.EnvKoCreditWindowSec)
 			Budget = { arena_duel_m0 = 400, training = 400, candy_kingdom = 2500 }, -- (td) max BaseParts
 		},
 	},
-
-	-- PART 5/6 (keys required by Part 2; values below are Part 6's graybox catalog; Part 5 may add keys)
-	Appearance = {
-		OosonaSpecies = { "human", "candy", "dog", "cat", "vampire", "flame", "lumpy", "wizard", "ghost", "penguin" }, -- GDD §12.3
-		OosonaFaces = 6, OosonaHats = 6, OosonaOutfits = 4,          -- (td) graybox catalog sizes
-		OosonaColors = { "#F2C14E", "#F48FB1", "#7FD8BE", "#B39DDB", "#FFF3D6", "#4FC3F7",
-			"#FF8A65", "#A1887F", "#90A4AE", "#E0E0E0", "#6D4C41", "#212121" }, -- (td) swatches; #F2C14E = Part 2 default
-		SimplifiedLimbShade = 0.75,                                   -- (td)
-		FaceExpressions = 24,                                         -- GDD §12.3
-	},
 ```
 
-`Schema.rules` additions (validated at boot and on overlay, Part 2 §2.6.3): every `Perf.Tiers.<T>.*` int ≥ 0; `Perf.Vfx.LodSimplifiedStuds < LodTelegraphOnlyStuds`; `Perf.Ui.Reveal.<r>[1] ≥ [2]`; `Perf.World.Hazard.MaxDamage ≤ 15`; `Perf.World.Sightline.MaxStuds ≤ 150`; every `Perf.Lighting.Presets` colour matches `^#%x%x%x%x%x%x$`; `#Appearance.OosonaSpecies ≥ 1`.
+**Appearance:** see Part 5 §5.10 (Part 5 owns the single canonical `Defaults.Appearance` table; decision D-13). It already includes this part's keys `OosonaColors` (Settings swatches, §6.9.9), `SimplifiedLimbShade` (§6.8.2) and `FaceExpressions` (§6.8.5), with `OosonaSpecies` as `{id, skin}` records (read via `.id`), `OosonaHats = 6`, `OutfitColors` and `NoOutfitDarken` (three-colour Oosona, §6.8.2). This part does not write `Appearance`.
+
+`Schema.rules` additions (validated at boot and on overlay, Part 2 §2.6.3): every `Perf.Tiers.<T>.*` int ≥ 0; `Perf.Vfx.LodSimplifiedStuds < LodTelegraphOnlyStuds`; `Perf.Ui.Reveal.<r>[1] ≥ [2]`; `Perf.World.Hazard.MaxDamage ≤ 15`; `Perf.World.Sightline.MaxStuds ≤ 150`; every `Perf.Lighting.Presets` colour matches `^#%x%x%x%x%x%x$`. (`Appearance` rules, incl. `#OosonaSpecies ≥ 1`, are Part 5 §5.10's.)
 
 **Verify:** Lune `tests/core/perf.spec.luau`: `perf.defaults_gdd` (the GDD-cited numbers above against a literal table), `perf.json_safe`, `perf.tiers_ordered` (Low ≤ Mid ≤ High for every budget), `perf.audio_map_complete` (every §6.10 key present).
 
@@ -1772,15 +1921,18 @@ JSON-safe (Part 2 §2.6.1): numbers, strings, booleans, arrays, string-keyed tab
 
 | Kind | Names |
 |---|---|
-| Lune | `movement.volume_*` (4), `theme.contrast`, `theme.reveal_durations`, `theme.cooldown_frac`, `theme.touch_no_overlap`, `perf.defaults_gdd`, `perf.json_safe`, `perf.tiers_ordered`, `perf.audio_map_complete`, `perf.lighting_presets_complete`, lints `render.no_attr_signal`, `anim.no_track_cache` |
+| Lune | `movement.volume_*` (4), `theme.contrast`, `theme.reveal_durations`, `theme.cooldown_frac`, `theme.touch_no_overlap`, `theme.style_palette_variants`, `perf.defaults_gdd`, `perf.json_safe`, `perf.tiers_ordered`, `perf.audio_map_complete`, `perf.lighting_presets_complete`, `anims.base64_roundtrip`, `anims.upload_refuses_without_approve` (`tests/core/upload_anims.spec.luau`, §6.6.9), lints `render.no_attr_signal`, `anim.no_track_cache` |
 | Builder | Part 1 §1.6.8 set for all 7 Part 6 builders |
 | Scenarios: world | `world.spring_launch`, `world.river_slow`, `world.void_kill`, `world.house_break_rebuild`, `world.hatch_fall_and_spring`, `world.rebuild_postponed_when_occupied`, `map.arena_spawn_8`, `map.arena_no_escape`, `map.ck_zone_label`, `map.ck_boundary_soft`, `map.ck_totem_prompt` |
-| Scenarios: training | `training.dummy_mode_ui`, `training.framedata_m1`, `training.trial_equip`, `training.reset_travel` |
-| Scenarios: presentation | `render.no_attrchanged_oneshots`, `render.hitstop_not_reentry`, `render.focus_target`, `anim.cosmetic_budget`, `vfx.budget_tiers`, `vfx.telegraph_never_reduced`, `vfx.highlight_cap`, `vfx.lod_distance`, `vfx.impact_frame`, `vfx.templates_all_play`, `sfx.voice_cap`, `sfx.bark_throttle`, `sfx.bus_volumes`, `sfx.map_complete`, `cam.shift_lock_default`, `cam.reduced_motion`, `cam.flash_rate`, `cam.lighting_follows_map`, `ragdoll.clone_lifecycle`, `ragdoll.cap`, `ragdoll.no_misprediction`, `look.modes_matrix`, `look.style_tell_always`, `look.face_expressions` |
-| Scenarios: UI | `hud.hp_drain`, `hud.cooldown_wipe`, `hud.meter_ring`, `hud.breakaway_swap`, `hud.touch_binding`, `hud.combo_counter`, `hud.simple_preset`, `hud.edge_indicators`, `ui.wheel_death_autoconfirm`, `ui.wheel_equip_next`, `ui.wheel_in_dev_badge`, `ui.wheel_cl_toggle`, `ui.mastery_level_matches_server`, `ui.wish_odds_live`, `ui.wish_reveal_first_unskippable`, `ui.wish_10x_grid`, `ui.wish_no_gambling_terms`, `ui.shop_buy_flow`, `ui.store_restricted_hidden`, `ui.store_confirm_4th`, `ui.settings_roundtrip`, `ui.rebind_m1`, `ui.oosona_preview`, `ui.results_card`, `ui.notify_kinds`, `ui.cvd_rarity`, `input.block_toggle` |
-| Spikes | `spike.S-P6-1` … `spike.S-P6-13` (§6.15) |
+| Scenarios: training | `training.dummy_mode_ui`, `training.framedata_m1`, `training.trial_equip`, `training.damage_numbers_toggle`, `training.reset_travel` |
+| Scenarios: presentation | `render.hitstop_not_reentry`, `render.no_double_move_vfx`, `render.remote_telegraph_full` (net profile `M0Gate`), `render.focus_target`, `render.haptic_gate`, `anim.cosmetic_budget`, `vfx.budget_tiers`, `vfx.telegraph_never_reduced`, `vfx.highlight_cap`, `vfx.lod_distance`, `vfx.attach_unanchored`, `vfx.impact_frame`, `vfx.templates_all_play`, `sfx.voice_cap`, `sfx.bark_throttle`, `sfx.bus_volumes`, `sfx.map_complete`, `cam.shift_lock_default`, `cam.reduced_motion`, `cam.flash_rate`, `cam.lighting_follows_map`, `ragdoll.clone_lifecycle`, `ragdoll.cap`, `ragdoll.wallsplat_handoff`, `ragdoll.juggle_rebegin`, `ragdoll.no_misprediction`, `look.style_tell_always`, `look.oosona_three_colour`, `look.variant_render`, `look.face_expressions` (programmatic + one 3×3 capture) |
+| Scenarios: multi (level `multi`; run only via `multi(2, Baseline30, <name>)`) | `look.modes_matrix`, `ui.report_submit` (and Part 4's `look.stealth_ranges`) |
+| Scenarios: UI | `hud.hp_drain`, `hud.cooldown_wipe`, `hud.meter_ring`, `hud.breakaway_swap`, `hud.touch_binding`, `hud.combo_counter`, `hud.simple_preset`, `hud.edge_indicators`, `hud.wallet_level`, `hud.quests_progress`, `hud.move_lock_glyph`, `ui.wheel_death_autoconfirm`, `ui.wheel_equip_next`, `ui.wheel_in_dev_badge`, `ui.wheel_cl_toggle`, `ui.wheel_variant_equip`, `ui.wheel_spend_shards`, `ui.mastery_level_matches_server`, `ui.wish_odds_live`, `ui.wish_reveal_first_unskippable`, `ui.wish_10x_grid`, `ui.wish_no_gambling_terms`, `ui.quick_wish_instant`, `ui.wish_restricted_wallet`, `ui.shop_buy_flow`, `ui.shop_in_dev_badge`, `ui.shop_buy_variant`, `ui.store_restricted_hidden`, `ui.store_confirm_4th`, `ui.store_week_spend`, `ui.settings_roundtrip`, `ui.settings_new_toggles`, `ui.rebind_m1`, `ui.oosona_preview`, `ui.results_card`, `ui.notify_kinds`, `ui.no_offer_after_loss`, `ui.ftue_steps`, `ui.cvd_rarity`, `input.block_toggle`, `input.run_toggle` |
+| Scenarios: MCP input | `mcp.gamepad_menu_nav` (Part 7 §7.4.10 row, owner P6, M1-G) |
+| Defined elsewhere, exercised by this part's code | `combat.env_ko_credit` (Part 3 §3.13; world runtime cause), `tel.perf_sample_sent` (Part 5 §5.8.3; VfxController sender), `ip.pack_switch_live` (Part 8; `Skin.onChanged` re-render and `CodenameLooks`), `combat.disabled_move_kill_switch` (Part 3; HUD lock glyph is cosmetic), `mcp.tab_no_playerlist` (Part 7 §7.4.10, M0; Part 3 §3.10.1 CoreGui calls; the Style Wheel half needs §6.9.6) |
+| Spikes | `spike.S-P6-1` … `spike.S-P6-14` (§6.15) |
 
-Log lines introduced: `[ALG][World] break|rebuild|void_kill …`, `[ALG][Anim] clips n=… / WARN track_budget`, `[ALG][Vfx] WARN missing_template key=…`, `[ALG][Vfx] degrade level=<n>`, `[ALG][UI] ERROR odds_sum …`, `[ALG][UI] screen open=<id>`, `[ALG][Look] mode rid=<n> mode=<m>` (Studio only).
+Log lines introduced: `[ALG][World] break|rebuild|void_kill …`, `[ALG][BUILD] reminder Terrain.Decoration is human-set at H-04 (NotScriptable)`, `[ALG][CHECK] upload_anims key=… id=… | FAIL … | SUMMARY ok=<n> fail=<m>` (§6.6.9), `[ALG][Anim] clips n=… / WARN track_budget`, `[ALG][Vfx] WARN missing_template key=…`, `[ALG][Vfx] degrade level=<n>`, `[ALG][UI] ERROR odds_sum …`, `[ALG][UI] screen open=<id>`, `[ALG][Look] mode rid=<n> mode=<m>` (Studio only).
 
 ---
 
@@ -1789,23 +1941,35 @@ Log lines introduced: `[ALG][World] break|rebuild|void_kill …`, `[ALG][Anim] c
 1. **Map instance layout** (§6.1.1, §6.1.4): map Models with `MapId`, `KillY`, `Origin`, `BuildVersion`; child folders `Geometry`, `Spawns`, `Totems`, `Breakables`, `DummyPoints`; `Zones` is a **Model** with `ModelStreamingMode = Persistent` holding `Volumes`, `KillVolumes`, `EventZones`, `ZoneBounds`. Map origins: arena (−2600, 0, 0), Candy Kingdom (0, 0, 0), Training (2600, 0, 0). The full attribute table of §6.1.4. *(Parts 2, 3, 5, 7)*
 2. **Collision groups `MapBoundary` and `RagdollFx`** with the §6.1.5 matrix, registered by Part 3's `Hurtbox.ensureGroups()` (8 of 32). *(Part 3)*
 3. **Predicted volumes:** `Movement.volumeEffect` (pure, in `Core/Movement.luau`) and its Adapter application (cache per map at `track`; apply after `Fsm.step`, before `Loco.apply`). *(Part 3)*
-4. **World runtime** block in `CombatService` (`CombatService.world` API); environment KO credit window **5 s** for `killAsync(…, "environment")` (GDD §11.1), e.g. a new `Combat.Streak.EnvKoCreditWindowSec = 5`. *(Part 3)*
+4. **World runtime** block in `CombatService` (`CombatService.world` API), which kills with `cause = "environment"`. The 5 s environment KO credit window (GDD §11.1) is **done in Part 3 §3.17** (`Combat.Streak.EnvKoCreditWindowSec = 5`, applied in §3.13.2; scenario `combat.env_ko_credit`); `Perf.World.Hazard` carries no credit key. *(Part 3)*
 5. **`Util.luau` MapKit additions:** `Util.KIND`, `mapPart`, `ramp`, `slabRects`, `ensureRootOf`. *(Part 1)*
 6. **PlayerService / travel:** (a) set `Player.DevEnableMouseLock = false` at join (server-only property); (b) initial `MapId` = `"candy_kingdom"` if `Workspace.Map.CandyKingdom` exists, else `"arena_duel_m0"`; (c) add `"arena_duel_m0"` to the `World.Travel` enum (valid only when `Workspace.Arena.DuelArena` exists); (d) `canTravel` skips the combat-tag check for `training → training` travel (Training Reset). *(Parts 2, 3)*
-7. **InputController additions:** `setShiftLock(on: boolean)`, `shiftLock(): boolean` (feeds `AimLock`); the client-local `UI` InputContext (`StyleWheel`, `ShiftLock`, `Emote`); hold-to-toggle block via clearing bindings plus the `Script` binding; touch `LauncherBtn` and `ShiftLockBtn`; binding `Jump.Touch.UIButton` to the default `JumpButton`. BotService writes `DummyPoints.Slot_<n>` attribute `Mode` on every `Training.Dummy` change. *(Part 3)*
-8. **Part 5 expectations:** WishService sets `flags.seenReveals[rarity] = true` for every rarity of a batch in the roll transaction; StyleService infers a totem equip (requester within `TotemRadius` of a `StyleTotem` part of its map and `canTravel`) and applies it now at that hub; `Wish.Pity` key names are read by the Wish screen. *(Part 5)*
+7. **InputController additions:** `setShiftLock(on: boolean)`, `shiftLock(): boolean` (feeds `AimLock`); the client-local `UI` InputContext (`StyleWheel`, `ShiftLock`, `Emote`, `MenuFocus` on Pad `DPadDown`, §6.9.5); hold-to-toggle block via clearing bindings plus the `Script` binding; hold-to-toggle run (`holdToToggleRun` latches `RunAuto`, §6.9.11); InputController never writes binding KeyCodes (SettingsController owns rebinds, Part 2 §2.3.7 rule 6); the CoreGui disabling (`Backpack`, `PlayerList`, `AutoSelectGuiEnabled = false`) is Part 3 §3.10.1's `InputController.init()`; touch `LauncherBtn` and `ShiftLockBtn`; binding `Jump.Touch.UIButton` to the default `JumpButton`. BotService writes `DummyPoints.Slot_<n>` attribute `Mode` on every `Training.Dummy` change. *(Part 3)*
+8. **Part 5 expectations:** WishService sets `flags.seenReveals[rarity] = true` for every rarity of a batch in the roll transaction; StyleService infers a totem equip per **Part 5 §5.1.3** (distance from the requester's HRP to a Totem **Model pivot** of its map ≤ `Progression.TotemRangeStuds` (12), plus the swap gate `canTravel`) and applies it now through Part 3's random safe spawn on the same map (DES-3 pending); the builder sets `TotemRadius` from `Progression.TotemRangeStuds` for the ProximityPrompt only; `Wish.Pity` key names are read by the Wish screen. *(Part 5)*
 9. **DevCmd additions:** `breakAll(mapId)`, `rebuildAll(mapId)`, `setLightingPhase(phase)`. *(Parts 2, 7)*
-10. **Settings key `quietBarks`** (boolean, default false, GDD §14.5) added to `Types.Settings` and `SETTING_KEYS`; until then SfxController treats it as false. *(Part 2)*
+10. **Settings keys** (Part 2 §2.8.6 rows, `Types.Settings`, `SETTING_KEYS`): `quietBarks` (boolean, false, GDD §14.5; SfxController), `damageNumbers` (boolean, false, GDD §15.3; RenderController; replaces `Perf.Ui.DamageNumbersInTraining` with `Perf.Ui.DamageNumbersDefault = false`), `holdToToggleRun` (boolean, false, GDD §16.3; InputController latches `RunAuto`), and `binds.<Action>.<Device>` with `<Device>` ∈ {`KBM`, `Pad`} (SettingsController applies it to `Player.Combat.<Action>.<Device>.KeyCode`; single owner). Title selection: ProgressionService auto-equips the first granted title when `account.title == ""` (Part 5 §5.5.5); there is no `title` settings key or picker in M1-G (§6.15 future hook). *(Parts 2, 3, 5)*
 11. **Hurtbox.prepare** additionally sets `Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None`. *(Part 3)*
 12. **No hazards in M1-G maps;** the `Hazard*` attribute schema and limits are reserved and verified. *(Part 7)*
-13. **`UiController.open(screen, args?)`** optional args; screen module contract (§6.9.1); lazy screen requires. *(Part 2)*
-14. **Client-local root `Workspace.ALG_Local`** (`Vfx`, `Looks`, `Ragdolls`, `Debris`, `Sfx`); `Verify` flags it in Edit. **`ReplicatedStorage.Looks`** contents: `LookRig_R15`, `Face_UI`, `Gear_*`, `Summon_*`, `Oosona_*`. **`ServerStorage.Templates.Fragments`** cache. **Lighting children** `ALG_Atmosphere`, `ALG_Sky`, `ALG_CC`, `ALG_CC_Fx`, `ALG_Bloom`, and `Terrain.ALG_Clouds`. *(Parts 1, 2, 7)*
+13. **`UiController.open(screen, args?)`** optional args; screen module contract (§6.9.1); lazy screen requires; open screens, the HUD and nameplates re-render on `Skin.onChanged` (Part 2 §2.9.2; `Skin.activePack()`). The Report flow is a Settings sub-panel (`open("Settings", {tab = "safety", reportUserId})`), so `Types.ScreenId` is unchanged. *(Part 2)*
+14. **Client-local root `Workspace.ALG_Local`** (`Vfx`, `Looks`, `Ragdolls`, `Debris`, `Sfx`, and the `HapticEffect` `ALG_Haptic`); `Verify` flags it in Edit. **`ReplicatedStorage.Looks`** contents: `LookRig_R15`, `Face_UI`, `Gear_*`, `Summon_*`, `Oosona_*`. **`ServerStorage.Templates.Fragments`** cache. **Lighting children** `ALG_Atmosphere`, `ALG_Sky`, `ALG_CC`, `ALG_CC_Fx`, `ALG_Bloom`, and `Terrain.ALG_Clouds`. *(Parts 1, 2, 7)*
 15. **Asset keys** (Part 8 adds manifest entries): generic `vfx.*` (§6.6.7), generic `sfx.*` (§6.10), `anim.common.*` (19, §6.6.8), `model.oosona.species_<id>`, `model.oosona.hat_<n>`, `model.oosona.outfit_<n>`; new VFX recipes `VFX_BlockSpark`, `VFX_PerfectStar`, `VFX_Breakaway_Burst`, `VFX_Splat`, `VFX_Tell_Ring`, plus `_Lod1` variants; new poses `hurt_light`, `hurt_heavy`, `tumble`, `splat`, `dizzy`, `ko_lie`, `getup_kneel`. *(Parts 4, 8)*
-16. **Skin keys** (Part 8 fills `Codename` and `Original`): `map.<mapId>.name`, `map.candy_kingdom.zone.<zoneId>` (6), `ui.hud.*` (`breakaway`, `protected`, `combo`, `combo_big`), `ui.feed.bot`, `ui.nameplate.rookie`, `ui.totem.action`, `ui.totem.object`, `ui.wheel.*` (`in_dev`, `trial`, `free`, `get_hint`), `ui.wish.*`, `ui.shop.*` (incl. `goose_line_<n>`), `ui.store.*` (incl. `confirm_4th`), `ui.settings.*` (incl. `layout_editor_soon`), `ui.results.*` (incl. `environment`), `ui.training.*` (`slot`, `mode_<mode>`, `m1_<sub>`, `ender_<sub>`, `dash_<sub>`), `ui.toast.*` (`emotes_soon`, `key_in_use`), `ui.tip.*` (5), `ui.vo.*` (`awaken`, `ko`, `legendary`), `ui.oosona.species.<id>`. *(Part 8)*
-17. **Config:** complete `Defaults.Perf` (§6.11) and `Defaults.Appearance` values, plus the `Schema.rules` additions. *(Parts 2, 5, 7)*
+16. **Skin keys** (Part 8 fills `Codename` and `Original`): `map.<mapId>.name`, `map.candy_kingdom.zone.<zoneId>` (6), `ui.hud.*` (`breakaway`, `protected`, `combo`, `combo_big`), `ui.feed.bot`, `ui.nameplate.rookie`, `ui.totem.action`, `ui.totem.object`, `ui.wheel.*` (`in_dev`, `trial`, `free`, `get_hint`), `ui.wish.*`, `ui.shop.*` (incl. `goose_line_<n>`), `ui.store.*` (incl. `confirm_4th`), `ui.settings.*` (incl. `layout_editor_soon`), `ui.results.*` (incl. `environment`), `ui.training.*` (`slot`, `mode_<mode>`, `m1_<sub>`, `ender_<sub>`, `dash_<sub>`), `ui.toast.*` (`emotes_soon`, `key_in_use`), `ui.tip.*` (5), `ui.vo.*` (`awaken`, `ko`, `legendary`), `ui.oosona.species.<id>`. **Added by decision D-42** (Part 8 §8.3.7 rows; Codename and Canon inherit): `ui.hud.level`, `ui.hud.treasure`, `ui.hud.shards`, `ui.hud.sparks`, `ui.hud.quests`, `ui.quest.<id>` (token `{goal}`), `ui.notify.quest_done`, `ui.report.button`, `ui.report.title`, `ui.report.reason_exploit` / `_teaming` / `_harassment` / `_other`, `ui.report.send`, `ui.settings.tab_safety`, `ui.settings.quiet_barks`, `ui.settings.damage_numbers`, `ui.settings.hold_toggle_run`, `ui.training.damage_numbers`, `ui.wheel.shards`, `ui.wheel.convert`, `ui.wheel.mastery_combat_only`, `ui.wheel.variant`, `ui.wheel.variant_base`, `ui.wish.locked_paid`, `ui.wish.auto10`, `ui.wish.secret`, `ui.shop.balance`, `ui.shop.confirm_in_dev`, `ui.store.spent_week`. Existing keys now used: `ui.wish.fakeout_note` (no tokens), `ui.wheel.in_dev` (Shop cards), `ui.shop.coming_soon`, `ui.notify.report_thanks`, `variant.<styleId>.<vid>.name`. *(Part 8)*
+17. **Config:** complete `Defaults.Perf` (§6.11) plus the `Schema.rules` additions; `Perf.Ui.DamageNumbersDefault = false` replaces `DamageNumbersInTraining`; `Perf.World.Hazard` has no `KoCreditSec`. `Defaults.Appearance` is Part 5 §5.10 (merged; D-13). *(Parts 2, 5, 7)*
 18. **Log tags** added to Part 2's list: `World`, `Anim`, `Sfx`, `Cam`, `Look` (`Render`, `Vfx`, `UI` already exist). *(Part 2)*
 19. **Studio snippet** `tools/studio/map_stats.luau` (§6.1.9). *(Parts 1, 7)*
-20. **Theme is load-pure** and Lune-tested (`tests/core/theme.spec.luau`); new Lune specs `movement_volumes.spec.luau`, `perf.spec.luau`. *(Part 7)*
+20. **Theme is load-pure** and Lune-tested (`tests/core/theme.spec.luau`); new Lune specs `movement_volumes.spec.luau`, `perf.spec.luau`, `upload_anims.spec.luau`. *(Part 7)*
+21. **Map roots under the `Workspace.Map` container** (decision D-01): `BuildMap_CandyKingdom` and `BuildTraining` create their Model roots with `Util.ensureRootOf(Util.ensureContainer(workspace, "Map", c), "<Name>", "Model", NAME, c, opts.reset)`; the container belongs to `BuildAll`'s containers step and is never pruned or reset (§6.1.1). *(Part 1)*
+22. **`Terrain.Decoration` is human-set at H-04** (NotScriptable); no builder writes or reads it; `verify()` prints a non-failing reminder (§6.1.6). *(Part 1)*
+23. **Animation upload pipeline (H-07 route)** §6.6.9 (decision D-09): snippet `tools/studio/export_anim.luau`, Lune `tools/upload_anims.luau` and `tools/base64.luau`, outputs under `build/anims/`, spike S-P6-14, conditional card T143. Part 1's example permissions file keeps `lune run tools/upload_anims.luau` on **ask** (every run human-approved). *(Parts 1, 7; TASKS)*
+24. **Client perf sample sender** (decision D-17): VfxController sends `Telemetry.Perf` while `LocalPlayer:GetAttribute("PerfSampled") == true`, using `Telemetry.PerfWindowSec` / `PerfSendEverySec` (§6.6.3). *(Parts 2, 5)*
+25. **Attached VFX are un-anchored and massless** before welding to a character (§6.6.3); the Style Tell ring follows the same rule (§6.8.4). *(Parts 3, 4)*
+26. **Render contract** (decision D-29, Part 3 §3.11.8): entry = `St` or `Sub` changed; one-shots keyed by `(actionId, threshold)` with `firedMax`; telegraph only while `Cnt == 0` and before the first active frame; contact undo only with unchanged `actionId` or a rollback to ≤ the contact frame; predicted effects also undone on a STUN/KO entry within 15f; remote views use observation time `eR` (§6.6.1). *(Part 3)*
+27. **`Theme.stylePalette(styleId, variantId?)`** (canonical code in Part 8 §8.2.7, reproduced in §6.9.4): variants `v1` (swap secondary/accent) and `v2` (darken 25 %), and `Features.CodenameLooks == false` forces the Original pack's palette (`Skin.look(styleId, "Original")`). `Variant` is an appearance refresh trigger (§6.8.3). *(Parts 4, 8)*
+28. **`Features.CodenameLooks` behaviour** (decision D-43): hide Codename-look gear and summons, neutral Ball summons, Character → Simplified, Original palettes (§6.8.2). *(Parts 2, 8)*
+29. **FTUE-lite → `Ftue.Step` mapping** (2–7) and the **no-offer-after-loss** rule (`Economy.NoOfferAfterLossSec`) in UiController (§6.9.10; decision D-40). *(Parts 5, 7)*
+30. **Report UI** (§6.9.12): Results-card and Settings ▸ Safety entry points to `Report.Submit`. *(Parts 2, 5)*
+31. **Per-move kill switch, HUD side** (decision D-14): the hotbar/cluster lock glyph for move ids in `Runtime.get().Features.DisabledMoves` (cosmetic; the sim refuses via `StyleRuntime.disabled`). *(Part 3)*
+32. **HUD meta elements**: Wallet & level, Quests (on in M1-G, decision D-39), Shop Treasure header, Store weekly spend from `StoreView.spentThisWeekRobux`, Variant/Shard UI in the Style Wheel, Quick Wish and PRI-restricted wallet in the Wish screen (§6.9.5–§6.9.8). *(Part 5)*
 
 ### 6.14 Issues with spine
 
@@ -1813,17 +1977,19 @@ Log lines introduced: `[ALG][World] break|rebuild|void_kill …`, `[ALG][Anim] c
 2. **No world service.** The fixed service list has no home for the server map runtime (void kills, breakables). This part specifies it as a block inside Part 3's `CombatService.luau`, and the predicted volume logic inside Part 3's `Movement`/`Adapter`. Suggested spine fix: add `Services/WorldService.luau` (Part 2's ORDER would become 16, after CombatService).
 3. **"Style Tell always on" vs stealth.** GDD §7.3.12 stealth (and Part 4 §4.7.6) hides an invisible player from distant enemies; a permanent nameplate chip would defeat it. This part follows Part 4's proposal (the chip hides; the shimmer keeps the style colour). The spine wording should say "always on except during stealth, where the shimmer carries the style colour".
 4. **Flat controller files and the 700-line cap.** §0.3 fixes the client file list, so the ragdoll presenter lives in `RenderController.luau`, the face controller and nameplates in `AppearanceController.luau`, telegraphs and the Highlight pool in `VfxController.luau`, and the Training panels in `UI/Screens/Hud.luau`. These will likely exceed Part 2's 700-line cap. Suggested fix: allow `Controllers/<Name>/init.luau` with child modules for these four, or raise their cap to 1,100 lines.
-5. **Marker vs data timing.** Part 4 §4.2.0.7 fires move VFX/SFX from clip markers with a frame-counter fallback. This part (and the brief) uses data-driven frame timing as the primary path: `GetMarkerReachedSignal` is not Simulation-Access, temporary clip IDs do not exist outside Studio, and markers would fire twice during resimulation. Markers stay in the clips for the timing-lock check.
+5. **Marker vs data timing** (resolved by decision D-03; kept for the rationale). Part 4 §4.2.0.7 originally fired move VFX/SFX from clip markers with a frame-counter fallback. This part (and the brief) uses data-driven frame timing as the primary path: `GetMarkerReachedSignal` is not Simulation-Access, temporary clip IDs do not exist outside Studio, and markers would fire twice during resimulation. Markers stay in the clips for the timing-lock check.
 6. **Kit props in `ServerStorage.Templates`** (§0.3 table) cannot be seen by clients. This part follows Part 2 §2.13 item 3 (`ReplicatedStorage.Looks`).
 7. **Highlight limit.** GDD §12.4 says the client renders at most 31 Highlights; the docs say 255 and that disabled ones still count [Docs `Highlight.yaml`]. The pooled cap of 12 (GDD) is kept; the GDD's 31 should be corrected.
 8. **M0 map selection and travel.** The spine's Part 2 defaults assume Candy Kingdom exists; M0 has only the arena and Training (§6.13 item 6 asks Parts 2/3 for the fixes).
+9. **Touch HUD: HP bar and Breakaway pips top-centre** (deviation from GDD §15.3 "bottom-center, above the hotbar"; GDD §15.1 "mobile defines the layout"). The bottom-centre band on touch is ≈ 150 reference units wide between the thumbstick zone and the cluster (§6.9.5). Needs owner sign-off at H-10; fallback layout in §6.9.5.
+10. **Quick Wish vs first-view reveals.** GDD §17.3 sells "instant reveals"; GDD §8.6 says a rarity's reveal can be skipped only after its first view. This part keeps the first view of each rarity in full and makes every later reveal instant for pass owners (§6.9.7). Owner to confirm at H-10.
 
 ### 6.15 Open questions / spikes
 
 | ID | Question | Method | Pass | Fallback |
 |---|---|---|---|---|
 | S-P6-1 | Does `Players:CreateHumanoidModelFromDescriptionAsync` run in Edit via `execute_luau` (DummyRig/BotRig/LookRig sizes)? Are the R15 `*RigAttachment` names as listed in §6.7.2 (with `AvatarJointUpgrade` on)? | Run `BuildTemplates`; list attachments | Rig with 15 parts and the 14 joint attachments | Human inserts an R15 rig via Rig Builder into `ServerStorage.Templates.__RigSeed`; read names from it |
-| S-P6-2 | Do client-local, massless proxy parts welded to the **local predicted** character cause mispredictions or physics changes? | Two clients, 5 min of dashing and ragdolls with proxies on; Misprediction log | No entries attributable; dash distance error unchanged | `BulkMoveTo` follow in the render step (§6.8.3) |
+| S-P6-2 | Do client-local, massless parts welded to the **local predicted** character (look proxies, gear, the Style Tell ring and attached VFX such as `vfx.awaken.aura`, `vfx.spawn.shimmer`, all un-anchored per §6.6.3) cause mispredictions or physics changes? | Two clients, 5 min of dashing, awakenings and ragdolls with proxies, ring and auras on; Misprediction log; scenario `vfx.attach_unanchored` | No entries attributable; dash distance error unchanged; `HRP.AssemblyRootPart == HRP` throughout | `BulkMoveTo` follow in the render step for proxies, ring and auras (§6.8.3, §6.8.4) |
 | S-P6-3 | Can our `Jump` action's `Touch.UIButton` be bound to the default `JumpButton`, and does it still jump? | Touch emulator | Both the default jump and our `Jump` state fire | Own `JumpBtn`; hide the default button |
 | S-P6-4 | Does an `AlwaysOnTop` SurfaceGui outline render above ParticleEmitters and Beams? | Telegraph inside a dense aura | Outline visible in a capture | Raise the fill part 0.3 studs; lower other VFX `ZOffset` |
 | S-P6-5 | Is the in-sim spring launch (`ChangeState(Freefall)` + `AssemblyLinearVelocity`) predicted without rollback at 150 ms? | `world.spring_launch` under Network Simulator | No `St`/position correction > 1 stud | Launch via `ALG_Vel` mover for 6 frames (Part 3 mover path) |
@@ -1834,13 +2000,22 @@ Log lines introduced: `[ALG][World] break|rebuild|void_kill …`, `[ALG][Anim] c
 | S-P6-10 | GUI units on an SE-class device (points vs pixels) | H-12 device: log `Camera.ViewportSize` | Scale formula keeps 14 ref px ≥ 14 physical px | Adjust `RefSize` clamp |
 | S-P6-11 | Server `CanCollide` toggles on breakable chunks near predicted characters: misprediction rate | Break houses next to a moving player | ≤ 1 correction per break | Delay collision removal by 6 frames after the visual break |
 | S-P6-12 | Does `Font.fromName("ComicNeueAngular")` resolve? | Label test | Renders | `Enum.Font.Arimo` |
-| S-P6-13 | Do pooled Highlights toggled via `Adornee`/`Enabled` avoid the add/remove hitch the GDD mentions? | MicroProfiler during 12 flashes/s | No frame > 2 ms attributable | Keep Highlights adorned and change transparency only |
+| S-P6-13 | Do pooled Highlights toggled via `Adornee`/`Enabled` avoid the add/remove hitch the GDD mentions? | Harness `PerfProbe` samples `Stats.RenderCPUFrameTime` [Docs `Stats.yaml`] every frame for 10 s idle (baseline) and 10 s while toggling 12 Highlights/s (agent-run; MicroProfiler is optional, for a human) | No frame more than 2 ms above the baseline's P95 | Keep Highlights adorned and change transparency only |
+| S-P6-14 | Does the §6.6.9 export fit through `execute_luau`? (`SerializeInstancesAsync` from the plugin context; base64 size of the shortest and the longest existing clip vs the tool's result limit and the 2 KB payload cap) | In T143: `tools/studio/export_anim.luau` on the shortest and the longest existing clip (`anim.common.*`; `anim.hero.m1_1` does not exist before T174, which repeats the check on it); decode on the host; compare byte length with `size` | One chunk (or a fixed chunk length) round-trips byte-exactly | Human H-08 (Save to Roblox); T143 `skipped` |
 
 Design questions:
 - **Q1:** Spring speeds (101 / 130 studs/s), the river multiplier (0.6) and the boundary band (20 studs, ×0.2 at the wall) are tuning defaults for H-10.
 - **Q2:** House HP 2 (first slam cracks, second breaks) keeps wall combos usable. Confirm with design.
 - **Q3:** The Dungeon's only exits are the hatch springs (they break a rebuilt hatch from below). Confirm this matches "high-risk shortcut".
-- **Q4:** Damage numbers outside Training need a settings key (none in Part 2's list).
+- **Q4:** (resolved) Damage numbers use the Part 2 settings key `damageNumbers` (off by default; Training panel and Accessibility toggles, §6.4.2, §6.9.11).
 - **Q5:** The client mastery-level formula duplicates `ProgressionService.masteryLevel`. A pure shared home (e.g. a function in `Config/Schema.luau`) would remove the duplication; Part 5 decides.
 - **Q6:** The rarity CVD palette (one Okabe–Ito mapping for all three modes) needs human review with simulators.
 - **Q7:** Touch layout positions are designed for 1334 × 750; the layout editor and the one-hand preset (GDD §15.2, §16.3) are deferred past M1-G.
+
+**Future hooks** (recorded decisions; not built in M1-G; owner sign-off at H-10):
+- **Quick-Chat wheel** (GDD §16.2 "fully social without chat": non-free-text phrases such as "GG!"). No key binding is reserved in M1-G (`DPadDown` is the menu focus, §6.9.5); a later card adds a UI action, phrases as Skin keys and `TextChannel:SendAsync` on the default channel with a client-side rate limit.
+- **Emote wheel** (the `Emote` action only shows `ui.toast.emotes_soon`).
+- **Title picker** (GDD titles): M1-G auto-equips the first granted title (Part 5 §5.5.5) and has no `title` settings key; a picker in Settings ▸ Appearance is a later card.
+- **Style Wheel move previews and tooltips** (GDD §16.3 learning aids): the detail pane lists moves by name and tags only.
+- **Weekly quests and rerolls** (Part 5 §5.5.9): the HUD shows daily quests only.
+- **Avatar toon post-process** (§6.8.2) and the touch layout editor / one-hand preset (Q7).

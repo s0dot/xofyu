@@ -319,27 +319,27 @@ All places are in one Roblox *experience* (universe). Matchmaking uses MemorySto
 
 | Fact | Implication |
 |---|---|
-| **Ownership.** The Paramount–WBD merger **closed on Tue 6 Oct 2026**. The combined company trades as **Skydance** (NYSE: SKYD), with David Ellison as chairman and CEO. **WB Games and Paramount Games Studio now sit under Tony Driscoll ("president of games and experiences")**. **Cartoon Network and Nickelodeon are to be combined operationally**; this is a reported plan, not yet confirmed as done. | AT's Roblox decisions will most likely be made by the same games-and-experiences organisation that runs **Paramount's Roblox program**. Integration churn may slow *licensing* through mid-2027. It is unlikely to slow *takedowns*, which standing brand-protection teams handle. |
+| **Ownership.** The Paramount–WBD merger **closed on Tue 6 Oct 2026**. The combined company trades as **Skydance** (NYSE: SKYD), with David Ellison as chairman and CEO. **WB Games and Paramount Games Studio now sit under Tony Driscoll ("president of games and experiences")**. **Cartoon Network and Nickelodeon are to be combined operationally**; this is a reported plan, not yet confirmed as done. | AT's Roblox decisions will most likely be made by the same games-and-experiences organization that runs **Paramount's Roblox program**. Integration churn may slow *licensing* through mid-2027. It is unlikely to slow *takedowns*, which standing brand-protection teams handle. |
 | **Paramount on Roblox, as licensor.** *Nickverse* ran Jul 2022 – Oct 2023. Gamefam made *SpongeBob Simulator* (Jan 2023) and *TMNT Battle Tycoon* (Aug 2023). Wonder Works made ***SpongeBob Tower Defense*** (Dec 2024), reported in Apr 2026 as **the highest-earning existing-IP game on Roblox**. | The new owner knows how to make money from its cartoon IP on Roblox through **curated partner studios**. An AT Roblox game by Skydance or a partner is plausible around the film or *Side Quests*. |
 | **Paramount on Roblox, as enforcer.** *The Spongy Construction Project* was removed after Paramount claims on **24 Jun 2022, 29 Jun 2023 and 20 Oct 2023**. The community wiki says Paramount struck **"numerous" Nickelodeon-referencing games, parodies included**. A CBS *Survivor* game was removed in Sep 2020. | AT now sits beside **the most documented Western fan-game enforcer on Roblox**. Our situation is closer to SpongeBob than to Jujutsu Shenanigans (JJS). |
-| **Cartoon Network on Roblox.** *Ben 10: Super Hero Time* launched in 2020 (260M+ visits in 2023-era coverage; the earlier "~557M" figure needs re-checking). *Cartoon Network Game On!* (Ben 10, Gumball and others) has **no AT island**. The Gumball experiences launched in May 2024. **No official AT Roblox game exists.** No AT, Cartoon Network or Skydance listing was found in **License Manager**; the live catalog needs a Creator Hub login to confirm. | The rights holder values Roblox and has products to protect. It also has an **empty AT slot** that it may want to fill itself. |
+| **Cartoon Network on Roblox.** *Ben 10: Super Hero Time* launched in 2020 (260M+ visits in 2023-era coverage; the earlier "~557M" figure needs re-checking). *Cartoon Network Game On!* (Ben 10, Gumball and others) has **no AT island**. The Gumball experiences launched in May 2024. **No official AT Roblox game was found.** No AT, Cartoon Network or Skydance listing was found in **License Manager**; the live catalog needs a Creator Hub login to confirm. | The rights holder values Roblox and has products to protect. It also has an **empty AT slot** that it may want to fill itself. |
 | **AT is an actively licensed game property.** *Fortnite* Wave 1 went live **11 Apr 2025** (Finn, Jake, Princess Bubblegum and Marceline skins). Wave 2 followed on **15 Jan 2026** (Fionna, Cake and Lemongrab, per pre-release coverage). Finn and Jake were on the *MultiVersus* launch roster (online services closed 30 May 2025). *Brawlhalla* ran an AT crossover in 2019. | There is a commercial relationship with game platforms to protect. An unlicensed AT fighting game would **compete for a slot the owner licenses**. |
-| **Cartoon Network's own enforcement record on AT fan games is quiet.** No documented C&D or DMCA was found against an AT fan game. Small free AT fan games exist on itch.io. Warner Bros.' broader pattern: it tolerates non-commercial fan work and **acts on monetisation, crowdfunding or overlap with its own products** (a Harry Potter MMO crowdfund, *Dark Knight Legacy*, a Middle-earth Skyrim mod, *Mortal Kombat 1* mods). | Absence of reports is not a tolerance policy. A Robux-monetised game with paid rolls for kids' characters hits every commercial trigger. Old WBD behaviour is also no longer the best forecast; Skydance's is. |
+| **Cartoon Network's own enforcement record on AT fan games is quiet.** No documented C&D or DMCA was found against an AT fan game. Small free AT fan games exist on itch.io. Warner Bros.' broader pattern: it tolerates non-commercial fan work and **acts on monetization, crowdfunding or overlap with its own products** (a Harry Potter MMO crowdfund, *Dark Knight Legacy*, a Middle-earth Skyrim mod, *Mortal Kombat 1* mods). | Absence of reports is not a tolerance policy. A Robux-monetized game with paid rolls for kids' characters hits every commercial trigger. Old WBD behavior is also no longer the best forecast; Skydance's is. |
 | **The franchise is live.** *Fionna and Cake* S2 ran Oct–Dec 2025. *Adventure Time: Side Quests* premiered in the US on 29 Jun 2026 on Disney+/Hulu, and S2 started 2 Oct 2026. A feature film is in development, and so is a *Heyo BMO* preschool spin-off. | A young audience that matches Roblox's core is plausible, and so is licensing appetite. Active production also means **active brand policing**. |
-| **Roblox enforcement is now cheap** [Roblox creator docs]. **Rights Manager** (since Mar 2024) lets any verified rights holder with a registered copyright or trademark request removal of **up to 250 links per request**, even without a Roblox presence. A DMCA counter-notice restores content in about 14 business days unless the claimant sues. **License Manager** (launched Jul 2025 with Lionsgate, Netflix, SEGA and Kodansha; self-serve reported from Nov 2025) works like this:<br>- An **IP family** is one primary keyword, plus secondary keywords (characters and places), plus **at least 10 approved images**.<br>- Roblox matches **public, actively played games daily, using the keywords and the images**. Match pages include Roblox-captured gameplay screenshots.<br>- The rights holder sends offers. A **standard offer auto-activates after 14 days** unless disputed, at a revenue share **the rights holder sets from 0 % to 95 %**.<br>- Early use of the IP can activate an agreement early.<br>- After two disputes, the docs name a DMCA claim as the rights holder's next step. | **Codenames defeat keyword matching only.** Image matching and Roblox's own screenshots still apply to a recognisable character. For an unlicensed AT game the realistic outcome is "**licence fee or takedown**", on terms we do not control. |
-| **Precedents for unlicensed fan games.**<br>- *Pokémon Brick Bronze*: Nintendo DMCA in 2018 (some sources say 2017); players demanded Robux refunds.<br>- *Shinobi Life 2*: Viz Media claim in Nov 2020; relaunched without the likeness as *Shindo Life*.<br>- *Anime Adventures* / *Anime Fighting Simulator*: taken private in Dec 2023 amid alleged claims tied to a licensed *My Hero Academia* partner.<br>- *Kaiju Universe*: Toho DMCA in Feb 2024.<br>- *Sonic Eclipse Online*: removed by SEGA after SEGA's licensed game launched.<br>- *My Little Pony: Fighting is Magic*: Hasbro C&D in 2013; reborn as the original-IP *Them's Fightin' Herds*. | An unlicensed game can lose everything overnight: the game, Robux-backed progress and community trust. **The games that survived did so by removing the likeness and keeping the mechanics.** |
-| **The law in one row.** Renaming defeats **trademark** confusion. **Copyright protects a recognisable character, place or scene whatever it is called or however it is redrawn.** In *Disney v. Characters for Hire* (2018) the trademark claim against renamed costumes failed but the copyright claim survived. In *DC Comics v. Towle* (2015) self-built replicas still infringed. **Mechanics are free to copy** (*Capcom v. Data East*, *DaVinci v. ZiKo*). Fair use does not realistically cover a monetised fan game. | Our combat, Wish and progression systems are ours. The characters, places, catchphrases and episode moments are not. The architecture separates the two (§5.3). |
+| **Roblox enforcement is now cheap** [Roblox creator docs]. **Rights Manager** (since Mar 2024) lets any verified rights holder with a registered copyright or trademark request removal of **up to 250 links per request**, even without a Roblox presence. A DMCA counter-notice generally restores content within 14 business days unless the claimant sues. **License Manager** (launched Jul 2025 with Lionsgate, Netflix, SEGA and Kodansha; self-serve reported from Nov 2025) works like this:<br>- An **IP family** is one primary keyword plus optional secondary keywords (characters and places) and images; game matching needs **at least 10 approved images**.<br>- Roblox matches **public, actively played games daily, using the keywords and the images**. Match pages include Roblox-captured gameplay screenshots.<br>- The rights holder sends offers. A **standard offer auto-activates after 14 days** unless disputed, at a revenue share **the rights holder sets from 0 % to 95 %**.<br>- Early use of the IP can activate an agreement early.<br>- After two disputes, the docs name a DMCA claim as the rights holder's next step. | **Codenames weaken keyword matching at most.** Canon epithets, the catchphrase title and in-game callouts can still be registered as secondary keywords. Image matching and Roblox's own screenshots still apply to a recognizable character. For an unlicensed AT game the realistic outcome is "**license fee or takedown**", on terms we do not control. |
+| **Precedents for unlicensed fan games.**<br>- *Pokémon Brick Bronze*: Nintendo DMCA in 2018 (some sources say 2017); players demanded Robux refunds.<br>- *Shinobi Life 2*: removed in Nov 2020 after a copyright strike attributed to Viz Media (single source); relaunched without the likeness as *Shindo Life*.<br>- *Anime Adventures* / *Anime Fighting Simulator*: taken private in Dec 2023 amid alleged claims tied to a licensed *My Hero Academia* partner.<br>- *Kaiju Universe*: Toho DMCA in Feb 2024.<br>- *Sonic Eclipse Online*: removed through a SEGA copyright notice (date not established; reportedly after SEGA's licensed *Sonic Speed Simulator*, Apr 2022).<br>- *My Little Pony: Fighting is Magic*: Hasbro C&D in 2013; reborn as the original-IP *Them's Fightin' Herds*. | An unlicensed game can lose everything overnight: the game, Robux-backed progress and community trust. **The games that survived did so by removing the likeness and keeping the mechanics.** |
+| **The law in one row.** Renaming weakens **trademark** confusion claims; it does not remove them. **Copyright protects a recognizable character, place or scene whatever it is called or however it is redrawn.** In *Disney v. Characters for Hire* (2018) the trademark-infringement claim against renamed costumes failed (a dilution claim survived), and the copyright claim survived. In *DC Comics v. Towle* (2015) self-built replicas still infringed. **Mechanics are free to copy** (*Capcom v. Data East*, *DaVinci v. ZiKo*). Fair use does not realistically cover a monetized fan game. | Our combat, Wish and progression systems are ours. The characters, places, catchphrases and episode moments are not. The architecture separates the two (§5.3). |
 
 ### 5.2 The three tracks
 
 | | **Track A: Licensed** | **Track B: Original "inspired-by" IP** | **Track C: Unlicensed codename fan game** |
 |---|---|---|---|
-| What ships | Real names, likenesses, locations, catchphrases, possibly official VO | An original cartoon world with the same *tone*, and an original cast built on the same archetypes | AT characters under JJS-style epithets ("The Last Human", "The Vampire Queen") with redrawn, recognisable looks |
-| Skin pack in the build | `Canon` (locked until a licence is confirmed) | `Original` | `Codename` (the dev default) |
+| What ships | Real names, likenesses, locations, catchphrases, possibly official VO | An original cartoon world with the same *tone*, and an original cast built on the same archetypes | AT characters under JJS-style epithets ("The Last Human", "The Vampire Queen") with redrawn, recognizable looks |
+| Skin pack in the build | `Canon` (locked until a license is confirmed) | `Original` | `Codename` (the dev default) |
 | Legal risk | Low (contractual) | Low (original work; avoid substantial similarity) | **High**; see the likelihood table (§5.7) |
 | Audience pull | Highest (brand plus fandom) | Lower; must earn its brand | High until removed |
 | Cost / speed | Slower: approvals add ~2–3 weeks per content beat; royalty share | Fastest; full creative control | Fast, but everything is at risk |
-| Monetisation safety | Safe | Safe | Unsafe: PRI revenue and progress can vanish, with refund backlash |
+| Monetization safety | Safe | Safe | Unsafe: PRI revenue and progress can vanish, with refund backlash |
 | **Recommendation** | ✅ **Target** | ✅ **Fallback, and the recommended pack for any public build** | ❌ **Not for public launch.** The owner may override this only through the informed-consent gate (§5.8). |
 
 ### 5.3 Recommended plan: "license-ready, IP-separable"
@@ -351,43 +351,43 @@ All places are in one Roblox *experience* (universe). Matchmaking uses MemorySto
    - Switching `Config.SkinPack` changes the franchise without touching combat code.
    - The build spec (Part 8) defines the three packs, the lint and the publish gate.
 2. **Approach the rights holder with the vertical slice (M1), not a pitch deck.**
-   - The direct route is now **Skydance Games & Experiences** (Tony Driscoll's games-and-experiences organisation). In parallel, contact **Skydance consumer products** or the combined Cartoon Network–Nickelodeon kids group. The org chart is in flux after the 6 Oct 2026 close (Appendix F2).
-   - A pitch should mirror **Paramount's partner model** (Gamefam, Wonder Works): an established studio with **proven DAU**. That argues for **shipping Track B first and pitching with real metrics**. License Manager eligibility also gates on 7-day DAU (> 1,000 or > 25,000).
+   - The direct route is now **Skydance Games & Experiences** (Tony Driscoll's games-and-experiences organization). In parallel, contact **Skydance consumer products** or the combined Cartoon Network–Nickelodeon kids group. The org chart is in flux after the 6 Oct 2026 close (Appendix F2).
+   - A pitch should mirror **Paramount's partner model** (Gamefam, Wonder Works): an established studio with **proven DAU**. In our judgment, that argues for **shipping Track B first and pitching with real metrics**. A rights holder may also set an optional minimum 7-day average DAU on each license (none, > 1,000 or > 25,000); the FAQ allows requests from games that do not yet meet it.
    - Lead with:
-     - a playable Candy Kingdom slice with 6 faithful styles (the `Canon` pack in a private build);
+     - a playable Candy Kingdom slice with 6 styles (the `Codename` pack in a private build; the `Canon` pack stays locked until a license is confirmed, build spec §8.2.6, so canonical names appear only in the accompanying pitch materials, never in the build);
      - the **"rarity is prestige, not power"** ethics stance and odds transparency, which matter to a licensor protecting a kids' brand;
      - Mild maturity compliance and the Kids/Select publishing plan (§16);
      - a marketing tie-in calendar aligned with *Side Quests* seasons and the film.
    - In parallel, watch License Manager for an AT listing. **Never "pre-use" AT content in a public place while a request is pending**, because early use can activate an agreement early.
-3. **Decision gate at Alpha (M2).** If no term sheet exists, launch on schedule with the `Original` pack (Track B, §5.5) and keep the door open for a later licence.
-4. **Do not put Track C on a public, monetised server.** Internal playtests with AT placeholder art in **private** places are fine. The owner's decision about public Codename use, and the gate that enforces informed consent, are in §5.8.
-5. **Trigger watch** (risk R1/R2). Every week the Producer checks four things:
+3. **Decision gate at Alpha (M2).** If no term sheet exists, launch on schedule with the `Original` pack (Track B, §5.5), unless the owner has chosen a public Codename build through §5.8, and keep the door open for a later license.
+4. **Recommendation: do not put Track C on a public, monetized server.** Internal playtests with AT placeholder art in **private** places are fine. The owner may override this only through the informed-consent gate in §5.8, which also records the owner's decision about public Codename use.
+5. **Trigger watch** (risk R1/R2). Every week the Producer checks four things (build spec §8.6.1, TW-01, TW-02, TW-09 and TW-10):
    - the License Manager catalog;
    - news of an official or partner AT Roblox game;
    - Skydance games and kids-unit announcements;
-   - the AT film and *Side Quests* marketing beats.
+   - the AT film, *Side Quests* and *Fionna and Cake* premieres and marketing beats.
    
-   **If an official AT Roblox game is announced, any AT-likeness content still in a public build is switched off immediately.** The build spec §8.6 gives the response playbook.
+   **If an official AT Roblox game is announced, a public build drops its AT-likeness content: names, palettes and Style Gear are switched off within minutes through live config (`CodenameLooks`), and an Original build is published within 72 hours.** The build spec §8.6 gives the response playbook.
 
 ### 5.4 What a license would require from us (plan for it)
 
 - **Approval pipeline.** The licensor reviews every character model, animation set, VO line, map and marketing asset. Budget **2–3 extra weeks per content beat**, plus a dedicated licensing producer (part of the Producer role, §21.1).
-- **Brand guidelines.** The official style guide, colour references, logo usage, and character "do's and don'ts" (for example, no character depicted doing something off-model). Paid random rolls of kids' characters will get close brand-safety scrutiny.
+- **Brand guidelines.** The official style guide, color references, logo usage, and character "do's and don'ts" (for example, no character depicted doing something off-model). Paid random rolls of kids' characters will get close brand-safety scrutiny.
 - **VO.** Official cast or approved talent, under contract. **Never use AI voice cloning of the cast.**
-- **Music.** Original score only, unless the licence grants specific tracks.
+- **Music.** Original score only, unless the license grants specific tracks.
 - **Revenue share.**
-  - Through **License Manager**, the rights holder sets **0–95 %** of creator payouts. Secondary sources report about 10–25 % as typical; SEGA's *Like a Dragon* licence was reported at 50 % with a 1,000-DAU minimum.
+  - Through **License Manager**, the rights holder sets **0–95 %** of creator payouts. Secondary sources report about 10–25 % as typical; SEGA's *Like a Dragon* license was reported at 50 % with a 1,000-DAU minimum.
   - Direct deals, the more likely Paramount-style route, may add a minimum guarantee.
   - Licensed games get Roblox's automatic **licensed badge**.
 - **Brand-safety commitments.** No casino imagery, Mild maturity, transparent odds, kid-safe social features. The design already meets all of these.
 
 ### 5.5 Track B fallback: same game, original world
 
-If the licence fails, *Algebraic!* ships in an **original world**. GDD drafts used the placeholder "Land of Whatever"; it mirrors "Land of Ooo", so the build spec proposes *The Patchwork Wilds*.
-- Each archetype gets an original character with its own silhouette, palette, name and lore. Examples: the *Sword Hero* becomes a kid in a frog-ear hood with a leaf-blade, and the *Stretchy Companion* becomes a rubbery capybara. The full Original pack is in the build spec §8.3.
+If the license fails, *Algebraic!* ships in an **original world**. GDD drafts used the placeholder "Land of Whatever"; it mirrors "Land of Ooo", so the build spec proposes *The Patchwork Wilds*.
+- Each archetype gets an original character with its own silhouette, palette, name and lore. Examples: the *Sword Hero* becomes a young knight in a sprout cap with a leaf-blade, and the *Stretchy Companion* becomes a rubbery capybara. The full Original pack is in the build spec §8.3.
 - Maps keep their **function** (a candy capital, an ice fortress, a lava kingdom, a demon dimension) but get original **landmarks**.
 
-**Avoid substantial similarity.** No copied silhouettes, exact catchphrases, show-invented slang or recognisable locations like the Tree Fort. Every style, Variant, map landmark, lore card and thumbnail must pass the **recognisability test** before it ships:
+**Avoid substantial similarity.** No copied silhouettes, exact catchphrases, show-invented slang or recognizable locations like the Tree Fort. Every style, Variant, map landmark, lore card and thumbnail must pass the **recognizability test** before it ships:
 
 | Test | Fails if… |
 |---|---|
@@ -412,7 +412,7 @@ The build never uses canonical names in code. It uses IP-neutral IDs (`hero`, `s
 
 | Pack | Content | Status |
 |---|---|---|
-| **Canon** | Canonical names and §7.3 move names verbatim. On Track A the epithets also appear in-game as playful style titles ("Finn — *The Last Human*"). | **Locked** until a licence is confirmed |
+| **Canon** | Canonical names and §7.3 move names verbatim. On Track A the epithets also appear in-game as playful style titles ("Finn — *The Last Human*"). | **Locked** until a license is confirmed |
 | **Codename** | §7.2 epithets as style names. §7.3 move names with canonical proper nouns and show slang removed (e.g. "GUNTER!" → "PENGUIN!"). Codename-safe place names ("The Candy Capital"). | **Development default**, per the owner's decision (§5.8) |
 | **Original** | Original names and looks built from the archetypes | Fallback for every string; recommended for public builds |
 
@@ -421,9 +421,9 @@ The build never uses canonical names in code. It uses IP-neutral IDs (`hero`, `s
 **The common belief:** games like JJS and *Blox Fruits* survive because they rename characters and avoid official art.
 
 **What actually happens:**
-- **Renaming does two things.** It defeats trademark-confusion claims, and it keeps a game out of brand searches and keyword scanning.
+- **Renaming reduces two exposures but does not remove them.** It weakens trademark-confusion claims (in *Characters for Hire* the infringement claim failed while the dilution and copyright claims survived) and keeps brand-name searches from finding the game. It lowers keyword matching, but canon epithets, the catchphrase title and in-game callouts can still be registered as secondary keywords.
 - **Avoiding official art removes the easiest claim** (literal copying).
-- **Neither change makes a recognisable character non-infringing.**
+- **Neither change makes a recognizable character non-infringing.**
 - **The bigger reason those games survive is who owns the IP.**
 
 | Factor | JJS | *Blox Fruits* | *Algebraic!* on the Codename pack (hypothetical public build) |
@@ -431,23 +431,23 @@ The build never uses canonical names in code. It uses IP-neutral IDs (`hero`, `s
 | What is borrowed | Movesets, VFX and "domain" concepts, mostly on the player's own avatar, with epithet names | Mostly an *idea* (eat a fruit, gain a power). Renamed pre-emptively in its 2019 "Anti-Copyright Update". | **Canon character likenesses**, locations, catchphrase-adjacent names and episode-specific moves |
 | Title | "Jujutsu", an ordinary word (the mark is "Jujutsu Kaisen") | Original | "Algebraic!", an AT catchphrase; clearance unknown (F11) |
 | Rights-holder type | Japanese publisher and production committee with a history of tolerating fan works; no competing Roblox product found | Same | **US studio with a kids' brand, the most documented Roblox enforcement record (Paramount), partner Roblox hits, and an active franchise** |
-| Monetisation tied to the IP | Light (cosmetics, early access) | Heavy, but tied to original items | **Wishes for character styles: paying for the IP itself** |
+| Monetization tied to the IP | Light (cosmetics, early access) | Heavy, but tied to original items | **Wishes for character styles: paying for the IP itself** |
 | Detectability | Keyword-light | Keyword-light | Keyword-light, but **image-heavy** |
-| Documented rights-holder action | None found | None found | Precedents for this owner type: Spongy ×3, *Brick Bronze*, *Sonic Eclipse*, the *Anime Adventures* cluster |
+| Documented rights-holder action | None found | None found | Precedents for owners that enforce (Western or Western-arm owners, often with a licensed Roblox product): Spongy ×3 (Paramount, now AT's sister unit); *Brick Bronze* (Nintendo); *Sonic Eclipse* (SEGA); the *Anime Adventures* cluster (alleged, tied to Gamefam's licensed MHA game) |
 
-**Likelihood of at least one adverse rights-holder action within 12 months of public launch.** The action can be a DMCA or Rights Manager removal, a C&D, or a licence offer we cannot accept. Assumptions: monetised with paid Wishes, launched in 2027. These are judgement estimates from the precedents above, not statistics; read them as a gradient.
+**Likelihood of at least one adverse rights-holder action within 12 months of public launch.** The action can be a DMCA or Rights Manager removal, a C&D, or a license offer we cannot accept. Assumptions: monetized with paid Wishes, launched in 2027. These are judgment estimates from the precedents above, not statistics; read them as a gradient.
 
 | Scenario | Small (< ~500 CCU) | Breakout (~5k–50k CCU) | Hit + trigger event |
 |---|---|---|---|
-| (a) **Codename build.** Recognisable AT characters under epithets. No AT words in title, thumbnail or tags. No official assets. | **3–10 %** | **20–40 %** | **50–75 %** |
+| (a) **Codename build.** Recognizable AT characters under epithets. No AT words in title, thumbnail or tags. No official assets. | **3–10 %** | **20–40 %** | **50–75 %** |
 | (b) As (a), plus "Adventure Time" (or Finn, Jake, Ooo) in title, thumbnail, tags, group or Discord | **10–20 %** | **40–60 %** | **70–90 %** |
 | (c) Ripped official art or audio | **20–40 %** | **60–85 %** | **85–95 %+** |
 | Reference: **Original build** (no AT likeness) | < 1 % | ~1–3 % | ~2–5 % |
 
 **Triggers that raise the risk** (strongest first):
-1. **An official or licensed AT Roblox game is announced or launched.** This is the pattern behind the Nickverse → Spongy, Gamefam MHA → *Anime Adventures* and *Sonic Speed Simulator* → *Sonic Eclipse* cases.
+1. **An official or licensed AT Roblox game is announced or launched.** This is the reported pattern behind the Nickverse → Spongy, Gamefam MHA → *Anime Adventures* and *Sonic Speed Simulator* → *Sonic Eclipse* cases (Nickverse's developers denied involvement; the *Anime Adventures* claims are alleged; *Heroes Battlegrounds* survived the launch of the licensed *MHA: Ultimate*).
 2. AT is registered in License Manager or Rights Manager.
-3. Paid randomised rolls of kids' characters.
+3. Paid randomized rolls of kids' characters.
 4. Front-page scale and creator coverage.
 5. Press naming the brand. The press uses the real name even if we don't, so (a) drifts toward (b) as the game succeeds.
 6. Off-model or brand-unsafe content.
@@ -460,7 +460,7 @@ The build never uses canonical names in code. It uses IP-neutral IDs (`hero`, `s
 - no ripped assets;
 - no paid rolls;
 - staying small;
-- keeping AT placeholder builds in **private** places away from the production group.
+- keeping AT placeholder builds in **private** places owned by a separate dev group, away from the production group (build spec §8.2.6).
 
 A **Character Look toggle does not change legal exposure** if the AT-likeness assets ship in the game.
 
@@ -468,7 +468,7 @@ A **Character Look toggle does not change legal exposure** if the AT-likeness as
 - the game;
 - Robux-backed player progress and refund goodwill;
 - the publishing group's standing under Roblox's repeat-infringer policy;
-- most likely, the chance of ever getting the licence.
+- most likely, the chance of ever getting the license.
 
 ### 5.8 Owner's decision and the publish gate
 
@@ -477,22 +477,22 @@ A **Character Look toggle does not change legal exposure** if the AT-likeness as
 | What the build does | How |
 |---|---|
 | **Codename is the development default** | `Config.SkinPack = "Codename"`. All milestone work runs in a **private** dev universe. |
-| **The IP posture is a config switch** | `Config.SkinPack` ∈ {`Codename`, `Original`, `Canon`}. The same code ships every track. A live ConfigService override (`ALG_SkinPack`) can switch names within minutes. |
-| **Public Codename needs informed consent** | The owner, never the agent, sets `Config.PublicCodenameAcknowledged = true` and signs `docs/agent/PUBLISH_ACK.md`. The file acknowledges the §5.7 risk. It confirms no AT words in title, description, tags, thumbnails, update names, product names, group, Discord or social handles. It confirms no ripped assets or fan-made AT assets. It records a monetisation choice; turning paid random items off is recommended. It holds an operations plan. It is valid for 90 days. Without it, a public server automatically falls back to the Original pack. |
-| **Canon needs a licence** | `Config.LicenseConfirmed = true`, a licence reference, and `docs/agent/LICENSE_CONFIRMATION.md`. Otherwise the Canon pack is stripped from every public build, and at runtime it resolves to Original. |
-| **Every public build passes the gate** | A string lint covers canon names, catchphrases, near-homophones and gambling terms in code, packs, metadata and AI prompts. The packs that are not in use are stripped. A Studio scan checks instance names and text. Asset provenance and recognisability sign-offs are checked. The human publishes; the agent never does. |
-| **Response playbook** | Triggers are watched weekly. If an official AT Roblox game appears or a licence offer arrives, a public Codename build switches to Original (ConfigService, then republish). The team **never** counter-notices AT content, and never lets a licence offer auto-activate by inaction. |
+| **The IP posture is a config switch** | `Config.SkinPack` ∈ {`Codename`, `Original`, `Canon`}. The same code ships every track. Live ConfigService overrides (`ALG_SkinPack`, and `CodenameLooks` in `ALG_Features` for Style Gear) can switch names, palettes and gear within minutes. |
+| **Public Codename needs informed consent** | The owner, never the agent, sets `Config.PublicCodenameAcknowledged = true` and signs and commits `docs/agent/PUBLISH_ACK.md`. The file acknowledges the §5.7 risk. It confirms no AT words in the description, tags, thumbnails, update names, product names, group, Discord or social handles, and records that the title "Algebraic!" is an uncleared AT catchphrase (W-TITLE). It confirms no ripped assets or fan-made AT assets. It records a monetization choice; turning paid random items off is recommended. It holds an operations plan. It is valid for 90 days; when it lapses, public servers fall back to the Original pack automatically until the owner re-signs and republishes. Without it, a public server falls back to the Original pack too. |
+| **Canon needs a license** | `Config.LicenseConfirmed = true`, a license reference, and `docs/agent/LICENSE_CONFIRMATION.md`. Otherwise the Canon pack is stripped from every public build, and at runtime it resolves to Original. |
+| **Every public build passes the gate** | A string lint covers canon names, catchphrases, near-homophones and gambling terms in code, packs, metadata and AI prompts. The packs that are not in use are stripped. A Studio scan checks instance names and text. Asset provenance and recognizability sign-offs are checked. The human publishes; the agent never does. |
+| **Response playbook** | Triggers are watched weekly. If an official AT Roblox game appears or a license offer arrives, a public Codename build switches to Original: names, palettes and Style Gear within minutes through live config (`CodenameLooks`), then an Original build is published within 72 hours. The team **never** counter-notices AT content, and never lets a license offer auto-activate by inaction. |
 
 **The recommendation is unchanged:**
 - stay **license-ready**;
 - use the **Original pack for every public build** unless the owner explicitly accepts the risk through the gate;
-- pursue a licence with real DAU behind the pitch.
+- pursue a license with real DAU behind the pitch.
 
 Separately, the title **"Algebraic!" is itself an AT catchphrase**. Counsel should run a clearance search, and a backup title list exists (build spec §8.7; F11).
 
 In M0 and M1-G no public build is possible anyway, because graybox placeholders block release (build spec Part 7). The gate is built and dry-run now so that the decision can be taken with evidence when the game is ready.
 
-**Sources** (October 2026; full lists in the research notes and Appendix E.2):
+**Sources** (October 2026; outlet names below. Full URLs are in the research notes listed in Appendix E.2: [`docs/research/ip-law.md`](research/ip-law.md), [`western-ip.md`](research/western-ip.md) and [`roblox-cases.md`](research/roblox-cases.md)):
 - Roblox creator docs (snapshot 10 Oct 2026): `ip-licensing/license-manager`, `creators`, `get-started`, `faq`; `production/publishing/rights-manager`, `ip-guidelines`.
 - Merger and games integration: LBC, Irish News and Outlook India (6 Oct 2026); VGC and Shacknews (games divisions under Tony Driscoll); Cord Cutters News (Cartoon Network–Nickelodeon combination); Axios (6 Oct 2026).
 - AT licensing: Pocket Tactics and esports.net (Fortnite Wave 1, Apr 2025); esports.gg (Wave 2, Jan 2026); MultiVersus wiki and GamingBolt; Gematsu (Brawlhalla).
@@ -2631,6 +2631,7 @@ Research was conducted in October 2026.
 - Monetization: https://create.roblox.com/docs/production/monetization/roblox-plus · https://create.roblox.com/docs/production/monetization/robux-transfers · https://create.roblox.com/docs/creator-rewards · https://create.roblox.com/docs/production/monetization/managed-pricing · https://create.roblox.com/docs/production/promotion/rewarded-video-ads · https://create.roblox.com/docs/production/monetization/developer-exchange · https://devforum.roblox.com/t/introducing-the-us-18-devex-rate-earn-42-more-on-spend-from-18-us-players/4607091
 - Licensing and takedowns: https://create.roblox.com/docs/ip-licensing/license-manager · https://about.roblox.com/newsroom/2025/07/roblox-launches-new-licensing-platform-for-experiences · https://about.roblox.com/newsroom/2025/11/roblox-self-serve-ip-licensing · https://devforum.roblox.com/t/introducing-rights-manager/2880717 · https://create.roblox.com/docs/production/publishing/dmca-guidelines · https://progameguides.com/roblox/roblox-shinobi-life-2-deleted-for-copyright-issues/ · https://kidscreen.com/2024/04/15/warner-bros-discovery-bets-on-roblox-with-new-games/
 - Franchise status: https://deadline.com/2026/05/adventure-time-side-quests-disney-plus-hulu-premiere-date-1236914480/ · https://www.cartoonbrew.com/distribution/adventure-time-fionna-and-cake-season-2-255602.html · https://en.wikipedia.org/wiki/Adventure_Time_(franchise) · https://www.axios.com/2026/10/06/paramount-warner-bros-discovery-deal-skydance
+- IP strategy (Oct 2026), with full source lists: [`docs/research/ip-law.md`](research/ip-law.md) (copyright, trademark and what renaming does) · [`docs/research/western-ip.md`](research/western-ip.md) (the rights holder after the merger and how Western studios enforce on Roblox) · [`docs/research/roblox-cases.md`](research/roblox-cases.md) (Roblox fan-game case studies)
 
 ### E.3 Adventure Time: locations, art and audio
 - Locations: https://adventuretime.fandom.com/wiki/Candy_Kingdom · https://adventuretime.fandom.com/wiki/Gumball_Guardian · https://adventuretime.fandom.com/wiki/Ice_Kingdom · https://adventuretime.fandom.com/wiki/Fire_Kingdom · https://adventuretime.fandom.com/wiki/Nightosphere · https://adventuretime.fandom.com/wiki/Lumpy_Space · https://adventuretime.fandom.com/wiki/Tree_House · https://adventuretime.fandom.com/wiki/Marceline's_house · https://adventuretime.fandom.com/wiki/The_Lich's_lair · https://adventuretime.fandom.com/wiki/Time_Room · https://adventuretime.fandom.com/wiki/Crystal_Dimension · https://adventuretime.fandom.com/wiki/Gumbaldia_(location) · https://adventuretime.fandom.com/wiki/Founders'_Island · https://en.wikipedia.org/wiki/Elements_(miniseries) · https://en.wikipedia.org/wiki/Islands_(miniseries)

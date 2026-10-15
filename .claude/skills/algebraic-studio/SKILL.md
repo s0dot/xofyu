@@ -13,12 +13,18 @@ Full procedures: build spec Part 1 (`docs/build-spec/part-1-operating.md`) (§1.
   `ServerScriptService` = `src/ServerScriptService/`, `ServerStorage.DevTools` = `src/DevTools/`,
   `StarterPlayer.StarterPlayerScripts` = `src/StarterPlayerScripts/`. Edit files only. Never `multi_edit` or
   Studio-edit these scripts. Roots hold only Script/ModuleScript/Folder; scripts have no attributes or tags.
+- Every `*.client.luau` runs twice (Starter original + PlayerScripts copy); its first statement MUST be
+  `if not script:IsDescendantOf(game:GetService("Players").LocalPlayer) then return end` (§2.3.4).
+  `Main.client.luau` is the only client entry; add no others.
 - Builder-owned (never hand-edit; change the builder and run it in Edit): `ReplicatedStorage.Inputs`,
-  `ReplicatedStorage.VFX`, `ReplicatedStorage.Anim`, `ServerStorage.Templates`, `Workspace.Map`,
-  `Workspace.Arena`, owned `Lighting` children.
-- Runtime-created (must not exist in Edit): `ReplicatedStorage.Remotes`, `ReplicatedStorage.Runtime`.
-- Human-owned: AuthorityMode, StreamingEnabled, AvatarJointUpgrade, Avatar Settings, Experience Settings,
-  publishing, keys, prices.
+  `ReplicatedStorage.VFX`, `ReplicatedStorage.Anim`, `ReplicatedStorage.Looks`, `ServerStorage.Templates`,
+  `Workspace.Map` (container) with `Workspace.Map.CandyKingdom` and `Workspace.Map.Training`, `Workspace.Arena`,
+  containers `Workspace.Sim` and `Workspace.Bots`, builder-owned `Lighting` children.
+- Runtime-created (must not exist in Edit): `ReplicatedStorage.Remotes`, `ReplicatedStorage.Runtime`, and the
+  test/scratch leftovers listed in `ARCHITECTURE.md` §2.
+- Human-owned: AuthorityMode, StreamingEnabled and the other H-04 Workspace settings (StreamingIntegrityMode,
+  SLIM avatars, mesh streaming, animator throttling, Terrain decoration), AvatarJointUpgrade, Avatar Settings
+  (avatar type R15), Max Players, Experience Settings, publishing, keys, prices, `.claude/settings*.json`.
 
 ## MCP (`Roblox_Studio`, tools `mcp__Roblox_Studio__*`)
 - Discover tools at session start; use fallback names from §1.5.1; parameters only from the live schema.
@@ -39,18 +45,25 @@ Full procedures: build spec Part 1 (`docs/build-spec/part-1-operating.md`) (§1.
   self-contained; no `.luaurc` aliases in `src/` (Lune tests use `@shared/…`); builders use `fresh()` clones.
 - Simulation: `BindToSimulation(fn, Enum.StepFrequency.Hz60)`; frames @ 60 Hz (`f / 60`); only `time()`/`dt`
   in the sim; state in HumanoidRootPart attributes written only in the sim (names/strings ≤ 50 chars,
-  ≤ 64 per instance); input via IAS only, never remotes; `Shared/Core` is pure; effects render-side on
-  transitions and skipped while resimulating.
+  ≤ 64 per instance); input via IAS only, never remotes; `Shared/Core` is pure.
+- Effects: VFX/SFX/camera/UI render-side (RenderStepped), on state transitions, skipped while
+  `IsResimulating()`. Exception: combat animations are played only by `Sim/Adapter.animate` inside
+  `BindToAnimation(fn, Enum.StepFrequency.Hz60)` on both peers (§3.11.8): never on RenderStepped, never gated on
+  `IsResimulating()`, never cached AnimationTracks. VFX/SFX timing comes from MoveDef frame data, not clip markers.
+- Style kits: `src/Shared/Styles/<id>.luau` returns a builder function `(K: KitBuilder) -> StyleModule`
+  (`{def, hooks, moment, anim}`); kit files require only `../Behaviors/Buff` and never `Styles/init` (§4.1.1).
 - GDD numbers are never changed; cite "GDD §x.y"; missing values are marked `(tuning default)`.
 - Logging: `Log.*(tag, msg)` → `[ALG][<tag>] msg`; tests `[ALG][TEST] <name> PASS|FAIL <detail>` and
-  `[ALG][TEST] SUMMARY pass=<n> fail=<m>`; boot `[ALG][BOOT] server ready` / `client ready`.
+  `[ALG][TEST] SUMMARY pass=<n> fail=<m>`; boot `[ALG][BOOT] server ready` / `client ready` (client sets the
+  client-local `LocalPlayer` attribute `AlgClientReady = true` first); P0 spikes `[ALG][Spike] <id> PASS|FAIL`.
 - Player-visible text via `Skin.text`/`Skin.style`; IP-neutral IDs everywhere else; assets via `Assets.get`.
 
 ## Loop and gates
 1. Host gate: `lune run tools/check.luau` → `[ALG][CHECK] SUMMARY pass=<n> fail=0`.
 2. Sync gate: `lune run tools/sync_manifest.luau` `agg` == `sync_tree_hash.luau` `agg`.
 3. Builders: run via `run_builder.luau`; second run of a changed builder reports 0/0/0.
-4. In-Studio tests: `summary.fail == 0`, no `MessageError`.
+4. In-Studio tests: `log_scan` `ok` on Server and Client (`summary.fail == 0`, no `[ALG][TEST] … FAIL`, no
+   `MessageError`, no unexpected `[ALG][<tag>] ERROR` line; §1.4.6).
 5. Update `ARCHITECTURE.md` (same turn) and `docs/agent/PROGRESS.md` (evidence), then commit
    `T0xx: <title>` on the phase branch.
 6. Three failed attempts on one check → "Stop trying to fix this. Read through all the scripts involved and

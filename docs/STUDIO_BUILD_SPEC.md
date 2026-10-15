@@ -2,15 +2,11 @@
 
 **How an AI coding agent builds the M0 feel prototype and the M1-G graybox vertical slice in Roblox Studio**
 
-> ⚠️ **DRAFT — pre-review snapshot.** An editorial/technical review of this spec found ~200 issues and the fixed
-> v1.0 is still being prepared. **Agents: do not execute any task card beyond the P0 human-setup steps (H-01…H-12)
-> until this banner is gone.** Humans can start the one-time setup in Part 1 §1.2 now.
-
 | | |
 |---|---|
-| **Spec version** | 0.9 draft |
+| **Spec version** | 1.0 |
 | **Date** | 15 October 2026 |
-| **Status** | Draft (pre-review snapshot) |
+| **Status** | v1.0, reviewed |
 | **Design source** | [`docs/GDD.md`](GDD.md) v1.2 (all tuning numbers; this spec never changes them) |
 | **Audience** | A coding agent (Claude Code) driving Roblox Studio through the built-in `Roblox_Studio` MCP server, plus the human operator for steps H-01…H-12 |
 

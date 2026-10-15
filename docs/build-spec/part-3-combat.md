@@ -1,9 +1,5 @@
 [← Build spec index](../STUDIO_BUILD_SPEC.md) · **Part 3 of 8** · sections §3.x · Part 0 contracts (§0.x) are in the index file
 
-> ⚠️ **DRAFT — pre-review snapshot.** An editorial/technical review of this spec found ~200 issues and the fixed
-> v1.0 is still being prepared. **Agents: do not execute any task card beyond the P0 human-setup steps (H-01…H-12)
-> until this banner is gone.** Humans can start the one-time setup in Part 1 §1.2 now.
-
 ## 3. Combat core and Server Authority integration
 
 This part specifies the shared combat chassis (GDD §6) and how it runs under Roblox Server Authority (GDD §18.2). It owns `src/Shared/Core/*` (except per-Realm rule tables, §3.9.3), `src/Shared/Sim/*`, `src/Shared/Combat/*`, `Services/CombatService.luau`, `Services/BotService.luau` (with Part 7), `Builders/BuildInputs.luau`, the `Defaults.Combat` config section (§3.17) and the RenderController *contract* (§3.11.8; Part 6 implements it).
@@ -25,9 +21,9 @@ Conventions in this part:
 
 | Layer | Files | Runs | Rule |
 |---|---|---|---|
-| **Core** (pure) | `Shared/Core/Fsm, Frames, M1, Defense, Movement, Stun, Meter, Breakaway, Moves, Damage, Rng, Realm` | both peers + Lune | No `game`, no services, no Instances, no `time()`, no `os.*`, no `math.random`. Inputs: plain tables, numbers, strings, `Vector3`, `CFrame`. Config is always a parameter (§2.6.5). Deterministic (§3.4.3). |
+| **Core** (pure) | `Shared/Core/Fsm, Frames, M1, Defense, Movement, Stun, Meter, Breakaway, Moves, Damage, Rng, Realm`; shared combat types and constant tables in the **Combat section of `Shared/Types.luau`** (§3.4.1) | both peers + Lune | No `game`, no services, no Instances, no `time()`, no `os.*`, no `math.random`. Inputs: plain tables, numbers, strings, `Vector3`, `CFrame`. Config is always a parameter (§2.6.5). Deterministic (§3.4.3). Acyclic require order (§3.4.2). |
 | **Sim schema** (pure) | `Shared/Sim/Attr.luau` | both + Lune | Attribute names, types, defaults, writer classes (§3.3). |
-| **Adapter** | `Shared/Sim/Adapter.luau`, `Shared/Sim/InputMap.luau`, `Shared/Combat/Query, Rewind, Hurtbox` | both | Translates Instances ↔ Core. Holds the roster (filled outside the sim). Only Simulation-Access APIs inside the step. |
+| **Adapter** | `Shared/Sim/Adapter.luau` (with its local `Loco`, `Carriers` and Classic sections, §3.19 item 4), `Shared/Sim/InputMap.luau`, `Shared/Combat/Query, Rewind, Hurtbox` | both | Translates Instances ↔ Core. Holds the roster (filled outside the sim). Only Simulation-Access APIs inside the step. |
 | **Loop** | `Shared/Sim/Simulation.luau` | both | The one `RunService:BindToSimulation(fn, Enum.StepFrequency.Hz60, priority)` binding. |
 | **Authority host** | `Services/CombatService.luau` | server | Spawning, config pinning, meta flush (KO, signals), respawn. |
 | **Presentation** | `Controllers/RenderController` (+ Vfx/Sfx/Camera/Appearance); combat animation driver `Adapter.animate` (both peers, `BindToAnimation`) | client (render) / both (animation) | Reads attributes in `RenderStepped`; effects keyed on transitions; undoable (§3.11.8). |
@@ -69,7 +65,7 @@ The client never writes another character's attributes. Its sim steps only the l
 
 #### 3.1.5 Banned inside the simulation step (complete list)
 
-"Inside the sim" means any code that runs during the BindToSimulation callback, including functions it calls, `task.spawn` from it (which keeps sim restrictions [Docs `server-authority/index.md`]) and Core.
+"Inside the sim" means any code that runs during the BindToSimulation callback or the `BindToAnimation` callback (same restriction: reading or writing an unsynchronized member errors [Docs `RunService.yaml`]), including functions they call, `task.spawn` from them (which keeps sim restrictions [Docs `server-authority/index.md`]) and Core.
 
 | Banned | Why | Use instead |
 |---|---|---|
@@ -83,23 +79,28 @@ The client never writes another character's attributes. Its sim steps only the l
 | `Instance:Destroy()`, `ClearAllChildren`, writing `Name`/`Parent` of an instance already in the DataModel, `AddTag`/`RemoveTag` | No Simulation Access [Docs `Instance.yaml`] | Flag attribute `Dead=true`; server destroys in a deferred pass (§3.11.5) |
 | `Instance.new`/`Clone` **except** stitched spawns through `Adapter.spawn` (§3.11.5) | Non-idempotent across replays | Pre-wire at spawn (§3.11.2); stitched spawn helper |
 | `Players:GetPlayers()`, `Players.LocalPlayer`, `Player.Character`, `Player.UserId`, `Player:GetAttribute` | No Simulation Access [Docs `Players.yaml`, `Player.yaml`] | Roster cache (§3.11.1) |
-| `Humanoid.Health/MaxHealth/TakeDamage/PlatformStand`, `JointInstance.Enabled`, `Motor6D.C0/C1`, `AnimationTrack.Length`, `GetMarkerReachedSignal`, `GetTimeOfKeyframe` | No Simulation Access [api-sheet §1.5] | Attribute `HP`; frame data in config/MoveDefs |
+| `Humanoid.Health/MaxHealth/TakeDamage/PlatformStand`, `JointInstance.Enabled`, `Motor6D.C0/C1`, `GetMarkerReachedSignal`, `GetTimeOfKeyframe` | No Simulation Access [api-sheet §1.5] | Attribute `HP`; frame data in config/MoveDefs |
+| `Animation.AnimationId`, `AnimationTrack.Animation`, `AnimationTrack.Length` (also banned inside `BindToAnimation`) | No `simulationAccess` flag [Docs `Animation.yaml`, `AnimationTrack.yaml`] | Clip id, `clipF` and `looped` cached in the roster entry by `Adapter.track` outside the sim (§3.11.1) |
 | `RunService:IsServer()`/`IsClient()` called inside the step | Not flagged Simulation-Access | Capture `IS_SERVER` once at require time (§3.11.3) |
 | Branching on the peer to compute a **different outcome for the same writer class** | The peers compute different worlds | Only the documented `S` / `BQ` split (§3.1.2) |
 | Iterating dictionaries whose iteration order can matter (`pairs` over keyed tables) | Order is not guaranteed | Arrays sorted by `rid` |
 | Module-level mutable Lua state on the **client** that influences outcomes | Does not roll back | Attributes or constraint properties |
 | `AlignOrientation.PrimaryAxisOnly`, `Enum.HumanoidStateType.Ragdoll`, `Player:LoadCharacter`, `InputAction:Fire`, `PhysicsService` collision APIs, BodyMovers | Deprecated [Docs] | `AlignType`, our Ragdoll state, `LoadCharacterAsync`, `InputBinding:Fire`, `workspace:RegisterCollisionGroup`, `LinearVelocity`/`AlignPosition` |
 
-**Verify:** Lune `standards.sim_banned_tokens` (Part 7 lint): it scans `src/Shared/Core/**`, `src/Shared/Sim/**`, `src/Shared/Combat/**` and `src/Shared/Behaviors/**` for the banned tokens above, with an allow-list for `Simulation.luau`'s single `IsServer()` at load and `Adapter.spawn`'s `Instance.new`.
+**Verify:** Lune `standards.sim_banned_tokens` (Part 7 lint) scans for the banned tokens above:
+- `src/Shared/Core/**` and `src/Shared/Behaviors/**` are scanned whole.
+- In `src/Shared/Sim/**` and `src/Shared/Combat/**` it scans only the code between the marker lines **`-- @sim-begin`** and **`-- @sim-end`**. These files also hold required outside-sim code (`Adapter.track/startClient/flush`, `Simulation.start`'s `Log.info`, `InputMap.attach`, `Hurtbox.prepare/ensureGroups`), which stays outside the markers.
+- The markers MUST wrap `Adapter.step` and its phase helpers, `Adapter.animate`, `InputMap.read`/`readBot`, `Query.*`, `Rewind.withPoses`, `Hurtbox.place`, the `Carriers` stepping section of `Adapter.luau`, and every local function they call. Pairs never nest; an unmatched marker fails the lint.
+- Allow-list: `Simulation.luau`'s single `IsServer()` at load, and `Adapter.spawn`'s `:Clone(` (stitched spawn, §3.11.5). `Instance.new` is never allowed inside the markers.
 
 #### 3.1.6 Simulation-Access APIs this part uses (whitelist)
 
-All flagged `simulationAccess: true` in the snapshot: `Instance:GetAttribute/SetAttribute/GetAttributes/FindFirstChild/FindFirstChildWhichIsA/IsDescendantOf/HasTag/Clone`; `BasePart.CFrame/Position/Size/AssemblyLinearVelocity/AssemblyMass/CanCollide/CanQuery/CanTouch/CollisionGroup/Anchored`; `PVInstance:GetPivot/PivotTo`; `Humanoid.WalkSpeed/JumpHeight/UseJumpPower/AutoRotate/Jump/MoveDirection/FloorMaterial/Move/SetStateEnabled/GetStateEnabled/ChangeState/GetState`; `Constraint.Enabled/Attachment0/Attachment1`; every `LinearVelocity`, `AlignOrientation` (except the deprecated `PrimaryAxisOnly`) and `AlignPosition` property; `Attachment.CFrame/WorldCFrame`; `WorldRoot:GetPartBoundsInBox/GetPartBoundsInRadius/GetPartsInPart/Raycast/Blockcast/Spherecast`; `InputAction:GetState`; `InputBinding:Fire` (tests only); `RunService:IsResimulating/GetPredictionStatus`; `Players:GetPlayerFromCharacter`; `Workspace.Gravity`; `TweenService:SmoothDamp` (render only). `WorldRoot:Shapecast` is Sim-Access but Thread-Unsafe; we do not use it.
+All flagged `simulationAccess: true` in the snapshot: `Instance:GetAttribute/SetAttribute/GetAttributes/GetChildren/FindFirstChild/FindFirstChildWhichIsA/IsDescendantOf/HasTag/Clone` (`Instance.Name` is not flagged: carrier ids come from the `Cid` attribute, §3.11.5); `BasePart.CFrame/Position/Size/AssemblyLinearVelocity/AssemblyMass/CanCollide/CanQuery/CanTouch/CollisionGroup/Anchored`; `PVInstance:GetPivot/PivotTo`; `Humanoid.WalkSpeed/JumpHeight/UseJumpPower/AutoRotate/Jump/MoveDirection/FloorMaterial/Move/SetStateEnabled/GetStateEnabled/ChangeState/GetState`; `Constraint.Enabled/Attachment0/Attachment1`; every `LinearVelocity`, `AlignOrientation` (except the deprecated `PrimaryAxisOnly`) and `AlignPosition` property; `Attachment.CFrame/WorldCFrame`; `WorldRoot:GetPartBoundsInBox/GetPartBoundsInRadius/GetPartsInPart/Raycast/Blockcast/Spherecast`; `InputAction:GetState`; `InputBinding:Fire` (tests only); `RunService:IsResimulating/GetPredictionStatus`; `Players:GetPlayerFromCharacter`; `Workspace.Gravity`; `TweenService:SmoothDamp` (render only). `WorldRoot:Shapecast` is Sim-Access but Thread-Unsafe; we do not use it.
 
 #### 3.1.7 Effects only on the render side
 
 - VFX, SFX, camera shake, haptics, hitstop *visuals* and UI run in `RenderController` (`RunService.RenderStepped`), keyed on **attribute transitions** (§3.11.8).
-- Combat **animations** are the one exception: following the SA guidance to mirror animation logic, they are a deterministic function of sim state, played from a `RunService:BindToAnimation(..., Hz60)` binding on both peers (§3.11.8).
+- Combat **animations** are the one exception: following the SA guidance to mirror animation logic, they are a deterministic function of sim state, played only by `Sim/Adapter.animate` inside `RunService:BindToAnimation(fn, Enum.StepFrequency.Hz60)` on both peers (§3.11.8). Never move them to RenderStepped, never gate them on `IsResimulating()`, never cache AnimationTracks. VFX/SFX timing comes from MoveDef frame data, never from clip markers.
 - Any effect started for a *predicted* transition (the local character's own state, or `Cnt` contact) MUST be undoable within `Render.UndoWindowFrames` = 15 frames (constant in RenderController, not gameplay config).
 - The render side never plays a one-shot while `RunService:IsResimulating()` is true. In practice RenderStepped does not run during resim; the guard is for property-changed handlers, which *do* re-fire during resimulation [Docs `RunService.yaml`]. So RenderController MUST NOT use `GetAttributeChangedSignal` for one-shots. It polls in RenderStepped and diffs against its own last-seen snapshot.
 
@@ -281,11 +282,11 @@ Facing implementation (§3.11.2): `auto` → `Humanoid.AutoRotate = true`, `ALG_
 | 5 | `PrevIn` | number | 0 | B | Previous-frame input bitmask (`Fsm.IN`) | §3.10.4 |
 | 6 | `QIn` | number | 0 | B | Buffered action code | §3.2.5 |
 | 7 | `QInF` | number | 0 | B | Frame of the buffered press | §3.2.5 |
-| 8 | `M1Idx` | number | 0 | B | Last ground chain index started (0–4) | §3.5.1 |
+| 8 | `M1Idx` | number | 0 | B | Last ground chain index started (0–6: Ender = chain length, 4 by default, up to 6 under an `m1Chain` status) | §3.5.1 |
 | 9 | `M1EndF` | number | 0 | B | Frame the last M1/Dash M1 state exited (chain window base) | §3.5.1 |
 | 10 | `M1LockF` | number | 0 | B·BQ | M1 locked until (Ender end lag) | §3.5.2 |
 | 11 | `AirN` | number | 0 | B | Air M1s used in the current hang | §3.5.3 |
-| 12 | `HangF` | number | 0 | BQ·S | Hang window end (attacker: BQ; launched victim: S) | §3.5.3 |
+| 12 | `HangF` | number | 0 | BQ·S | Hang window end (attacker: BQ; launched victim: S); both extended by the hitstop of each air-M1 contact | §3.5.3 |
 | 13 | `Cnt` | number | 0 | BQ·S | Contact on the current action: 0 none, 1 hit, 2 blocked, 3 perfect-blocked (S) | §3.12.6 |
 | 14 | `HsF` | number | 0 | BQ·S | Hitstop: frozen while `f ≤ HsF` | §3.5.6 |
 | 15 | `CombatF` | number | 0 | BQ·S | Last frame this character dealt (BQ) or took (S) damage | §3.8.7 |
@@ -393,7 +394,7 @@ return table.freeze(Attr)
 
 #### 3.3.3 Player attributes added by Part 3
 
-Written by CombatService on the server **outside** the sim (deferred flush, §3.11.6). Part 2 §2.5.2 allows combat mirrors; the Player attribute total becomes 19 (limit 40).
+Written by CombatService on the server **outside** the sim (deferred flush, §3.11.6). Part 2 §2.5.2 allows combat mirrors; with Part 2's 18 (incl. `PerfSampled`) the Player attribute total becomes 20 (limit 40).
 
 | Attribute | Type | Default | Writer / when | Purpose |
 |---|---|---|---|---|
@@ -402,13 +403,13 @@ Written by CombatService on the server **outside** the sim (deferred flush, §3.
 
 #### 3.3.4 Server memory (never replicated)
 
-Per roster entry, inside `Adapter` (server branch) and `CombatService`: `meter: number` (float), `rttEma: number`, `rewindFrames: number`, `ring: Rewind.Ring`, `hitReg: {[key: string]: {[rid: number]: boolean}}` (cleared on state entry), `ledger: { {rid: number, amount: number, f: number} }` (damage taken, last 600 frames), `lastHit: {rid: number, f: number}?`, `pileHits: { {rid: number, f: number} }`, `life: LifeStats`, `spawnCf: CFrame?`, `queuedPatches: {{[string]: any}}` (dev/test seam). Per player across lives: `streak: number`. Global: `realms: {RealmInstance}`, `realmQueue: {number}` (rids), `metaQueue: {SimEvent}`.
+Per roster entry, inside `Adapter` (server branch) and `CombatService`: `meter: number` (float), `rttEma: number`, `rewindFrames: number`, `ring: Types.RewindRing`, `hitReg: {[key: string]: {[rid: number]: boolean}}` (cleared on state entry), `ledger: { {rid: number, amount: number, f: number} }` (damage taken, last 600 frames), `lastHit: {rid: number, f: number}?`, `pileHits: { {rid: number, f: number} }`, `life: LifeStats`, `spawnCf: CFrame?`, `queuedPatches: {{[string]: any}}` (dev/test seam). Per player across lives: `streak: number`. Global: `realms: {RealmInstance}`, `realmQueue: {number}` (rids), `metaQueue: {SimEvent}`.
 
 #### 3.3.5 Placement decisions (where each value lives and why)
 
 | Value | Home | Justification |
 |---|---|---|
-| HP | HRP `HP` | The sim needs it (KO, Finn's below-30 passive, Awakening heal, regen). Damage is a victim-side consequence; the victim mispredicts once per hit anyway because its state changes. Nameplates read it from streamed characters, so no Player HP mirror is needed. |
+| HP | HRP `HP` | The sim needs it (KO, `hero`'s below-30 passive, Awakening heal, regen). Damage is a victim-side consequence; the victim mispredicts once per hit anyway because its state changes. Nameplates read it from streamed characters, so no Player HP mirror is needed. |
 | Algebraic Meter | server memory + Player `Meter`; HRP `AwkRdy` flag | Meter gains depend on server-only damage numbers (scaling, pile-on, Realm ×0.5). On the HRP, every hit would also mispredict the **attacker**. The sim only needs "full or not", so the server writes `AwkRdy=true` once per fill: one misprediction per fill instead of one per hit. (GDD §18.2 lists `Meter` among attributes; this is a deliberate refinement, see §3.19.) |
 | Breakaway pips and refill | HRP `BkP`, `BkProg`, `BkLockF` | The owner's own input (Dash while stunned) gates on them, so they must be predicted. Refill ticks are deterministic (B). Damage refunds and lockout are victim consequences (S). Pips appear on enemy nameplates (GDD §6.8) through replication. |
 | Guard | HRP `Grd`, `GrdF` (lazy regen) | The block decision and the guard bar need it. It changes only on hits (S) and block holds (B). Lazy evaluation avoids per-frame writes. |
@@ -425,12 +426,14 @@ Per roster entry, inside `Adapter` (server branch) and `CombatService`: `meter: 
 
 ### 3.4 Pure Core API
 
-#### 3.4.1 Shared Core types (exported from `Core/Fsm.luau`)
+#### 3.4.1 Shared Core types (Combat section of `Shared/Types.luau`; re-exported by `Core/Fsm.luau`)
+
+Luau has no type-only imports, so a type that several Core, Sim and Combat modules annotate must live in a module that requires none of them. Otherwise `Fsm` (which calls M1, Defense, …) and those modules (which annotate `Fsm.CharState`) require each other, and Roblox and Lune both fail with "Requested module was required recursively". The shared combat types and constant tables therefore live in the **Combat section of `src/Shared/Types.luau`** (Part 2 §2.4 hosts it; this part owns its content and is the only part that changes it). Load purity: type declarations and frozen tables of numbers only (the `CombatSET` membership maps hold `true` values); no `require` beyond Part 2's `./Config/Defaults`; no engine constructors (Roblox types appear as annotations only), so Lune can load it. Inside `Types.luau`, `StyleId`, `MoveDef`, `StyleDef`, `KnockbackDef` and `Config` are the same file's types.
 
 ```lua
 --!strict
--- src/Shared/Core/Fsm.luau (types excerpt). Pure. Spec §3.4.1.
-local Types = require("../Types")
+-- src/Shared/Types.luau — Combat section (content owned by Part 3 §3.4.1, §3.11.1; Part 2 §2.4 hosts it).
+-- Leaf for the combat code: Types requires nothing but ./Config/Defaults.
 
 export type CharState = {
 	St: number, StF: number, StDur: number, Sub: number,
@@ -457,23 +460,33 @@ export type InputFrame = {
 }
 
 export type ChassisMods = {           -- resolved per step by Moves.chassisMods (§3.4.2)
-	breakawayRefillMult: number,      -- 1 default; Finn below 30 HP: 1.5 (GDD §7.3.1)
-	enderDamageAdd: number,           -- 0 default; Finn below 30 HP: 2
-	ragdollFramesAdd: number,         -- 0 default; Jake: -10 (GDD §7.3.2)
-	m1RangeAdd: number,               -- 0 default; Finn awakened: 3 (GDD §6.9)
+	breakawayRefillMult: number,      -- 1 default; hero below 30 HP: 1.5 (GDD §7.3.1)
+	enderDamageAdd: number,           -- 0 default; hero below 30 HP: 2
+	ragdollFramesAdd: number,         -- 0 default; stretch: -10 (GDD §7.3.2)
+	m1RangeAdd: number,               -- 0 default; hero awakened: 3 (GDD §6.9)
 	hurtboxScale: number,             -- 1 default; >= 1 only (GDD §6.2)
 	walkSpeedMult: number,            -- 1 default; Kaiju: 0.85 (GDD §7.3.2)
 	airDash: boolean,                 -- style has the Aerial capability (GDD §6.5)
 	cooldownMult: number,             -- 1 default; Realm rule may set 0.7 (GDD §7.3.15)
 }
 
-export type StyleRuntime = {          -- built once per life by Adapter.styleRuntime(def) outside the sim
-	id: Types.StyleId, hp: number,
-	base: { Types.MoveDef },          -- index 1..4 = slots "1".."4"
-	awakened: { Types.MoveDef },      -- index 1..4 = slots "a1".."a4"
-	quirk: Types.MoveDef,
+export type StyleRuntime = {          -- built once per life by Adapter.styleRuntime(def, fullCfg) inside Adapter.track, outside the sim
+	id: StyleId, hp: number,
+	base: { MoveDef },                -- index 1..4 = slots "1".."4"
+	awakened: { MoveDef },            -- index 1..4 = slots "a1".."a4"
+	quirk: MoveDef,
 	passiveParams: { [string]: any }, -- StyleDef.passive.params
 	awakenParams: { [string]: any },  -- AwakeningDef.modifiers + hurtboxScale
+	variants: { [string]: { MoveDef } }, -- Part 4 kit-mode variants (Part 4 §4.9 item 12); {} when none
+	disabled: { [string]: true },     -- per-move kill switch: slot ("1".."4", "q", "a1".."a4") -> true, from the
+	                                  -- pinned fullCfg.Features.DisabledMoves (§3.4.2 Moves.canUse)
+}
+
+export type Status = { kind: string, untilF: number, n: number } -- kind: 2-char id from Moves.STATUS (Part 4 registry)
+export type StatusMods = {
+	speedMult: number, rooted: boolean, silenced: boolean, blockDelayF: number,
+	regenBlocked: boolean, nextHitAdd: number, shield: number, -- shield HP (cap Chassis.ShieldCap = 20)
+	m1Chain: number?,                 -- M1 chain length incl. the Ender (default 4; a kit status may set up to 6, §3.5.1)
 }
 
 export type HitDef = {
@@ -481,7 +494,7 @@ export type HitDef = {
 	kind: "m1" | "ender" | "airm1" | "dashm1" | "move" | "projectile" | "zone" | "grab",
 	damage: number, guardDamage: number, chip: number,
 	hitstun: number, blockstun: number, hitstop: number,
-	knockback: Types.KnockbackDef?,
+	knockback: KnockbackDef?,
 	enderVariant: number,             -- 0 unless kind == "ender" (Sub code)
 	parryable: boolean, unblockable: boolean, melee: boolean,
 	groundOnly: boolean,              -- ground grabs miss airborne victims (GDD §6.4)
@@ -490,13 +503,18 @@ export type HitDef = {
 	meterGain: number,                -- MoveDef.meterGain or 1
 	signature: boolean,
 	cinematicLockF: number,           -- Breakaway lock for awakened ultimates (<= 120, GDD §6.8)
+	kit: any?,                        -- Part 4 KitHitExt (Behaviors/Buff, Part 4 §4.9 item 6); `any` keeps Types a leaf
 }
 
-export type HitboxReq = { shape: "Box" | "Sphere" | "Cast", cf: CFrame, size: Vector3, prevCf: CFrame? }
-export type HitRequest = { key: string, box: HitboxReq, hit: HitDef, maxTargets: number }
+export type HitboxReq = { shape: "Box" | "Sphere" | "Cast", cf: CFrame, size: Vector3, prevCf: CFrame?,
+	coneDeg: number? }                -- Sphere angular filter (Part 4 §4.9 item 7)
+export type HitRequest = { key: string, box: HitboxReq, hit: HitDef, maxTargets: number,
+	heldOnly: boolean?,               -- targets = victims Grabbed by this attacker (Part 4 §4.9 item 7)
+	carrier: string? }                -- carrier id (attribute Cid = its Name); set by the adapter in phase 1b (§3.12.6)
 export type SpawnRequest = {
 	kind: "projectile" | "zone" | "summon", moveId: string, origin: CFrame,
 	params: { [string]: number | string | boolean },   -- JSON-safe; written as carrier attributes
+	serverOnly: boolean?,             -- created on the server branch only (§3.11.5; Part 4 §4.9 item 9)
 }
 
 export type MotionCmd =
@@ -521,6 +539,8 @@ export type StepCtx = {
 	inEnemyRealm: boolean,            -- RlmId ~= 0 and the Realm's caster is not this rid
 	realmHealMult: number,            -- 1 unless a Realm rule changes heals for this member (§3.9.3)
 	maxHp: number,                    -- style.hp (100 at launch)
+	status: StatusMods,               -- Moves.statusMods of Buffs/Debuffs at step start (adapter); leaf modules read
+	                                  -- rooted/silenced/blockDelayF/speedMult/m1Chain here instead of requiring Moves
 }
 
 export type StepOut = {
@@ -529,43 +549,91 @@ export type StepOut = {
 	entered: boolean,                 -- a new state was entered this step (clears the hit registry, §3.12.5)
 	behaviorPhase: ("startup" | "active" | "recovery")?, -- Move state only: adapter calls the Part 4 hook
 }
+-- Movers, RewindRing, ServerData, RosterEntry: same section, §3.11.1.
+
+-- Constant tables (after `local Types = {}` in Types.luau; numbers, plus `true` in the CombatSET membership maps; frozen):
+Types.CombatS = table.freeze({ Idle = 1, Air = 2, M1 = 3, Ender = 4, Move = 5, Block = 6, BlockStun = 7, Dash = 8,
+	TechRoll = 9, Hitstun = 10, Stagger = 11, Launched = 12, Ragdoll = 13, WallSplat = 14, GuardBroken = 15,
+	Grabbed = 16, Breakaway = 17, ShakeOff = 18, Awakening = 19, RealmCast = 20, KO = 21 }) -- §3.2.1
+Types.CombatSET = table.freeze({                   -- membership maps keyed by state id (§3.2.1 sets)
+	NEUTRAL = table.freeze({ [1] = true, [2] = true }),
+	STUN = table.freeze({ [10] = true, [11] = true, [12] = true, [13] = true, [14] = true, [15] = true, [16] = true }),
+	ATTACK = table.freeze({ [3] = true, [4] = true, [5] = true, [20] = true }),
+})
+Types.CombatIN = table.freeze({ M1 = 1, Move1 = 2, Move2 = 4, Move3 = 8, Move4 = 16, Quirk = 32, Awaken = 64,
+	Block = 128, Dash = 256, Jump = 512, Run = 1024, RunAuto = 2048, Launcher = 4096, AimLock = 8192 }) -- §3.10.1
+Types.CombatCF = table.freeze({ OTG = 1, DOWNSLAM = 2, WALLSPLAT = 4, ENDERKB = 8, SPIKE = 16 })   -- §3.3.1 CFlags
+Types.CombatFLG = table.freeze({ AIRDASH = 1, REALMQ = 2, PBHIT = 4, FOLLOW = 8, ENDLAG = 16 })  -- §3.3.1 Flg
 ```
+
+`Core/Fsm.luau` re-exports the section so existing `Fsm.X` references keep working for code above `Fsm` (Sim, Combat, Behaviors, tests):
+
+```lua
+--!strict
+-- src/Shared/Core/Fsm.luau (head). Pure. Spec §3.4.1.
+local Types = require("../Types")
+export type CharState = Types.CharState
+export type InputFrame = Types.InputFrame
+export type StepCtx = Types.StepCtx
+export type StepOut = Types.StepOut
+-- ... one alias per Combat-section type (HitDef, HitboxReq, HitRequest, SpawnRequest, MotionCmd, FacingCmd,
+--     LocoCmd, SimEvent, ChassisMods, StyleRuntime, Status, StatusMods) ...
+local Fsm = {}
+Fsm.S = Types.CombatS
+Fsm.SET = Types.CombatSET
+Fsm.IN = Types.CombatIN
+Fsm.CF = Types.CombatCF
+Fsm.FLG = Types.CombatFLG
+```
+
+Modules **below** `Fsm` in the require order (§3.4.2) never write `Fsm.`: they use `Types.CharState` and `local S = Types.CombatS`.
 
 `Fsm.step` never mutates its input `s`: it starts with `local n = table.clone(s)` and returns `n` in `StepOut.s`.
 
 #### 3.4.2 Module APIs
 
-Every function is pure. "cfg" is the pinned `Combat` section (`Runtime.at(CombatCfg).Combat`, §2.6.6). Mutating helpers take a `CharState` that the caller owns (a clone).
+Every function is pure. "cfg" is the pinned `Combat` section (`Runtime.at(CombatCfg).Combat`, §2.6.6), the only config Core receives. The roster entry also pins the full snapshot (`entry.fullCfg`) and its kit set (`entry.kitSet`, §3.11.1) for behaviors (`BehaviorCtx.kits`, `.moves`) and the per-move kill switch (`StyleRuntime.disabled`). Mutating helpers take a `CharState` that the caller owns (a clone). Signatures below write `CharState`, `StepCtx`, … for the Combat-section types (`Types.CharState` in modules below `Fsm`, `Fsm.CharState` above it).
+
+**Require order (acyclic; Lune `core.require_graph_acyclic`).** A module may require only modules to its left:
+
+`Types` → `Frames` → `Rng` → leaf modules `Moves`, `Stun`, `Defense`, `Movement`, `Breakaway`, `Meter`, `M1`, `Realm` → `Fsm` → `Damage` → `Combat/Rewind`, `Combat/Query`, `Combat/Hurtbox` → `Sim/Attr` → `Sim/InputMap` → `Sim/Adapter` → `Sim/Simulation`.
+
+- Leaf modules require only `Types`, `Frames` and `Rng`. They never require `Fsm`, `Damage` or one another; status effects reach them through `StepCtx.status`.
+- `Fsm` is the only state-machine module that requires the leaf modules (to step). `Damage` sits above `Fsm` (the top of Core) and requires `Fsm`, `Defense`, `Stun`, `Breakaway`, `Realm` and `Moves` to resolve hits.
+- `Combat/*` never requires `Sim/Adapter`; it annotates `Types.RosterEntry`/`Types.ServerData`/`Types.RewindRing`.
+- Part 4's `Behaviors/*` and `Styles/*` sit above Core and below `Sim/Adapter`; they never require `Sim/*`.
+- `core.require_graph_acyclic` (`tests/core/graph.spec.luau`) parses every `require("…")` string under `src/Shared/Core`, `Sim`, `Combat`, `Behaviors`, `Styles` and `Types.luau`. It fails on any cycle, and on any edge that points right in the order above.
 
 | Module | Exports (signature) | Notes |
 |---|---|---|
 | `Frames` | `HZ: number` (60); `toSeconds(fr: number): number` (= fr/60); `toFrames(sec: number): number` (= floor(sec·60+0.5)); `fromTime(t: number): number`; `phase(e: number, startup: number, active: number, recovery: number): "startup"\|"active"\|"recovery"\|"done"`; `inWindow1(e: number, from1: number, to1: number): boolean` (tests `from1 ≤ e+1 ≤ to1`) | §0.4 |
 | `Rng` | `new(seed: number): number`; `next(state: number): (number, number)` (value ∈ [0,1), new state); `nextInt(state: number, lo: number, hi: number): (number, number)`; `hash01(a: number, b: number, c: number): number` | xorshift32 on `bit32` (§3.4.3) |
-| `Fsm` | `S`, `SET`, `IN`, `CF`, `FLG` constant tables; `initial(hp: number, f: number, cfg): CharState`; `isStun(st: number): boolean`; `isNeutral(st: number): boolean`; `isInvulnerable(s: CharState, f: number, ctx: StepCtx?, cfg): boolean`; `enter(s: CharState, st: number, f: number, dur: number, sub: number): ()`; `step(s: CharState, inp: InputFrame, ctx: StepCtx, cfg): StepOut` | §3.2 |
-| `M1` | `frameData(sub: number, cfg, mods: ChassisMods): {startup: number, active: number, recovery: number, hit: HitDef}`; `onPress(s: CharState, inp: InputFrame, ctx: StepCtx, cfg): (number?, number?)` (returns `St`, `Sub` or nil if locked); `enderVariant(inp: InputFrame, ctx: StepCtx, cfg): number`; `exitBookkeeping(s: CharState, f: number, cfg): ()`; `hitbox(sub: number, ctx: StepCtx, cfg, mods: ChassisMods): HitboxReq`; `canHopCancel(s: CharState, e: number, f: number, cfg): boolean` | §3.5 |
+| `Fsm` | `S`, `SET`, `IN`, `CF`, `FLG` constant tables (re-exported `Types.CombatS/SET/IN/CF/FLG`, §3.4.1); `initial(hp: number, f: number, cfg): CharState`; `isStun(st: number): boolean`; `isNeutral(st: number): boolean`; `isInvulnerable(s: CharState, f: number, ctx: StepCtx?, cfg): boolean`; `enter(s: CharState, st: number, f: number, dur: number, sub: number): ()`; `step(s: CharState, inp: InputFrame, ctx: StepCtx, cfg): StepOut` | §3.2 |
+| `M1` | `frameData(sub: number, cfg, mods: ChassisMods): {startup: number, active: number, recovery: number, hit: HitDef}`; `onPress(s: CharState, inp: InputFrame, ctx: StepCtx, cfg): (number?, number?, number?)` (returns `St`, `Sub` and the ground chain index for `M1Idx` (nil for air hits), or nil if locked); `enderVariant(inp: InputFrame, ctx: StepCtx, cfg): number`; `exitBookkeeping(s: CharState, f: number, cfg): ()`; `hitbox(sub: number, ctx: StepCtx, cfg, mods: ChassisMods): HitboxReq`; `canHopCancel(s: CharState, e: number, f: number, cfg): boolean` | §3.5 |
 | `Defense` | `guardAt(s: CharState, f: number, cfg): number`; `materializeGuard(s: CharState, f: number, cfg): ()`; `isFront(defCf: CFrame, srcPos: Vector3): boolean`; `isPerfect(s: CharState, f: number, cfg, blockDelayF: number): boolean`; `onPress(s: CharState, f: number): ()`; `onRelease(s: CharState, f: number, cfg): ()` (anti-mash); `blockstun(hit: HitDef, adv: number?, cfg): number`; `applyGuardDamage(s: CharState, f: number, amount: number, cfg): boolean` (true = broken) | §3.6 |
 | `Movement` | `yawOf(d: Vector3): number`; `classify(moveDir: Vector3, aimYaw: number, cfg): "front"\|"left"\|"right"\|"back"\|"none"`; `dashSub(s: CharState, inp: InputFrame, ctx: StepCtx, cfg): number?`; `dashCooldownKey(sub: number): string?`; `dashMotion(sub: number, e: number, yaw: number, cfg): MotionCmd`; `isDashInvulnerable(sub: number, e: number, cfg): boolean`; `knockbackMotion(s: CharState, e: number, ctx: StepCtx, cfg): MotionCmd`; `launchMotion(s: CharState, f: number, e: number, cfg): MotionCmd`; `hangMotion(inp: InputFrame, cfg): MotionCmd`; `loco(s: CharState, inp: InputFrame, ctx: StepCtx, cfg): LocoCmd`; `facing(s: CharState, inp: InputFrame, ctx: StepCtx, cfg): FacingCmd` | §3.7 |
 | `Stun` | `enterStun(v: CharState, st: number, f: number, frames: number, sub: number, cfg): ()` (sets `StunF0` if 0, applies decay); `decayed(frames: number, v: CharState, f: number, cfg): number`; `comboScale(hitIndex: number, cfg): number`; `isDowned(v: CharState): boolean`; `resetCombo(v: CharState): ()`; `shouldShakeOff(v: CharState, f: number, cfg): boolean`; `ragdollFrames(base: number, vicMods: ChassisMods): number` | §3.8 |
 | `Breakaway` | `tick(s: CharState, f: number, mods: ChassisMods, cfg): ()`; `refund(s: CharState, damage: number, cfg): ()`; `canUse(s: CharState, f: number, cfg): boolean`; `use(s: CharState, f: number, cfg): ()` | §3.9.1 |
 | `Meter` | `gainDealt(m: number, dmg: number, hit: HitDef, cfg): number`; `gainTaken(m: number, dmg: number, cfg): number`; `gainEvent(m: number, kind: "pb"\|"style"\|"ko"\|"assist", cfg): number`; `isFull(m: number, cfg): boolean`; `activate(s: CharState, f: number, style: StyleRuntime, cfg): ()`; `extendOnKo(s: CharState, cfg): ()`; `tickAwakening(s: CharState, f: number): boolean` (true when it ended this step) | §3.9.2 |
-| `Moves` | `slotKey(sub: number): string` ("Cd1".."Cd4", "CdQ"); `defFor(style: StyleRuntime, sub: number): Types.MoveDef?`; `canUse(s: CharState, sub: number, f: number, ctx: StepCtx, cfg): boolean`; `cooldownFrames(def: Types.MoveDef, mods: ChassisMods): number`; `hitDef(def: Types.MoveDef, cfg): HitDef`; `hitbox(def: Types.MoveDef, ctx: StepCtx, prevCf: CFrame?): HitboxReq?`; `validate(def: Types.MoveDef, slot: string, cfg): { string }`; `chassisMods(style: StyleRuntime, s: CharState, cfg): ChassisMods`; status codec below | §3.4.2, §6.7 |
+| `Moves` | `slotKey(sub: number): string` ("Cd1".."Cd4", "CdQ"); `slotName(sub: number): string` ("1".."4" for Sub 1–4, "q" for 5, "a1".."a4" for 11–14); `defFor(style: StyleRuntime, sub: number): Types.MoveDef?`; `canUse(s: CharState, sub: number, f: number, ctx: StepCtx, cfg): boolean` (false when `ctx.style.disabled[Moves.slotName(sub)] == true`, the per-move kill switch); `cooldownFrames(def: Types.MoveDef, mods: ChassisMods): number`; `hitDef(def: Types.MoveDef, cfg): HitDef`; `hitbox(def: Types.MoveDef, ctx: StepCtx, prevCf: CFrame?): HitboxReq?`; `validate(def: Types.MoveDef, slot: string, cfg): { string }`; `chassisMods(style: StyleRuntime, s: CharState, cfg): ChassisMods`; status codec below | §3.4.2, §6.7 |
 | `Damage` | `resolve(att: AttackerView, vic: VictimView, hit: HitDef, hc: HitCtx, cfg): HitResult`; `scaled(base: number, comboIndex: number, pileOn: boolean, guardBroken: boolean, cfg): number`; `quantize(x: number): number` | §3.12.6 |
 | `Realm` | `castPhase(e: number, cfg): "interruptible"\|"armored"\|"opening"`; `interrupts(e: number, hit: HitDef, guardBreak: boolean, cfg): boolean`; `contains(center: Vector3, radius: number, pos: Vector3): boolean`; `canStubbornHeart(s: CharState, blockE: number, f: number, cfg): boolean`; `slotFree(active: number, cfg): boolean`; `rules: { [string]: RealmRules }` (Part 4 fills) | §3.9.3 |
 
-**Status codec** (in `Core/Moves.luau`; buffs and debuffs from kits, GDD §6.7 tags `Buff`/`Debuff`):
+**Status codec** (functions in `Core/Moves.luau`; the `Status`/`StatusMods` types are in the Combat section of `Types.luau`, §3.4.1, and `Moves` re-exports them as `Moves.Status`/`Moves.StatusMods`; buffs and debuffs from kits, GDD §6.7 tags `Buff`/`Debuff`):
 
 ```lua
-export type Status = { kind: string, untilF: number, n: number } -- kind: 2-char id from Moves.STATUS (Part 4 registry)
-export type StatusMods = {
-	speedMult: number, rooted: boolean, silenced: boolean, blockDelayF: number,
-	regenBlocked: boolean, nextHitAdd: number, shield: number, -- shield HP (cap Chassis.ShieldCap = 20)
-}
--- Moves.statusDecode(s: string): { Status }        "<kind>:<untilF base36>:<n>;..." ; "" -> {}
--- Moves.statusEncode(list: { Status }): string      sorted by kind; <= 4 entries; asserts #result <= 50
+-- Moves.statusDecode(s: string): { Status }        "<kind>:<untilF base62>:<n>;..." ; "" -> {}
+--                                                   base62 digits 0-9a-zA-Z: 5 chars cover 62^5 ≈ 9.2e8 frames (≈ 176 days
+--                                                   of server uptime); longer values simply use more digits
+-- Moves.statusEncode(list: { Status }): string      sorted by kind; <= 4 entries; while the result is > 50 chars,
+--                                                   evict the entry with the smallest untilF (ties: smallest kind) and
+--                                                   re-encode. Never asserts inside the sim (string attributes > 50 chars
+--                                                   would also stop replicating under SA)
 -- Moves.statusAdd(list, st: Status): { Status }     same kind: refresh untilF = max, n = min(n + st.n, maxStacks(kind));
 --                                                   over capacity: evict the entry with the smallest untilF
 -- Moves.statusExpire(list, f: number): ({ Status }, boolean)   removes untilF <= f; boolean = changed
--- Moves.statusMods(buffs: { Status }, debuffs: { Status }): StatusMods   via Moves.STATUS[kind].mods (Part 4)
+-- Moves.statusMods(buffs: { Status }, debuffs: { Status }): StatusMods   via Moves.STATUS[kind].mods (Part 4);
+--                                                   fields absent from every mod keep their defaults (m1Chain nil)
 ```
 
 Part 4 owns the `Moves.STATUS` registry: `{[kind: string]: {name: string, maxStacks: number, mods: (n: number) -> partial StatusMods}}`, e.g. Decay (`"dc"`, max 5, regenBlocked, nextHitAdd = n), Whispered (`"wh"`, blockDelayF = 6), Root (`"rt"`), Slow (`"sl"`).
@@ -575,7 +643,10 @@ Part 4 owns the `Moves.STATUS` registry: `{[kind: string]: {name: string, maxSta
 ```lua
 export type BehaviorCtx = {
 	f: number, e: number, phase: "startup" | "active" | "recovery",
-	def: Types.MoveDef, s: Fsm.CharState, ctx: Fsm.StepCtx, cfg: any,
+	def: Types.MoveDef, s: Fsm.CharState, ctx: Fsm.StepCtx,
+	cfg: any,                          -- pinned Combat section (= entry.fullCfg.Combat); never cfg.Combat.X
+	kits: any,                         -- pinned Kits section (= entry.fullCfg.Kits, Part 4 §4.1.6)
+	moves: (moveId: string) -> Types.MoveDef?, -- = entry.kitSet.move (Kits.Overrides applied, pinned per life)
 	isServer: boolean,                 -- read-only fact; behaviors may NOT compute different B-class outcomes from it
 }
 export type BehaviorOut = {
@@ -589,6 +660,10 @@ export type BehaviorModule = {
 	onEnd: ((bc: BehaviorCtx) -> BehaviorOut?)?,                               -- state exit (also on interrupt)
 }
 ```
+
+**Per-move kill switch** (GDD §18.6 "kill switches per style and move"; Part 2 §2.6.2 `Features.DisabledMoves`). `Adapter.track` (outside the sim) builds `StyleRuntime.disabled` from the **pinned** `fullCfg.Features.DisabledMoves`: for every MoveDef of the style (base, awakened, quirk) whose `id` is listed, `disabled[def.slot] = true`. `Moves.canUse` returns false for a disabled slot. The switch is read from the pinned snapshot, never from `Runtime.get()` inside the sim, so both peers agree for the whole life; it takes effect at the next spawn (Part 2 §2.6.6). The HUD lock glyph is cosmetic: Part 6 §6.9.5 greys a slot whose move id is in `Runtime.get().Features.DisabledMoves`; only `StyleRuntime.disabled` blocks the move.
+
+**Verify (kill switch):** Lune `moves.disabled_move_blocked` (a `StyleRuntime` with `disabled["1"] = true`: `canUse` false for Sub 1, true for Sub 2); scenario `combat.disabled_move_kill_switch` (`Dev.Command setConfig Features {"DisabledMoves":["hero.1"]}`, respawn → pressing Move1 leaves the player in `Idle`; Move2 still works; restore `DisabledMoves = {}`).
 
 #### 3.4.3 Determinism rules and the seeded RNG
 
@@ -607,12 +682,13 @@ export type BehaviorModule = {
 `tests/core/m1.spec.luau`: `m1.frame_table_gdd`, `m1.chain_window_36f`, `m1.chain_reset_37f`, `m1.ender_endlag_60f`, `m1.variant_select`, `m1.air_string_fits_hang`, `m1.dashm1_continues_at_2`, `m1.downslam_once_per_combo`.
 `tests/core/defense.spec.luau`: `defense.front_180`, `defense.behind_unblocked`, `defense.pb_window_9f`, `defense.antimash_20f`, `defense.guard_regen_lazy`, `defense.guardbreak_84f`, `defense.blockstun_from_adv`.
 `tests/core/movement.spec.luau`: `movement.classify_dirs`, `movement.dash_distances`, `movement.side_iframes_1_7`, `movement.back_iframes_1_5`, `movement.cooldowns`, `movement.airdash_once`.
-`tests/core/stun.spec.luau`: `stun.decay_after_150f`, `stun.shakeoff_210f`, `stun.otg_once`, `stun.combo_scale_tiers`, `stun.scale_floor`, `stun.jake_ragdoll_minus10`.
+`tests/core/stun.spec.luau`: `stun.decay_after_150f`, `stun.shakeoff_210f`, `stun.otg_once`, `stun.combo_scale_tiers`, `stun.scale_floor`, `stun.stretch_ragdoll_minus10` (IP-neutral name, TASKS §16.1 C12).
 `tests/core/breakaway.spec.luau`: `breakaway.lockout_12f`, `breakaway.refill_25s`, `breakaway.damage_refund`, `breakaway.pileon_2x`, `breakaway.guardbreak_30f`.
 `tests/core/meter.spec.luau`: `meter.gains_table`, `meter.realm_half`, `meter.awaken_effects`, `meter.awaken_60s_plus5_cap90`.
 `tests/core/damage.spec.luau`: `damage.m1_blocked_zero`, `damage.move_chip_20`, `damage.pileon_25`, `damage.guardbroken_plus10`, `damage.iframes_whiff`, `damage.grab_vs_block`, `damage.grab_vs_airborne`, `damage.pb_parryable_only`, `damage.design_target_no_meter` (the §3.5.7 string totals 28–36).
-`tests/core/moves.spec.luau`: `moves.status_codec_roundtrip`, `moves.status_capacity_evicts`, `moves.validate_bands`, `moves.validate_tell_8f`.
+`tests/core/moves.spec.luau`: `moves.status_codec_roundtrip`, `moves.status_capacity_evicts`, `moves.status_codec_long_uptime` (four statuses with `untilF` ≈ 6e7 and above 62^5: decode(encode(x)) round-trips the kept entries, the result is ≤ 50 chars and the smallest-`untilF` entry is the one evicted; no error), `moves.validate_bands`, `moves.validate_tell_8f`, `moves.disabled_move_blocked`.
 `tests/core/realm.spec.luau`: `realm.interrupt_window_45f`, `realm.contains`, `realm.max2`, `realm.stubborn_heart_once`.
+`tests/core/graph.spec.luau`: `core.require_graph_acyclic` (§3.4.2 require order).
 
 ---
 
@@ -635,33 +711,37 @@ Frame data and damage are identical for every style (GDD §6.3). Styles only re-
 Rules:
 1. **Index selection** (`M1.onPress`, called at P12 or from the buffer):
 ```lua
--- inside Core/M1.luau
-function M1.onPress(s: Fsm.CharState, inp: Fsm.InputFrame, ctx: Fsm.StepCtx, cfg: any): (number?, number?)
+-- inside Core/M1.luau (a leaf module: requires only ../Types, ../Frames, ../Rng — never Fsm, §3.4.2)
+local Types = require("../Types")
+local S = Types.CombatS
+
+function M1.onPress(s: Types.CharState, inp: Types.InputFrame, ctx: Types.StepCtx, cfg: any): (number?, number?, number?)
 	local f, m = ctx.f, cfg.M1
 	if f < s.M1LockF then
-		return nil, nil -- Ender end lag (GDD §6.3: 60f)
+		return nil, nil, nil -- Ender end lag (GDD §6.3: 60f)
 	end
 	if f < s.HangF and not ctx.grounded then -- Uppercut hang (§3.5.3)
 		if s.AirN < m.Air.MaxHits then
-			return Fsm.S.M1, 11 + s.AirN -- 11, 12, 13
+			return S.M1, 11 + s.AirN, nil -- 11, 12, 13 (air hits leave M1Idx unchanged)
 		end
-		return Fsm.S.Ender, 3 -- 4th air press = Downslam
+		return S.Ender, 3, nil -- 4th air press = Downslam
 	end
+	local chainLen = ctx.status.m1Chain or 4 -- index of the Ender; a kit status may lengthen the chain to 6 (Part 4 §4.3.2)
 	local idx = 1
-	if s.M1Idx >= 1 and s.M1Idx <= 3 and f <= s.M1EndF + m.ChainWindowFrames then
+	if s.M1Idx >= 1 and s.M1Idx < chainLen and f <= s.M1EndF + m.ChainWindowFrames then
 		idx = s.M1Idx + 1 -- GDD §6.3 chain window 36f after the previous hit's recovery
 	end
-	if idx == 4 then
-		return Fsm.S.Ender, M1.enderVariant(inp, ctx, cfg)
+	if idx == chainLen then
+		return S.Ender, M1.enderVariant(inp, ctx, cfg), idx
 	end
-	return Fsm.S.M1, idx
+	return S.M1, math.min(idx, 3), idx -- hits 4..chainLen-1 reuse Sub 3 (M1-3 frame data and anim.<style>.m1_3)
 end
 ```
-2. **Entry effects.** `M1Idx = idx` (ground hits and Ender = 4); `AirN += 1` for air hits; `Cnt = 0`; `ProtF = 0`; `InvF = 0`; facing tracks aim during startup.
+2. **Entry effects.** `M1Idx = idx` (the third return value: ground hits 1..chainLen−1, Ender = chainLen; unchanged for air hits); `AirN += 1` for air hits; `Cnt = 0`; `ProtF = 0`; `InvF = 0`; facing tracks aim during startup. `M1` Sub codes stay 1–3 / 11–13 / 20; no `m1_4`/`m1_5` clips exist.
 3. **Chain progress on whiff.** A whiffed hit still advances the chain (`M1.ChainOnWhiff = true`, td; genre convention).
 4. **Buffering.** An M1 pressed at any time during M1 recovery is buffered until the recovery ends (`M1.BufferWholeRecovery`), then starts the next index on the exit frame. This guarantees the 36f window is never missed by mashing.
 5. **Exit bookkeeping** (`M1.exitBookkeeping`, on timer exit or cancel): `M1` exit → `M1EndF = f`. Dash M1 exit → `M1Idx = 1`, `M1EndF = f` (Dash-Ender: the chain continues at M1-2, GDD §6.5). `Ender` exit → `M1Idx = 0`, then end lag (§3.5.2).
-6. **Hitbox** (`M1.hitbox`): Box `Combat.M1.Hitbox.Size` = (5, 5, 6) at `Offset` = (0, 0, −3.5) in the attacker's yaw-only root frame (td). `ChassisMods.m1RangeAdd` (Finn awakened +3, GDD §6.9) adds to the depth and moves the centre forward by half of it. Queried on every active frame; each target at most once per action instance (§3.12.5).
+6. **Hitbox** (`M1.hitbox`): Box `Combat.M1.Hitbox.Size` = (5, 5, 6) at `Offset` = (0, 0, −3.5) in the attacker's yaw-only root frame (td). `ChassisMods.m1RangeAdd` (`hero` awakened +3, GDD §6.9) adds to the depth and moves the centre forward by half of it. Queried on every active frame; each target at most once per action instance (§3.12.5).
 7. **Lunge and push** (td): the attacker moves `M1.LungeStuds` = 1.5 forward during startup (planar). A ground-M1 hit pushes the victim `M1.PushbackStuds` = 1.5 along the hit direction during the first `Stun.HitPushFrames` = 6 frames of hitstun. Equal lunge and push keep the chain in range.
 
 #### 3.5.2 Enders (GDD §6.3)
@@ -677,7 +757,7 @@ Variant chosen once, on the frame M1-4 starts (`M1.enderVariant`), in this order
 
 **End lag:** on Ender exit, `M1LockF = f + M1.EndLagFrames` (60, GDD §6.3). Exception: an Uppercut that **connected** sets `Flg |= ENDLAG` instead, and the lock is applied when the air string ends: on Downslam exit, on landing, or when `f ≥ HangF` (whichever comes first). At that point `AirN = 0` and `Flg &= ~(ENDLAG|FOLLOW)`.
 
-Finn's passive (GDD §7.3.1) adds `ChassisMods.enderDamageAdd` (+2 below 30 HP) to every Ender variant's base damage.
+The `hero` passive (GDD §7.3.1) adds `ChassisMods.enderDamageAdd` (+2 below 30 HP) to every Ender variant's base damage.
 
 #### 3.5.3 Uppercut, hang time and air M1s (GDD §6.3)
 
@@ -690,7 +770,11 @@ Timeline (frames after the hit frame `h0`, hitstop `hs = 6`; rise starts at `h0 
 | Attacker (BQ on contact) | rise 18 | `v0 = 2·20·60/19` = 126.3 st/s (`AttackerRiseStuds` = 20, td: ends 2 studs below the victim) | `Ender` ends at the end of hitstop (`Uppercut.HitCancelsRecovery`), then `Air`; `Flg \|= FOLLOW\|ENDLAG` |
 | Attacker | hang 48 | `vy = −3`, horizontal `moveDir · HangDriftSpeed` (6 st/s, td) | `Air` |
 
-Both get `HangF = h0 + hs + 1 + 18 + 48`. While `f < HangF` and airborne: M1 presses produce Air M1 #1–#3 (2.5 dmg each, GDD), and a 4th press produces the Downslam. Budget check: 3 air M1s × 18f + Downslam startup 8 = 62 ≤ 66 frames of rise+hang. Lune `m1.air_string_fits_hang` asserts this from config.
+Both get `HangF = h0 + hs + 1 + 18 + 48`. While `f < HangF` and airborne: M1 presses produce Air M1 #1–#3 (2.5 dmg each, GDD), and a 4th press produces the Downslam.
+
+**Hitstop does not consume hang time.** Each air-M1 contact shifts the attacker's `StF` by its hitstop (`Damage.Hitstop.M1` = 3, §3.5.6) while `HangF` is absolute. So every air-M1 contact also extends `HangF` by the same hitstop for both characters: attacker `HangF += hs` (BQ, in the attacker patch), victim `HangF += hs` (S). A whiffed air M1 has no hitstop and extends nothing. The hang therefore lasts 48 frames of non-frozen time, as the GDD describes.
+
+Budget check (in non-frozen frames, so hitstop is excluded on both sides): 3 air M1s × 18f + Downslam startup 8 = 62 ≤ 66 frames of rise+hang. Lune `m1.air_string_fits_hang` asserts this config inequality (§3.17 cross-field check). The golden trace `fsm.golden_uppercut_string` replays the string with hitstop applied and asserts that all three air M1s and the Downslam press happen while `f < HangF`, that `HangF` grew by 3 per connected air M1 on both characters, and that the Downslam connects (8 hits, 28.0 damage).
 
 If the Uppercut whiffs: no follow, no hang; normal end lag.
 
@@ -774,7 +858,7 @@ Pushback on block: `Block.PushbackStuds` = 1.0 (td), planar during the first 6 f
 
 When a blocked hit brings guard to ≤ 0: the hit itself stays blocked (chip only). Then the defender → `GuardBroken` for 84f (GDD), `BkLockF = StF + 30` (no Breakaway for the first 30f, GDD), `StunF0` starts if 0, and damage taken while `St = GuardBroken` is ×1.10 (GDD). On exit, `Grd = GuardMax` (`Block.GuardRefillOnBreakEnd = true`, td). Events: `guardbreak` (render plays the glass-candy shatter, GDD §6.4).
 
-**Verify (§3.6):** Lune `defense.*`. Scenarios: `combat.block_front_back` (blocking dummy: front M1 → 0 damage, `Grd` 88; from behind → 3.5 damage); `combat.perfect_block` (dummy mode `perfect_block` vs player M1 → attacker `St = Stagger`, `StDur = 36`; defender `Meter` Player attribute +6); `combat.antimash` (bot taps Block for 5f with no hit → `BlkLockF = release + 20`; Block press during the lock does nothing); `combat.guard_break` (9 M1s into a holding-block dummy → `GuardBroken` on the 9th, `StDur = 84`; Breakaway attempt at e = 20 refused, at e = 31 accepted).
+**Verify (§3.6):** Lune `defense.*`. Scenarios: `combat.block_front_back` (blocking dummy: front M1 → 0 damage, `Grd` 88; from behind → 3.5 damage); `combat.perfect_block` (dummy mode `perfect_block` vs player M1 → attacker `St = Stagger`, `StDur = 36`; defender meter +6, read with the Studio seam `CombatService._getMeter(dummy)` because dummies have no Player `Meter` attribute, §3.13.7); `combat.antimash` (bot taps Block for 5f with no hit → `BlkLockF = release + 20`; Block press during the lock does nothing); `combat.guard_break` (nine isolated M1-1 presses, each ≥ 37 f after the previous M1's recovery ends (chain reset), into a holding-block dummy → `Grd` = 4 before the 9th (100 − 8 × 12; no regen while blocking); `GuardBroken` on the 9th; `StDur = 84`; Breakaway refused at e = 20, accepted at e = 31). A buffered chain would break the guard on the 8th hit (the second Ender, 20 guard), so the presses are spaced on purpose.
 
 ---
 
@@ -825,7 +909,7 @@ Each character carries pre-wired actuators (created outside the sim, §3.11.2). 
 3. CCL action slots give at most 7 touch buttons [Docs `includes/action-slots.md`]. We need 12+ actions, and remapping slots to custom InputActions is "future" per the docs.
 4. Everything CCL would give us (timed labels, exclusive groups, rollback-safe state) is already covered by attributes and the FSM.
 
-Spike SA-06 confirms that the dev place does **not** spawn characters with a CCL `ControllerManager`. If a future Avatar Settings change makes characters spawn with a `ControllerManager`, the adapter switches to `ControllerLoco`: `walkSpeed → ControllerManager.BaseMoveSpeed`, facing → `ControllerManager.FacingDirection` (both Sim-Access). The locomotion interface in `Adapter` (`Loco.apply(entry, cmd)`) has exactly these two implementations. Revisit CCL after M1-G (§3.20).
+Spike SA-06 confirms that the dev place does **not** spawn characters with a CCL `ControllerManager`. If a future Avatar Settings change makes characters spawn with a `ControllerManager`, the adapter switches to `ControllerLoco`: `walkSpeed → ControllerManager.BaseMoveSpeed`, facing → `ControllerManager.FacingDirection` (both Sim-Access). The locomotion interface (`Loco.apply(entry, cmd)`, a local `Loco` section of `Sim/Adapter.luau`, not a separate file; §3.19 item 4) has exactly these two implementations. Revisit CCL after M1-G (§3.20).
 
 **Verify (§3.7):** Lune `movement.*`. Scenarios: `combat.dash_distances` (each dash on flat ground: horizontal displacement within ±10% of the table; cooldown attributes `= start + 120/96/120`); `combat.side_dash_iframes` (dummy `m1_spam` hits during side-dash frames 1–7 → `whiff` events; frame 8+ → hit); `combat.hop_cancel` (M1-2 hits a blocking dummy → Side dash accepted during recovery; on whiff → refused).
 
@@ -850,7 +934,7 @@ At `f − StunF0 ≥ Stun.ShakeOffFrames` (210 = 3.5 s), P2 forces `ShakeOff` fo
 
 #### 3.8.4 Damage scaling, OTG, pile-on
 
-- **Scaling** (GDD §6.6): for the hit with index `n = CHits + 1`: tier ×1.0 for n ≤ 8, ×0.85 for 9–14, ×0.70 for 15+ (`Damage.ComboTiers`). `scale = max(Damage.ScaleFloor (0.5), tier · (pileOn and PileOn.DamageMult or 1))`. Then `final = quantize((base + flatAdds) · scale · (St == GuardBroken and 1.10 or 1))`, where `flatAdds` are kit adds (Finn Ender +2, Decay stacks, next-hit buffs) and `quantize` rounds to 0.1. Ticks (`hit.tick`) and chip ignore combo scaling (td) and do not increment `CHits`.
+- **Scaling** (GDD §6.6): for the hit with index `n = CHits + 1`: tier ×1.0 for n ≤ 8, ×0.85 for 9–14, ×0.70 for 15+ (`Damage.ComboTiers`). `scale = max(Damage.ScaleFloor (0.5), tier · (pileOn and PileOn.DamageMult or 1))`. Then `final = quantize((base + flatAdds) · scale · (St == GuardBroken and 1.10 or 1))`, where `flatAdds` are kit adds (`hero` Ender +2, Decay stacks, next-hit buffs) and `quantize` rounds to 0.1. Ticks (`hit.tick`) and chip ignore combo scaling (td) and do not increment `CHits`.
 - **OTG** (GDD §6.6): the victim is **downed** when `St = Ragdoll` and `Sub > 0` (it has landed). A hit on a downed victim is allowed only if `CFlags` lacks `OTG`; it sets `OTG`, applies damage, and sets `StDur` so the remaining ragdoll is `max(remaining, hit.hitstun)` (no restart). A second OTG hit resolves as `otg_denied` (no effect, event for render). Airborne ragdolled victims (juggles) are hittable without OTG cost.
 - **Pile-on** (GDD §6.6): server memory per victim keeps `{rid, f}` for each damaging hit, pruned to the last `toFrames(PileOn.WindowSec)` = 240 frames. When the number of distinct attacker rids ≥ 3, the server sets `PileF = f + 240` (S). While `f < PileF`: damage ×0.75 (including the triggering hit) and Breakaway refill ×2.
 
@@ -862,7 +946,8 @@ At `f − StunF0 ≥ Stun.ShakeOffFrames` (210 = 3.5 s), P2 forces `ShakeOff` fo
 |---|---|---|---|
 | Ragdoll knockback (Ender, move `knockback.ragdoll`) | `Ragdoll`, `StDur` = 60 (Ender) or `params.ragdollFrames` + victim `ragdollFramesAdd` | horizontal `vh(e) = v0·(1 − e/N)` along `hdir`; vertical `vy(e) = v0·tan(angle) − g·e/60` until grounded after `e ≥ 3`, then 0; after `N` frames → mover off | D = 38 (GDD), N = `Ragdoll.KbTravelFrames` 30 (td), angle 10° (td) → v0 = 147.1 st/s, apex 1.7 studs |
 | Launch (Uppercut, move `knockback.launch`) | `Launched` | §3.5.3 rise + hang; for moves `D` = `knockback.dist` (height), hang = `params.hangFrames` (default 0) | — |
-| Push (non-ragdoll move knockback) | `Hitstun` | planar, constant `D·60/N`, `N = min(StDur, Stun.MoveKbFramesMax)` (12, td) | — |
+| Push (non-ragdoll move knockback) | `Hitstun` | planar, constant velocity `KbV` (= `D·60/N` along `hdir`) for `N` frames, `N = min(StDur, Stun.MoveKbFramesMax)` (12, td); `N = StDur` for `Hitstun` Sub 5 (`possess`, Part 4 §4.2.0.2) | — |
+| Pull (`kit.pull {stopStuds, frames}`, Part 4 §4.2.0.2) | `Hitstun` (the move's flavour) | The Push profile toward the attacker. Cause (S, once, outcome `hit` only): `d = flat(attRoot − vicRoot)` at resolution, `KbV = d.Unit · (max(d.Magnitude − stopStuds, 0) · 60 / frames)` (Q-rule; `Vector3.zero` if `d` is zero); it replaces the hit's own push. Effect (B): the victim's own FSM applies `KbV` as the Push profile, so both peers derive every frame from the one write | `frames` = that `N` (Part 4 data rule) |
 | M1 push | `Hitstun` | planar `1.5·60/6` = 15 st/s for 6 frames | td |
 | Spike (Downslam) | `Ragdoll` + `SPIKE` | §3.5.4 | — |
 | Wall Splat | `WallSplat` | `freeze` | GDD 30f |
@@ -898,7 +983,7 @@ B-class tick on frames where `f % Chassis.RegenTickFrames == 0` (60): `+RegenPer
 | Damage refill | S-class on each damaging hit: `BkProg += (damage / Breakaway.DamagePerSecondRefund) · 60` (−1 s per 2 damage, GDD), with the same carry rule. |
 | Lockout | S-class on every hit: `BkLockF = max(BkLockF, f + hs + Breakaway.LockoutFrames)` (12f after hitstop, GDD). Guard Break: `StF + 30`. An awakened ultimate with `params.cinematicFrames`: `max(BkLockF, f + min(cinematicFrames, toFrames(CinematicMaxSec)))` (≤ 2.0 s, GDD). |
 | Visibility | `BkP` replicates; nameplates and HUD show pips (Part 6). The HUD Dash button shows the Breakaway glyph while `St ∈ STUN` (§3.10.5). |
-| Finn passive | `breakawayRefillMult = 1.5` below 30 HP (GDD §7.3.1) via `ChassisMods`. |
+| `hero` passive | `breakawayRefillMult = 1.5` below 30 HP (GDD §7.3.1) via `ChassisMods`. |
 
 #### 3.9.2 Algebraic Meter and Awakening (GDD §6.9)
 
@@ -938,18 +1023,19 @@ Rules hook (Part 4 fills `Realm.rules[ruleId]` in `Core/Realm.luau`; framework f
 
 ```lua
 export type RealmView = { id: number, center: Vector3, radius: number, openF: number, endF: number, casterRid: number, ruleId: string }
-export type MemberView = { rid: number, isCaster: boolean, warded: boolean, s: Fsm.CharState }
+-- Core/Realm.luau is a leaf module (§3.4.2): it annotates Combat-section types from Types, never Fsm or Moves.
+export type MemberView = { rid: number, isCaster: boolean, warded: boolean, s: Types.CharState }
 export type RealmRules = {
 	healMult: ((m: MemberView) -> number)?,         -- multiplier applied to every heal on m (Well of Power: -1 for enemies)
 	cooldownMult: ((casterRid: number) -> number)?, -- applied when the caster starts a move (Well of Power: 0.7)
 	tickFrames: number?,                            -- e.g. 120 (every 2 s)
-	tick: ((r: RealmView, m: MemberView, f: number) -> { statusAdd: Moves.Status?, hit: Fsm.HitDef? }?)?, -- server only
+	tick: ((r: RealmView, m: MemberView, f: number) -> { statusAdd: Types.Status?, hit: Types.HitDef? }?)?, -- server only
 }
 ```
 
 Heals route through one function, `Adapter.heal(entry, amount, source)` (server) or `HP += amount · ctx.realmHealMult` (B-class heals such as the Awakening heal). The adapter resolves `ctx.realmHealMult` and `ctx.mods.cooldownMult` from the member's `RlmId` → `workspace.Sim:FindFirstChild("Realm_" .. id)` → `RuleId` attribute → `Realm.rules` (FindFirstChild and GetAttribute are Simulation-Access), so both peers agree. Warded members (`f < RlmWardF`) get `healMult = 1` and no rule ticks. Realm damage is tagged `hit.realm = true` (meter ×0.5, GDD §6.9).
 
-**Verify (§3.9):** Lune `breakaway.*`, `meter.*`, `realm.*`. Scenarios: `combat.breakaway` (dummy hits the player into hitstun; Dash at hit+5f is refused (lockout), at hit+16f accepted; `BkP` 2→1; the attacker within 8 studs ends in `Stagger`); `combat.breakaway_refill` (after one use, wait 25 s untouched in a play session; `BkP` returns to 2 within ±30 frames; then take 10 damage at `BkP = 1` and check `BkProg` jumped by 300); `combat.awakening` (`Dev.Command setMeter 100` → `AwkRdy=true`; press G → `St = Awakening` for 72f, invulnerable to dummy hits, `HP +10`, `BkP +1`, `AwkEndF − AwkF0 = 3672`); `combat.awaken_ko_extend` (3 KOs while awakened → `AwkEndF` +900, capped at `AwkF0 + 5472`); M1-G: `combat.realm_cast_interrupt` (parryable hit at cast e = 30 → cancelled; at e = 60 → not cancelled), `combat.realm_open_members` (3 bots at 10/35/45 studs → members 2), `combat.realm_cap_queue` (third cast queued, opens when one closes), `combat.stubborn_heart` (member holds Block 1 s → `RlmWardF` set, `BkP −1`; a second attempt in the same Realm does nothing).
+**Verify (§3.9):** Lune `breakaway.*`, `meter.*`, `realm.*`. Scenarios: `combat.breakaway` (dummy hits the player into hitstun; Dash at hit+5f is refused (lockout), at hit+16f accepted; `BkP` 2→1; the attacker within 8 studs ends in `Stagger`); `combat.breakaway_refill` (after one use, wait 25 s untouched in a play session; `BkP` returns to 2 within ±30 frames; then take 10 damage at `BkP = 1` and check `BkProg` jumped by 300); `combat.awakening` (`Dev.Command setMeter 100` → `AwkRdy=true`; precondition `Dev.Command combatPatch {"HP":60,"BkP":0}` so the clamps cannot hide the effects; press G right after → `St = Awakening` for 72f, invulnerable to dummy hits, HP 70 (60 + 10; the scenario compares against HP sampled 1 f before activation, so an out-of-combat regen tick in between cannot flake it), `BkP` 1, `AwkEndF − AwkF0 = 3672`); `combat.awaken_ko_extend` (3 KOs while awakened → `AwkEndF` +900, capped at `AwkF0 + 5472`); M1-G: `combat.realm_cast_interrupt` (parryable hit at cast e = 30 → cancelled; at e = 60 → not cancelled), `combat.realm_open_members` (3 bots at 10/35/45 studs → **3** members: `RlmId` set on the caster and on the 2 bots inside 40 studs; the bot at 45 studs keeps `RlmId = 0`), `combat.realm_cap_queue` (third cast queued, opens when one closes), `combat.stubborn_heart` (member holds Block 1 s → `RlmWardF` set, `BkP −1`; a second attempt in the same Realm does nothing).
 
 ---
 
@@ -977,9 +1063,10 @@ Heals route through one function, `Adapter.heal(entry, amount, source)` (server)
 | `AimLock` | Bool | 8192 | — | — | — | InputController (Shift-Lock active) | §15.2 |
 | `Aim` | Direction3D | — | — | — | — | InputController (camera look, assisted) | §15.2 |
 
-- `Sink = false` (deliberate): our context must not block keys from the default PlayerScripts contexts (Space/ButtonA jump, movement). None of our keys collide with default gameplay bindings. The guide's `Sink = true` recipe is optional [Docs `input-action-system.md`].
-- Emote (B / D-pad up) and Style Wheel (Tab / View) are UI actions in Part 6's `UI` context, not simulation inputs.
-- Remapping (GDD §15.2): SettingsController rewrites `KBM`/`Pad` `KeyCode`s on the **client's own** context from `settings.binds` (outside the sim). The server never needs the key, only the action state.
+- `Sink = false` (deliberate): our context must not block keys from the default PlayerScripts contexts (Space/ButtonA jump, movement). The guide's `Sink = true` recipe is optional [Docs `input-action-system.md`].
+- **CoreGui-reserved inputs.** Our keys overlap inputs that Roblox reserves unless the owning feature is disabled [Docs `includes/default-bindings.md`, Interface/Inventory]: Backpack (keys 1–4, `ButtonL1`/`ButtonR1` equip/swap, `ButtonR2` use tool), PlayerList (`Tab`, used by the Style Wheel) and GUI selection (`ButtonSelect`, used by the Style Wheel). `InputController.init()` therefore disables them before any combat context is enabled (§3.10.3).
+- Emote (B / D-pad up) and Style Wheel (Tab / View) are UI actions in Part 6's `UI` context, not simulation inputs. `DPadDown` is free in this map; Part 6's `UI` context binds it to the `MenuFocus` action, which moves gamepad focus onto the menu strip (Part 6 §6.9.5).
+- Remapping (GDD §15.2): the settings key is `binds.<Action>.<Device>` (`<Device>` ∈ {`KBM`, `Pad`}; Part 2 §2.8.6). **SettingsController** is the single owner: it applies each value to `Player.Combat.<Action>.<Device>.KeyCode` on the **client's own** context (outside the sim). The server never needs the key, only the action state.
 - `InputAction:Fire` is deprecated and banned; tests and synthesized inputs use `InputBinding:Fire(state)` on the `Script` binding [Docs `InputBinding.yaml`].
 
 **Verify:** `BuildInputs.verify()` → `{ok = true}` when the tree matches `InputMap.ACTIONS` exactly (15 actions, binding names and KeyCodes, Scriptable types); scenario `input.attach_contexts` (each joined player has `Player.Combat` with 15 actions).
@@ -1000,6 +1087,34 @@ export type InputControllerApi = {
 	setCombatEnabled: (on: boolean) -> (),               -- Combat.Enabled (menus); not Sim-Access, client-only
 	fire: (action: string, state: boolean | Vector3) -> (), -- <action>.Script:Fire(state); tests and synthesized inputs
 }
+```
+
+`InputController.init()` first frees the CoreGui-reserved inputs (§3.10.1), before any combat context is enabled:
+
+```lua
+-- InputController.init() (client, outside the sim). Never yields: retries run in task.spawn.
+local StarterGui = game:GetService("StarterGui")
+local GuiService = game:GetService("GuiService")
+
+local function disableCoreGui(): boolean
+	local ok = pcall(function()
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)   -- 1–4, L1/R1, R2 belong to combat
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false) -- Tab opens the Style Wheel
+	end)
+	return ok
+end
+GuiService.AutoSelectGuiEnabled = false -- ButtonSelect opens the Style Wheel, not UI-selection mode
+if not disableCoreGui() then
+	task.spawn(function()
+		for _ = 1, 5 do
+			task.wait(0.2)
+			if disableCoreGui() then
+				return
+			end
+		end
+		Log.warn("Input", "coregui_disable_failed")
+	end)
+end
 ```
 
 `InputController.start()` also starts the client simulation: `Adapter.startClient()` (roster tracking, §3.11.1), then `Simulation.start(Combat.Chassis.Sim.Priority)` and `Simulation.startAnimation()`.
@@ -1027,6 +1142,7 @@ local InputMap = {}
 local BOOL_ORDER = { "M1", "Move1", "Move2", "Move3", "Move4", "Quirk", "Awaken", "Block", "Dash", "Jump",
 	"Run", "RunAuto", "Launcher", "AimLock" }
 
+-- @sim-begin
 local function flat(v: Vector3): Vector3
 	local h = Vector3.new(v.X, 0, v.Z)
 	if h.Magnitude > 1 then
@@ -1038,12 +1154,13 @@ end
 function InputMap.read(a: Actions, prevBits: number, moveDir: Vector3, rootLook: Vector3): Fsm.InputFrame
 	local bits = 0
 	for _, name in BOOL_ORDER do
-		local act = a[name]
+		local act: InputAction? = a[name] -- optional: a missing action reads as "not held" (strict mode needs the `?`)
 		if act ~= nil and act:GetState() == true then
 			bits = bit32.bor(bits, Fsm.IN[name])
 		end
 	end
-	local raw = if a.Aim then a.Aim:GetState() else nil
+	local aimAct: InputAction? = a.Aim
+	local raw = if aimAct then aimAct:GetState() else nil
 	local aim = rootLook
 	if typeof(raw) == "Vector3" and raw == raw and raw.Magnitude > 0.5 and raw.Magnitude < 1.5 then
 		aim = raw.Unit -- sanity: finite, near-unit (SA docs: inputs "should be checked for sanity")
@@ -1055,6 +1172,7 @@ function InputMap.read(a: Actions, prevBits: number, moveDir: Vector3, rootLook:
 		moveDir = flat(moveDir),
 	}
 end
+-- @sim-end
 ```
 
 - `moveDir` comes from `Humanoid.MoveDirection` (Sim-Access, driven by the default IAS-based controls on both peers [Docs `Workspace.yaml` `PlayerScriptsUseInputActionSystem`]).
@@ -1069,7 +1187,7 @@ There is no separate Breakaway action. `Dash` pressed in a `STUN` state *is* Bre
 
 Bots are not Players, so they cannot own InputContexts [api-sheet §3]. They use the intent-attribute protocol (§3.15.1), read by `InputMap.readBot(root, prevBits): InputFrame` (GetAttribute only).
 
-**Verify (§3.10):** scenario `input.mcp_m1_reaches_server` (MCP `user_mouse_input` click on the viewport during a play session; within 10 frames `execute_luau` on Server reads the local character's `St == 3`). This depends on P1 spike S9; if S9 failed, the scenario uses `InputController.fire("M1", true)` then `false`. Scenario `input.scriptable_aim_replicates` (client fires `Aim = (1,0,0)`; the server's `Aim:GetState()` equals it within 0.001 after ≤ 10 frames). Scenario `input.default_jump_works` (Space press via MCP → Humanoid leaves the ground; proves `Sink = false`).
+**Verify (§3.10):** scenario `input.mcp_m1_reaches_server` (MCP `user_mouse_input` click on the viewport during a play session; within 10 frames `execute_luau` on Server reads the local character's `St == 3`). This depends on P1 spike S9; if S9 failed, the scenario uses `InputController.fire("M1", true)` then `false`. Scenario `input.scriptable_aim_replicates` (client fires `Aim = (1,0,0)`; the server's `Aim:GetState()` equals it within 0.001 after ≤ 10 frames). Scenario `input.default_jump_works` (Space press via MCP → Humanoid leaves the ground; proves `Sink = false`). The CoreGui calls of §3.10.3 are checked by Part 7's `mcp.tab_no_playerlist` (Tab opens the Style Wheel; client `StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.PlayerList) == false` and `GuiService.AutoSelectGuiEnabled == false`); gamepad menu focus is Part 6's `mcp.gamepad_menu_nav`.
 
 ---
 
@@ -1077,14 +1195,19 @@ Bots are not Players, so they cannot own InputContexts [api-sheet §3]. They use
 
 #### 3.11.1 Roster (filled outside the sim)
 
+The roster types live in the Combat section of `Types.luau` (§3.4.1) so that `Combat/Rewind`, `Combat/Hurtbox` and Part 4 can annotate them without requiring `Sim/Adapter`; `Adapter` re-exports them (`export type RosterEntry = Types.RosterEntry`, likewise `ServerData`, `Movers`).
+
 ```lua
 --!strict
--- src/Shared/Sim/Adapter.luau (types excerpt). Spec §3.11.
+-- src/Shared/Types.luau — Combat section, continued (content owned by Part 3). Spec §3.11.1.
 export type Movers = {
 	vel: LinearVelocity, face: AlignOrientation, hold: AlignPosition, grab: Attachment, rootAtt: Attachment,
 }
+export type RewindRing = {                          -- server memory; 60 poses (§3.12.4)
+	poses: { { f: number, cf: CFrame, size: Vector3 } }, head: number, count: number,
+}
 export type ServerData = {
-	ring: Rewind.Ring, rttEma: number, rewindFrames: number, meter: number,
+	ring: RewindRing, rttEma: number, rewindFrames: number, meter: number,
 	hitReg: { [string]: { [number]: boolean } },       -- key -> victim rid -> true (cleared on state entry)
 	ledger: { { rid: number, amount: number, f: number } }, lastHit: { rid: number, f: number }?,
 	pileHits: { { rid: number, f: number } }, life: { [string]: number | boolean },
@@ -1094,12 +1217,26 @@ export type RosterEntry = {
 	rid: number,                 -- players: UserId; bots: -1000000 - n (BotId "b<n>")
 	player: Player?, botId: string?, isLocal: boolean,
 	model: Model, root: BasePart, humanoid: Humanoid, hurtbox: BasePart, movers: Movers, proto: BasePart,
+	animator: Animator,                                 -- Humanoid's Animator, cached at track time
 	actions: { [string]: InputAction }?,                -- players only
-	style: Fsm.StyleRuntime, cfgVersion: number, cfg: any, -- pinned Combat section
-	anims: { [string]: Animation },                     -- Animation instances by logical key (never tracks)
+	style: StyleRuntime, cfgVersion: number,
+	fullCfg: Config,                                    -- Runtime.at(cfgVersion): full frozen snapshot, pinned per life
+	cfg: any,                                           -- = fullCfg.Combat: the only config Core receives
+	kitSet: { get: (id: string) -> StyleDef, move: (moveId: string) -> MoveDef? }, -- = Styles.forConfig(fullCfg)
+	                                                    -- (structural copy of Part 4's Styles.KitSet; keeps Types a leaf)
+	anims: { [string]: { anim: Animation, id: string, clipF: number, looped: boolean } }, -- by logical key; never tracks
+	combatIds: { string },                              -- every distinct anims[*].id of this entry (stop-others list)
 	simulate: boolean, ready: boolean,
 	srv: ServerData?,                                   -- server only
 }
+```
+
+```lua
+--!strict
+-- src/Shared/Sim/Adapter.luau (API excerpt). Spec §3.11.
+export type RosterEntry = Types.RosterEntry
+export type ServerData = Types.ServerData
+export type Movers = Types.Movers
 export type AdapterApi = {
 	track: (model: Model, opts: { player: Player?, botId: string?, dummy: boolean?, styleId: string, cfgVersion: number, spawnCf: CFrame? }) -> RosterEntry,
 	setIntentProvider: (fn: (f: number, bots: { RosterEntry }) -> ()) -> (), -- server; BotService.init (§3.15.1)
@@ -1117,8 +1254,13 @@ export type AdapterApi = {
 
 Lifecycle:
 - **Server:** CombatService connects `Player.CharacterAdded` (and BotService calls directly for bots). Handler: `model:WaitForChild("HumanoidRootPart", 10)` → `Hurtbox.prepare(model)` (§3.11.2) → `Adapter.track(model, pending[player])` with `simulate = true`, `ready = true`, `srv` filled. `Player.CharacterRemoving` → `Adapter.untrack`, `ConfigReplicator.unpin(v)`.
-- **Client (`Adapter.startClient`):** for every Player's `CharacterAdded` and every child of `Workspace.Bots`, it waits (outside the sim) for `Hurtbox`, `ALG_Vel`, `ALG_Face`, `ALG_Hold`, `ALG_Grab`, `ALG_Proto` and the HRP attribute `St`, then tracks with `simulate = (player == LocalPlayer)`. For the local entry it also needs `Player.Combat` (actions), `EquippedStyle` and `CombatCfg` resolved to `Runtime.at(v).Combat` (Part 2 §2.6.6). Only then `ready = true`. Remote entries are tracked only so that hurtbox parts map to entries for predicted contact (§3.12.7) and for render.
-- Roster arrays and maps are mutated only in these handlers, never inside the sim.
+- **Client (`Adapter.startClient`):** for every Player's `CharacterAdded` and every child of `Workspace.Bots`, it waits (outside the sim) for `Hurtbox`, `ALG_Vel`, `ALG_Face`, `ALG_Hold`, `ALG_Grab`, `ALG_Proto`, the Humanoid's `Animator` and the HRP attribute `St`, then tracks with `simulate = (player == LocalPlayer)`. For the local entry it also needs `Player.Combat` (actions), `EquippedStyle` and `CombatCfg` resolved to `Runtime.at(v)` (Part 2 §2.6.6). Only then `ready = true`. Remote entries are tracked only so that hurtbox parts map to entries for predicted contact (§3.12.7) and for render.
+- **What `Adapter.track` pins (both peers, outside the sim):** `fullCfg = Runtime.at(cfgVersion)` (frozen), `cfg = fullCfg.Combat`, `kitSet = Styles.forConfig(fullCfg)` (Part 4 §4.1.6), `style = Adapter.styleRuntime(kitSet.get(styleId), fullCfg)` (includes `disabled`, §3.4.2), `animator = humanoid:FindFirstChildOfClass("Animator")` (bots: the template includes one), and the animation cache:
+  - for every animation key the style can reach (§3.11.8 table), `anims[key] = {anim, id, clipF, looped}`: `id = Assets.get(key)` (Part 2 §2.9.1; the key is skipped when it resolves to `""`), and `anim` is an `Animation` with that `AnimationId`, created once per key per peer outside the sim and shared by all entries;
+  - `clipF` is the `Frames` attribute and `looped` the `Loop` property of the `ReplicatedStorage.Anim` KeyframeSequence whose `AssetKey` equals the key (Part 4 §4.6.1, Part 6 §6.6.8);
+  - when that metadata is missing (a published clip without a local sequence), use `looped = false` and `clipF = 3600`, and log `[ALG][Anim] WARN clip_meta_missing key=<key>` once per key;
+  - `combatIds` = the distinct `id`s of `anims`.
+- Roster arrays and maps are mutated only in these handlers, never inside the sim. The sim reads config only from the pinned `cfg`, `fullCfg` and `kitSet` (§3.16.1 item 10).
 
 #### 3.11.2 Per-character preparation (`Combat/Hurtbox.prepare`, server, outside the sim)
 
@@ -1133,7 +1275,7 @@ Created on the server at `CharacterAdded` (bots: before parenting). Names prefix
 | `ALG_Hold` | AlignPosition | HRP | `Mode = TwoAttachment`, `Attachment0 = RootAttachment`, `Attachment1 = nil`, `Responsiveness = 100`, `MaxForce = 1e7`, `MaxVelocity = 200` (td), `Enabled = false` (being grabbed; Part 4 sets `Attachment1` to the grabber's `ALG_Grab`) |
 | `ALG_Grab` | Attachment | HRP | `CFrame = CFrame.new(0, 0, -2.5)` (td; where this character holds a victim) |
 
-Also: every `BasePart` in the model (now and via `DescendantAdded`) gets `CollisionGroup = "Characters"` except `Hurtbox`/`ALG_Proto`. Humanoid: `BreakJointsOnDeath = false`, `RequiresNeck = false`, `UseJumpPower = false`, `JumpHeight = 7.5`, `WalkSpeed = 18`. `RootAttachment` is the rig's HRP attachment; if it is missing, create `ALG_RootAtt` at the origin and use it (verify on the published rig in SA-11). Each constraint is asserted to have non-nil attachments after creation; a missing attachment logs `[ALG][Combat] ERROR mover_unwired` (a nil attachment is a silent failure per Cakeman).
+Also: every `BasePart` in the model (now and via `DescendantAdded`) gets `CollisionGroup = "Characters"` except `Hurtbox`/`ALG_Proto`. Humanoid: `BreakJointsOnDeath = false`, `RequiresNeck = false`, `UseJumpPower = false`, `JumpHeight = 7.5`, `WalkSpeed = 18`. Animator (`humanoid:FindFirstChildOfClass("Animator")`; bot templates include one; created here on the server if missing, so it replicates): `PreferLodEnabled = false` for player and bot characters (GDD §18.4: attacker startups are the telegraphs and must never be LOD-throttled; the property is not Sim-Access, so it is set here, outside the sim). On each client, Part 6's RenderController (outside the sim, every 0.5 s) overrides it locally for remote characters: `false` within 60 studs of the camera subject, `true` beyond. `RootAttachment` is the rig's HRP attachment; if it is missing, create `ALG_RootAtt` at the origin and use it (verify on the published rig in SA-11). Each constraint is asserted to have non-nil attachments after creation; a missing attachment logs `[ALG][Combat] ERROR mover_unwired` (a nil attachment is a silent failure per Cakeman).
 
 #### 3.11.3 The step (`Simulation` + `Adapter.step`)
 
@@ -1182,8 +1324,8 @@ Who starts it: on the server, `CombatService.init()` runs `Hurtbox.ensureGroups(
 | 0 Pose | For each ready entry: `Hurtbox.place(e)` (CFrame = root position + `(0, OffsetY·scale, 0)`, yaw-only rotation from `ALG_Face`/root; `Size` = base × `hurtboxScale`); `Rewind.record(e.srv.ring, f, cf, size)` | — |
 | 0b Init | Entries without `St`: `Adapter.initState(e, f)` writes every SPEC default (`HP = style.hp`, `ProtF = f + 480`, `StF = f`), `root:PivotTo(spawnCf)`; log `[ALG][Sim] ready rid=<n> cfg=<v>` via queue; apply any `queuedPatches` (test seam) | — |
 | 0c Intents | Call the BotService intent provider for bot entries (§3.15.1) | — |
-| 1 Step | For each ready entry (rid ascending): `readState` → `InputMap.read`/`readBot` → wall probe if eligible (§3.5.5) → `Fsm.step` → behavior hook (§3.11.4) → `writeDiff` → `applyMotion`/`applyFacing`/`Loco.apply` → `spawnAll` → if `out.entered` clear `srv.hitReg` → collect hits and events | same, for the local entry only (`assert(e.isLocal)`) |
-| 1b Carriers | Step every live carrier in `workspace.Sim` (§3.11.5); collect their hit requests | Step carriers with `Own == localRid` only |
+| 1 Step | For each ready entry (rid ascending): `readState` → `ctx.status = Moves.statusMods(…)` → `InputMap.read`/`readBot` → wall probe if eligible (§3.5.5) → `Fsm.step` → behavior hook (§3.11.4) → zone pull (B-class, §3.11.5) → `writeDiff` → `applyMotion`/`applyFacing`/`Loco.apply` → `spawnAll` → if `out.entered` clear `srv.hitReg` → collect hits and events | same, for the local entry only (`assert(e.isLocal)`) |
+| 1b Carriers | Step every live carrier in `workspace.Sim` (enumerated with `GetChildren`, sorted by `Cid`, §3.11.5); collect their hit requests, each tagged `req.carrier = <carrier Cid>` | Step carriers with `Own == localRid` only |
 | 2 Query | Rewound queries (§3.12.5) → contact list | Live queries for local requests (§3.12.7) |
 | 3 Apply | `Damage.resolve` per contact; S + BQ patches; meta updates (§3.12.6) | Attacker-self BQ patch on first contact per action |
 | 4 Post | Realm phases (§3.9.3), pile-on expiry, `AwkRdy` writes, KO detection (§3.13.1), `scheduleFlush()` | — |
@@ -1193,7 +1335,8 @@ The client never writes attributes or constraint properties of a non-local entry
 #### 3.11.4 Movers, locomotion and behavior hooks
 
 ```lua
--- Adapter.applyMotion (SIM-SAFE). Reads the constraint's own (predicted) properties; keeps no Lua cache.
+-- Adapter.applyMotion (SIM-SAFE; inside the file's -- @sim-begin/-- @sim-end region). Reads the constraint's own
+-- (predicted) properties; keeps no Lua cache.
 local function applyMotion(e: RosterEntry, m: Fsm.MotionCmd)
 	local vel = e.movers.vel
 	if m.mode == "none" then
@@ -1217,14 +1360,21 @@ end
 
 `applyFacing`: `auto` → `ALG_Face.Enabled = false`, `AutoRotate = true`; `set` → `AutoRotate = false`, `ALG_Face.CFrame = CFrame.Angles(0, yaw, 0)`, `Enabled = true`; `hold` → `AutoRotate = false`, `Enabled = true`, CFrame unchanged. When leaving `auto` for `hold` (a stun begins in neutral), the adapter first writes the root's current yaw (rounded, Q-rule) so the hold has a defined target.
 
-Behavior hooks (Part 4 contract, §3.4.2): while `St = Move`, the adapter calls `Behaviors[def.behavior].step(bc)` after `Fsm.step` on both peers for the owner. `onContact` runs on the server for every contact of that move, and on the owner client only for its predicted first contact. `onEnd` runs on state exit, including interrupts. A behavior's `patch` may write only B-class fields from `Attr.SPECS`; the adapter rejects others and logs `[ALG][Combat] ERROR behavior_patch field=<name>` (Studio).
+Behavior hooks (Part 4 contract, §3.4.2): while `St = Move`, the adapter calls `Behaviors[def.behavior].step(bc)` after `Fsm.step` on both peers for the owner. `onContact` runs on the server for every contact of a HitRequest from that move's own step, and on the owner client only for its predicted first contact; it never runs for carrier hits (`req.carrier` set, §3.12.6; Part 4 §4.2.0.1, §4.2.0.5 item 7). `onEnd` runs on state exit, including interrupts. A behavior's `patch` may write only B-class fields from `Attr.SPECS`; the adapter rejects others and logs `[ALG][Combat] ERROR behavior_patch field=<name>` (Studio).
 
 #### 3.11.5 Stitched carriers (projectiles, zones, summons) and despawn
 
-- **Creation (inside the sim, both peers for the owner):** `Adapter.spawn(e, req, f)` does `local p = e.proto:Clone()` (stitching: `Clone` uses the source's GUID as the context seed and works when the source replicated to both peers [Docs `techniques.md`]), sets `Name = "C_<rid>_<f>_<n>"`, `CFrame = req.origin`, attributes `Own` (rid), `Kind`, `MoveId`, `F0` (= f), `Dead` (= false), `Hits` (= 0) plus up to 10 `req.params` keys, and finally `p.Parent = workspace.Sim` (parent last, in the same frame, as the docs require).
-- **Server-only creation** (zones whose position depends on other characters; Realm markers): same helper, server branch only. These are not predicted.
+- **Creation (inside the sim, both peers for the owner):** `Adapter.spawn(e, req, f)` does `local p = e.proto:Clone()` (stitching: `Clone` uses the source's GUID as the context seed and works when the source replicated to both peers [Docs `techniques.md`]), sets `Name = "C_<rid>_<f>_<n>"`, `CFrame = req.origin`, attributes `Own` (rid), `Kind`, `MoveId`, `F0` (= f), `Dead` (= false), `Hits` (= 0), `Cid` (= the same string as `Name`) plus up to 10 `req.params` keys, and finally `p.Parent = workspace.Sim` (parent last, in the same frame, as the docs require). `Instance.Name` has no `simulationAccess` flag, so the sim reads a carrier's id from `Cid`, never from `Name`. Carrier caps come from the spawning owner's pinned `Kits` (`e.fullCfg.Kits.MaxCarriersPerFighter` / `MaxCarriersServer`, Part 4 §4.2.0.5 item 5), counted over the enumeration below.
+- **Server-only creation** (zones whose position depends on other characters; summons and homing projectiles, whose SpawnRequest carries `serverOnly = true` (Part 4 §4.2.0.5 item 1, §4.9 item 9); Realm markers): same helper, server branch only. These are not predicted.
 - **Prediction:** carriers are anchored. Anchored parts are not predicted under `PredictionMode.Automatic` (Cakeman rule 7), so the owner client calls `RunService:SetPredictionMode(p, Enum.PredictionMode.On)` in a `workspace.Sim.ChildAdded` handler (outside the sim; client-only API) when `p:GetAttribute("Own") == localRid`.
-- **Stepping (phase 1b):** `Carriers.step` calls Part 4's `Behaviors.Projectile.stepCarrier(view, f)` / `Behaviors.Zone.stepCarrier(view, f)`. These return the new CFrame (written to `p.CFrame`, Sim-Access), hit requests (projectiles: `Cast` from the previous to the current position, so nothing tunnels), and `dead` (lifetime ≥ `params.lifeF`, capped by `Chassis.Sim.MaxCarrierLifeFrames` = 600, or the hit limit reached on the server). Zones produce `tick` hits every `params.tickFrames` (server only).
+- **Enumeration (phase 1b, the zone-pull scan and the caps):** the sim lists carriers with `workspace.Sim:GetChildren()` (`Instance:GetChildren` is flagged `simulationAccess: true` in the snapshot's `Instance.yaml`, §3.1.6). It keeps children that have a `Kind` attribute (Realm markers have none, §3.9.3) and `Dead == false`, and sorts them by `Cid` (= name order; `GetChildren` order is unspecified). It reads only attributes and `CFrame`.
+- **Stepping (phase 1b):** `Carriers.step` (the local `Carriers` section of `Sim/Adapter.luau`, inside the sim markers) calls Part 4's `Behaviors.Projectile.stepCarrier(view, f)` / `Behaviors.Zone.stepCarrier(view, f)` / `Behaviors.Summon.stepCarrier(view, f)` for each enumerated carrier. The view's `name` is `Cid`, and its `cfg`/`kits`/`moves` are the **owner's** pinned tables (the roster entry with `rid == Own`: `fullCfg.Combat`, `fullCfg.Kits`, `kitSet.move`; a carrier whose owner is no longer tracked is set `Dead` instead, Part 4 §4.2.0.5 item 6). These return the new CFrame (written to `p.CFrame`, Sim-Access), hit requests (projectiles: `Cast` from the previous to the current position, so nothing tunnels), and `dead` (lifetime ≥ `params.lifeF`, capped by `Chassis.Sim.MaxCarrierLifeFrames` = 780, i.e. the GDD 12 s summon maximum plus a 60f arm/telegraph margin, or the hit limit reached on the server). Zones produce `tick` hits every `params.tickFrames` (server only). The adapter sets `req.carrier = p:GetAttribute("Cid")` on every hit request a carrier returns; such hits change nothing on the owner (§3.12.6).
+- **Zone pull (B-class).** A zone whose MoveDef has `params.pullStudsPerSec` pulls enemies inside it without a hit. It is computed in each victim's **own** step (phase 1, after the behavior hook, on both peers for that character), never as a per-frame server write:
+  - scan the carrier enumeration above for `Kind == "zone"` whose `Own` is not this rid (party membership is server-only data, so the pull does not exempt party allies; td: the pull deals no damage);
+  - look up the MoveDef by the carrier's `MoveId` with the entry's pinned `kitSet.move` (`params` are not overridable, so every pinned kit set agrees);
+  - when the MoveDef has `params.pullStudsPerSec`, add Part 4's pure `Zone.pullVelocity(def, carrierCf.Position, rootPos)` (Part 4 §4.2.6: planar, toward the carrier centre, zero outside `radius` or within 0.5 studs, components rounded to 0.01).
+  - Every pull is summed and rounded to 0.01 per component (Q-rule). It is added to the FSM's MotionCmd: `none` becomes `planar` with `moveDir · walkSpeed + pull`; `planar` adds to `vx`/`vz`; `vector`/`freeze` (knockback, hitstop, Wall Splat) are not changed.
+  - The carrier and its attributes replicate, so the victim's client predicts the pull itself. Only the zone's arrival and expiry can mispredict, once each. Spike S-P4-3 (Part 4) measures rollbacks per second during `stretch.a4`.
 - **Despawn (outside the sim):** the sim only sets `Dead = true`. In the deferred flush (§3.11.6) the server destroys carriers whose `Dead` has been true for ≥ 2 frames (so clients see the flag first) and any carrier older than the cap. Clients never destroy carriers; render hides `Dead` carriers at once.
 - **Spike SA-09** checks GUID stitching when two characters spawn carriers in the same frame (the docs' per-script call counter could make server and client counters differ). **Fallback:** server-only carriers. The owner client then renders a cosmetic "ghost" projectile from its predicted move timeline (RenderController, `CanQuery = false`, group `CosmeticNoQuery`) and hides it when the authoritative carrier appears or the state is undone.
 
@@ -1248,7 +1398,64 @@ Clients have no queue: client-side consequences are expressed only as attributes
 
 #### 3.11.8 Animation and render contract
 
-**Animation (sim-mirrored).** Following the SA guidance to "mirror animation logic" and avoid track caching [Docs `techniques.md`], `Adapter.animate(f, isServer)` runs in `RunService:BindToAnimation(..., Enum.StepFrequency.Hz60)` on both peers for simulated entries. Server: every character. Client: the local one. It maps `(St, Sub, style)` to an animation key via `AnimKeys` (table below), gets the track with `animator:GetTrackByAnimationId(anim.AnimationId) or animator:LoadAnimation(anim)` (never cached), plays it with priority `Action2` (`Action4` for Awakening/RealmCast), stops tracks of the previous state, and sets `track.TimePosition = e / 60` when `|TimePosition − e/60| > 2/60`. During hitstop it calls `AdjustSpeed(0)`, then `AdjustSpeed(1)`. Locomotion stays with the default Animate script. At most `Render.MaxCombatTracks` = 2 combat tracks play per character (one action + one reaction) until spike SA-05 settles the per-Animator limit.
+**Animation (sim-mirrored).** Following the SA guidance to "mirror animation logic" and avoid track caching [Docs `techniques.md`], `Adapter.animate(f, isServer)` runs in `RunService:BindToAnimation(..., Enum.StepFrequency.Hz60)` on both peers for simulated entries. Server: every character. Client: the local one. The binding has the simulation restrictions (§3.1.5), so it never reads `Animation.AnimationId`, `AnimationTrack.Animation` or `AnimationTrack.Length` (not Sim-Access). Clip ids, clip lengths and loop flags come from the roster cache filled by `Adapter.track` (§3.11.1). Every member used below is Sim-Access [Docs `Animator.yaml`, `AnimationTrack.yaml`].
+
+Per entry, each animation step:
+1. Map `(St, Sub, style)` to a key with `AnimKeys.of` (pure; table below).
+2. **Stop the others.** For every id in `combatIds` other than the current clip's, `local t = animator:GetTrackByAnimationId(id); if t and t.IsPlaying then t:Stop(0.1) end`. There is no Lua-side "previous state"; the client keeps no animation state that could survive a rollback.
+3. Get the track with `animator:GetTrackByAnimationId(a.id) or animator:LoadAnimation(a.anim)` (never cached). If it is not playing: set `Priority` (`Action2`; `Action4` for Awakening/RealmCast) and `Looped = a.looped`, then `Play`.
+4. **Hitstop and pending entry.** With `el = f − StF`: if `f ≤ HsF` or `el < 0`, call `AdjustSpeed(0)` (when `Speed ~= 0`) and do **not** resync. On contact the attacker's `StF` shifts by the hitstop (§3.5.6), so after hitstop `el` continues from the contact frame and needs no correction. A victim entering its reaction with `StF = f + hs + 1` holds the reaction's first pose.
+5. Otherwise, if `Speed == 0` (the first frame after hitstop), call `AdjustSpeed(1)`. Then clamp to the clip: `eAnim = if a.looped then el % a.clipF else math.min(el, a.clipF − 1)`. Set `TimePosition = eAnim / 60` only when `|TimePosition − eAnim/60| > 2/60`. Long states (untimed `Block`, an 80f hold on the 30f `grabbed` loop, a 72f `possess` hitstun on the 27f `hitstun` clip) therefore loop or hold their last pose instead of jittering or replaying.
+
+```lua
+-- Adapter.animate, per simulated entry (SIM-SAFE; inside -- @sim-begin / -- @sim-end).
+-- N = Attr.N; S = Types.CombatS; AnimKeys.of is pure.
+local function animateEntry(e: RosterEntry, f: number)
+	local root = e.root
+	local st = root:GetAttribute(N.St) :: number?
+	if st == nil then
+		return
+	end
+	local key = AnimKeys.of(st, root:GetAttribute(N.Sub) :: number, e.style)
+	local a = if key ~= nil then e.anims[key] else nil
+	local curId = if a ~= nil then a.id else ""
+	for _, id in e.combatIds do
+		if id ~= curId then
+			local t = e.animator:GetTrackByAnimationId(id)
+			if t ~= nil and t.IsPlaying then
+				t:Stop(0.1)
+			end
+		end
+	end
+	if a == nil then
+		return -- locomotion stays with the default Animate script
+	end
+	local track = e.animator:GetTrackByAnimationId(a.id) or e.animator:LoadAnimation(a.anim)
+	if not track.IsPlaying then
+		track.Priority = if st == S.Awakening or st == S.RealmCast
+			then Enum.AnimationPriority.Action4
+			else Enum.AnimationPriority.Action2
+		track.Looped = a.looped
+		track:Play(0.05)
+	end
+	local el = f - (root:GetAttribute(N.StF) :: number)
+	if f <= (root:GetAttribute(N.HsF) :: number) or el < 0 then
+		if track.Speed ~= 0 then
+			track:AdjustSpeed(0) -- frozen; never resync during hitstop
+		end
+		return
+	end
+	if track.Speed == 0 then
+		track:AdjustSpeed(1)
+	end
+	local eAnim = if a.looped then el % a.clipF else math.min(el, a.clipF - 1)
+	if math.abs(track.TimePosition - eAnim / 60) > 2 / 60 then
+		track.TimePosition = eAnim / 60
+	end
+end
+```
+
+Locomotion stays with the default Animate script. Only the current combat clip plays per character (step 2 stops every other one); `Render.MaxCombatTracks` = 2 remains the budget until spike SA-05 settles the per-Animator limit.
 
 | State / Sub | Anim key (`Assets` key; Part 6 publishes placeholders) |
 |---|---|
@@ -1261,16 +1468,22 @@ Clients have no queue: client-side consequences are expressed only as attributes
 | Ragdoll | `anim.common.tumble` (first 12f), then the cosmetic ragdoll (render) |
 | Breakaway, ShakeOff, Awakening, RealmCast, KO | `anim.common.breakaway`, `.shakeoff`, `anim.<style>.awaken`, `anim.<style>.realm`, `anim.common.ko` |
 
-**Render (client, `RenderController`, RenderStepped).** Per streamed character it keeps `last = {St, StF, Sub, Cnt, HsF, BkP, AwkF0, RlmId, HP, Flg, CFlags}` and dispatches these transitions to Vfx/Sfx/Camera/Appearance controllers (Part 6 implements):
+**Render (client, `RenderController`, RenderStepped).** Per streamed character it keeps `last = {St, StF, Sub, M1Idx, Cnt, HsF, BkP, AwkF0, RlmId, HP, Flg, CFlags}` and dispatches these transitions to Vfx/Sfx/Camera/Appearance controllers (Part 6 implements).
+
+Detection rules (Part 6 §6.6.1 implements them verbatim):
+- **Entry** = `St` or `Sub` changed (or, for `St = M1`, `M1Idx` changed: under an `m1Chain` status, hits 4–5 reuse `Sub = 3`, §3.5.1). Entry increments the character's `actionId`.
+- A `StF` increase with `St`/`Sub` (and `M1Idx`) unchanged is **not** an entry. In `ATTACK` states it is a hitstop shift (§3.5.6), ignored. In `Hitstun`/`BlockStun`/`Stagger` it is a hit refresh, and the reaction is replayed.
+- One-shots are keyed by **`(actionId, threshold)`** with a per-action `firedMax`, so a hitstop shift or a missed RenderStepped never replays or skips a move's VFX/SFX. A telegraph plays only while `Cnt == 0` and before the action's first active frame.
+- **Timing per view.** The local character's view uses `e = fNow − StF`. Remote characters, bots and carriers not owned by the local player arrive about one RTT late (they render "slightly in the past"), so their thresholds and telegraph windows use observation time `eR`/`ageR` instead (Part 6 §6.6.1 "Timing per view"); `fNow − StF` would skip their 8f tells (GDD §6.14).
 
 | Transition (detected by diff) | Effect | Predicted for local? | Undo rule |
 |---|---|---|---|
-| `St/StF` enter (new `StF` > old `StF`) | state VFX/SFX (dash puffs, block shield, breakaway sparkles, awakening aura + local 1.2 s camera cinematic + music sting) | yes | If within 15f the identity `(St, StF)` is replaced by one with `StF ≤` the effect's `StF` (rollback), stop the effect |
-| `Cnt` 0→1 / 0→2 on the local attacker | hit spark at the hitbox centre, hit SFX (rising pitch per combo), light/medium camera shake (GDD §6.13) | yes | `Cnt` back to 0 within 15f → fade the spark |
+| Entry (rules above) | state VFX/SFX (dash puffs, block shield, breakaway sparkles, awakening aura + local 1.2 s camera cinematic + music sting) | yes | Stop the effect if, within 15f, the identity `(St, StF)` is replaced by one with `StF ≤` the effect's `StF` (rollback), **or** the identity changes to a `STUN`/`KO` state before the effect state's natural end (`StF` + duration), regardless of `StF` ordering (a same-frame server hit pre-empted the predicted action: the victim's `StF = f + hs + 1` is larger) |
+| `Cnt` 0→1 / 0→2 on the local attacker | hit spark at the hitbox centre, hit SFX (rising pitch per combo), light/medium camera shake (GDD §6.13) | yes | Undo (fade the spark) only if `Cnt` returns to 0 within 15f while the action identity (`St`, `Sub`, `actionId`) is unchanged, or `RunService.Rollback` fires with a frame ≤ the contact frame. A `Cnt` reset caused by entering a new action (buffered air M1, Hop Cancel) is not an undo |
 | Victim `HP` decrease or `STUN` entry | hit reaction flash, damage number (Training/accessibility), combo counter from victim `CHits` ≥ 3 (GDD §15.3) | no (authoritative) | — |
 | `Flg PBHIT` set / attacker `Stagger` Sub 1 | "ding!" + star flash; 6f freeze both | no | — |
 | `St = GuardBroken` | glass-candy shatter | no | — |
-| `St = Ragdoll` | hide the real rig locally (`LocalTransparencyModifier = 1`), spawn a cosmetic ragdoll clone (`CanQuery = false`, group `CosmeticNoQuery`) for tumble → noodle → get-up (GDD §13.3) | no | restore on exit |
+| `St = Ragdoll` | hide the real rig locally (`LocalTransparencyModifier = 1`), spawn a cosmetic ragdoll clone (`CanQuery = false`, group `RagdollFx`, Part 6 §6.1.5: it lands on floors and never touches `Characters`) for tumble → noodle → get-up (GDD §13.3) | no | restore on exit |
 | `St = KO` | candy-sparkle poof (GDD §6.11); hide the body after `Respawn.BodyHideSec` | no | — |
 | Realm marker appears / `Dead` | ring close, 12f time-dilation VFX / ring fade | no | — |
 
@@ -1293,9 +1506,11 @@ Registered with `workspace:RegisterCollisionGroup` (Sim-Access; `PhysicsService`
 | `Hurtbox` | hurtbox parts, summon hurtboxes (Part 4) | `HitQuery` only |
 | `HitQuery` | none (query-only group) | `Hurtbox` only |
 | `WorldQuery` | none (query-only group) | `Default` only |
-| `CosmeticNoQuery` | client visual parts (ragdoll clones, VFX meshes, ghosts) | nothing |
+| `CosmeticNoQuery` | client visual parts: VFX meshes, look proxies, ghosts (ragdoll clones and debris use `RagdollFx`) | nothing |
+| `MapBoundary` | invisible boundary walls and caps (Part 6 §6.1.5) | `Characters`, `RagdollFx` (not `WorldQuery`: no wall splat on boundaries) |
+| `RagdollFx` | client-only ragdoll clones and breakable debris (Part 6 §6.1.5) | `Default`, `MapBoundary` (never `Characters`) |
 
-6 of 32 groups. Spike SA-10 confirms that Humanoid floor detection ignores `Hurtbox` parts and that groups registered in Edit mode exist on clients. **Verify:** `BuildInputs.verify()` checks the matrix with `workspace:CollisionGroupsAreCollidable`.
+8 of 32 groups. `Hurtbox.ensureGroups()` registers all eight and sets the full matrix (Part 6 adds no second registration point). Spike SA-10 confirms that Humanoid floor detection ignores `Hurtbox` parts and that groups registered in Edit mode exist on clients. **Verify:** `BuildInputs.verify()` checks the matrix with `workspace:CollisionGroupsAreCollidable`.
 
 #### 3.12.2 Hurtbox
 
@@ -1310,6 +1525,7 @@ Registered with `workspace:RegisterCollisionGroup` (Sim-Access; `PhysicsService`
 -- src/Shared/Combat/Query.luau — spatial queries against the Hurtbox group. SIM-SAFE. Spec §3.12.3.
 local Query = {}
 
+-- @sim-begin
 function Query.overlapParams(selfHurtbox: BasePart): OverlapParams
 	local p = OverlapParams.new()
 	p.CollisionGroup = "HitQuery" -- collides only with Hurtbox (§3.12.1)
@@ -1351,6 +1567,7 @@ function Query.sweep(prevCf: CFrame, cf: CFrame, size: Vector3, selfHurtbox: Bas
 	end
 	return hits
 end
+-- @sim-end
 
 return Query
 ```
@@ -1366,20 +1583,25 @@ return Query
 - **Rewound query:** victims' hurtbox parts are moved to `Rewind.at(ring, f − k)`, the query runs, and the present pose is restored, all inside the same server step (CFrame/Size are Sim-Access; the parts are anchored and not welded, so nothing else moves):
 
 ```lua
+-- src/Shared/Combat/Rewind.luau (excerpt). Requires only ../Types (never Sim/Adapter, §3.4.2).
+local Types = require("../Types")
+export type Ring = Types.RewindRing
+
+-- @sim-begin
 -- Rewind.withPoses (server, inside the sim). Restores present poses even if fn errors.
-function Rewind.withPoses(victims: { Adapter.RosterEntry }, f: number, k: number, fn: () -> ())
+function Rewind.withPoses(victims: { Types.RosterEntry }, f: number, k: number, fn: () -> ())
 	if k <= 0 then
 		fn()
 		return
 	end
 	for _, v in victims do
-		local p = Rewind.at((v.srv :: Adapter.ServerData).ring, f - k)
+		local p = Rewind.at((v.srv :: Types.ServerData).ring, f - k)
 		v.hurtbox.CFrame = p.cf
 		v.hurtbox.Size = p.size
 	end
 	local ok, err = pcall(fn) -- fn never yields
 	for _, v in victims do
-		local p = Rewind.at((v.srv :: Adapter.ServerData).ring, f)
+		local p = Rewind.at((v.srv :: Types.ServerData).ring, f)
 		v.hurtbox.CFrame = p.cf
 		v.hurtbox.Size = p.size
 	end
@@ -1387,6 +1609,7 @@ function Rewind.withPoses(victims: { Adapter.RosterEntry }, f: number, k: number
 		error(err, 0)
 	end
 end
+-- @sim-end
 ```
 
 Damage, stun and knockback still apply in present time (GDD §18.2). Fallback if SA-07 shows that queries do not see the moved CFrames within the same step: `Query.obbOverlap(boxCf, size, pose)` (pure OBB separating-axis test in Lua) against ring poses, with no part moves.
@@ -1396,7 +1619,7 @@ Damage, stun and knockback still apply in present time (GDD §18.2). Fallback if
 1. Group pending hit requests by attacker `k` (`srv.rewindFrames`; ≤ 13 groups, usually 1–3).
 2. For each group: victims = ready entries (not the attacker, not `KO`) whose present root is within `Damage.QueryBroadphaseStuds` (30, td) of any attacker in the group. Call `Rewind.withPoses(victims, f, k, run)`.
 3. `run` executes each request's query (§3.12.3), maps parts to entries (`Adapter.entryOfHurtbox`), skips the attacker itself and victims already in `attacker.srv.hitReg[req.key]`, adds them to the registry, and appends `{att, vic, req}`. At most `req.maxTargets` (default `Damage.QueryMaxTargets` = 8) per request per frame.
-4. Registry keys: chassis M1/Ender use `"m1"`. Behaviors choose keys (e.g. `"<moveId>#<hitIndex>"` for multi-hit moves). Carriers use their instance name. The registry is cleared when the owner enters a new state (`StepOut.entered`). Carriers' registries live with the carrier.
+4. Registry keys: chassis M1/Ender use `"m1"`. Behaviors choose keys (e.g. `"<moveId>#<hitIndex>"` for multi-hit moves). Carriers use their `Cid` (= instance name, §3.11.5). The registry is cleared when the owner enters a new state (`StepOut.entered`). Carriers' registries live with the carrier.
 
 #### 3.12.6 `Damage.resolve` and consequence application (phase 3, server)
 
@@ -1430,7 +1653,9 @@ Resolution order (first match wins):
 | 8 | victim `RealmCast` (not interruptible), or in a Move with `superArmor` during `params.superArmorFrames` (default: startup + active), or `projectileArmor` vs `projectile` during startup | `armor` | damage + meter only; no stun, no knockback |
 | 9 | otherwise | `hit` | below |
 
-`hit` effects. Victim (S): `damage = Damage.scaled(...)` (§3.8.4) minus status shield; `HP −= damage` (floor 0); `CombatF = f`; `CHits += 1` (not for ticks); `StunF0` set if 0; OTG flag if downed; the state from the hit's knockback (§3.8.5) or `Hitstun` with `hit.hitstun` (decayed); `KbV`; `HsF = f + hitstop`; `StF = f + hitstop + 1`; `BkLockF` (§3.9.1); `BkProg` refund; debuffs from `onContact`; grabs set `Grabbed` via the Grab behavior. Attacker: `Cnt = 1`; `HsF`/`StF += hitstop`; `CombatF = f`; Uppercut follow (`HangF`, `Flg FOLLOW|ENDLAG`, Ender ends after hitstop). Meta: meter dealt/taken, ledger, `lastHit`, pile-on list, life stats, `damage` event.
+`hit` effects. Victim (S): `damage = Damage.scaled(...)` (§3.8.4) minus status shield; `HP −= damage` (floor 0); `CombatF = f`; `CHits += 1` (not for ticks); `StunF0` set if 0; OTG flag if downed; the state from the hit's knockback (§3.8.5) or `Hitstun` with `hit.hitstun` (decayed); `KbV`; `HsF = f + hitstop`; `StF = f + hitstop + 1`; `BkLockF` (§3.9.1); `BkProg` refund; debuffs from `onContact`; grabs set `Grabbed` via the Grab behavior. Attacker: `Cnt = 1`; `HsF`/`StF += hitstop`; `CombatF = f`; Uppercut follow (`HangF`, `Flg FOLLOW|ENDLAG`, Ender ends after hitstop); an air-M1 contact (`hit.kind == "airm1"`) also extends the hang by its hitstop: attacker `HangF += hitstop` (BQ) and victim `HangF += hitstop` (S) (§3.5.3). Meta: meter dealt/taken, ledger, `lastHit`, pile-on list, life stats, `damage` event.
+
+**Carrier hits** (`req.carrier ~= nil`: projectiles, zone bursts and ticks, summons, Rush echoes; the adapter tags them in phase 1b). The attacker for credit is the carrier's owner (`Own`), but **no attacker-side state changes apply**: no `Cnt`, no `HsF`/`StF` shift, no Uppercut follow, no `HangF`. The owner may be in any state when its projectile lands (Idle, Dash, a new M1); freezing it or setting `Cnt` would enable Hop Cancel without an M1 contact and mispredict on the owner's client every time. Only server-memory meta applies (meter dealt, ledger, `lastHit`, pile-on list, life stats, `damage` event) and, optionally, the owner's `CombatF = f` (td: written only when `f − CombatF ≥ 60`, so a zoning owner still loses out-of-combat regen while its own client mispredicts at most once per second). Victim effects, including victim hitstop, apply as usual. `Damage.predictAttacker` is never called for carrier requests.
 
 Application: contacts are processed grouped by victim rid ascending, and within a victim by attacker rid then key. Each resolve sees the victim's state as already modified by earlier contacts in this step (sequential), and the attacker's state after its own phase-1 step. Two characters that hit each other in the same frame both get hit (trade), because phase 1 already advanced both before any consequence applies. Patches go through `Adapter.writeDiff`.
 
@@ -1438,7 +1663,7 @@ Application: contacts are processed grouped by victim rid ascending, and within 
 
 #### 3.12.7 Client predicted feedback (undoable)
 
-On the client, phase 2 runs `Query` *live* (no rewind) for the local entry's requests, against hurtboxes as replicated. Remote characters are rendered "slightly in the past" [Docs `techniques.md`], which is exactly what the server's rewind reconstructs. For the first contact of the current action (`s.Cnt == 0`), the client writes `Damage.predictAttacker(...)` (BQ fields). Render plays the spark/SFX/hitstop on the `Cnt` transition (§3.11.8). If the server disagrees, the rollback restores its values and the render undo removes the spark. The client never predicts victim HP, victim state, meter or carrier hits.
+On the client, phase 2 runs `Query` *live* (no rewind) for the local entry's requests, against hurtboxes as replicated. Remote characters are rendered "slightly in the past" [Docs `techniques.md`], which is exactly what the server's rewind reconstructs. For the first contact of the current action (`s.Cnt == 0`), the client writes `Damage.predictAttacker(...)` (BQ fields). Render plays the spark/SFX/hitstop on the `Cnt` transition (§3.11.8). If the server disagrees, the rollback restores its values and the render undo removes the spark. The client never predicts victim HP, victim state, meter or carrier hits. Carrier hits write nothing on the owner (§3.12.6), so the owner's client has nothing to mispredict when its projectile lands.
 
 **Verify (§3.12):** Lune `damage.*`, `rewind.ring_wraps`, `rewind.frames_for_rtt` (rtt 0.30 s → k = 12; rtt 0.05 → k = 6), `query.sweep_excludes` (shim). Scenarios: `combat.rewind_hit_150ms` (Studio Network Simulator 150 ms ±30 ms jitter, 1% loss; a bot strafes at walk speed across the player's front; a player M1 timed visually on the client hits on ≥ 9 of 10 attempts, versus ≤ 4 of 10 with `MaxSec = 0` in a control run); `combat.rewind_cap` (rtt forced to 0.5 s via the test seam `CombatService._setRtt` → `[ALG][Combat] rewind clamp` logged, k = 12); `combat.trade_same_frame` (two bots with mirrored scripted M1s → both `Hitstun`).
 
@@ -1453,7 +1678,8 @@ Phase 4 (server): any entry with `HP ≤ 0` and `St ≠ KO` → `St = KO`, `StF 
 #### 3.13.2 KO credit and assists (GDD §6.11)
 
 - Killer = `srv.lastHit.rid` if `f − lastHit.f ≤ toFrames(Streak.KoCreditWindowSec)` (10 s, td), else none (environmental KO).
-- Assists = distinct attackers other than the killer whose summed damage in the victim's ledger within the last `toFrames(Streak.AssistWindowSec)` (600 frames) is ≥ `Streak.AssistMinDamage` (15) (GDD).
+- **Environment KOs** (`CombatService.killAsync(…, "environment")`: void, kill volumes, Part 6 hazards) use the GDD §11.1 window instead: the killer is `lastHit.rid` only if `f − lastHit.f ≤ toFrames(Streak.EnvKoCreditWindowSec)` (5 s, GDD §11.1), else none. `"dev"` kills and the `Humanoid.Died` safety net credit no killer.
+- Assists = distinct attackers other than the killer whose summed damage in the victim's ledger within the last `toFrames(Streak.AssistWindowSec)` (600 frames) is ≥ `Streak.AssistMinDamage` (15) (GDD). Player assisters go to `KoEvent.assists`, bot/dummy assisters to `KoEvent.assistBots` (BotIds `"b<n>"`, Part 2 §2.4).
 - Meter (server memory): killer +15, each assist +7 (GDD §6.9). Killer awakened → `AwkEndF` extension (§3.9.2).
 
 #### 3.13.3 Streaks and bounties (GDD §6.11)
@@ -1473,6 +1699,10 @@ Phase 4 (server): any entry with `HP ≤ 0` and `St ≠ KO` → `St = KO`, `StF 
 --                                                                      -- enemy within Respawn.SafeSpawnClearStuds (20, td);
 --                                                                      -- up to 8 tries, else any random spawn
 -- 5. pending[player] = { styleId = styleId, cfgVersion = v, spawnCf = spawnCf + Vector3.new(0, 3, 0) }
+-- 5b. local ok = pcall(player.RequestStreamAroundAsync, player, spawnCf.Position, 5)
+--     if not ok then Log.warn("Combat", "stream_around_failed user=<id> map=<mapId>") end -- continue either way
+--     (yields; outside the sim. Maps are ≥ 2,600 studs apart under StreamingEnabled: without this the owner
+--     client, which predicts its character, may have no floor at spawnCf → streaming pause or predicted fall)
 -- 6. player:LoadCharacterAsync()                                       -- never the deprecated LoadCharacter
 -- 7. CharacterAdded handler: Hurtbox.prepare -> Adapter.track(model, pending[player]);
 --    the first server step initialises attributes and PivotTo(spawnCf) (§3.11.3 phase 0b)
@@ -1480,7 +1710,7 @@ Phase 4 (server): any entry with `HP ≤ 0` and `St ≠ KO` → `St = KO`, `StF 
 ```
 
 - On KO the flush schedules `task.delay(Respawn.DelaySec, CombatService.spawnAsync, player)` (4 s, GDD). The body stays until `LoadCharacterAsync` replaces it; render hides it after `Respawn.BodyHideSec` (1.2 s, the Finale length, GDD §6.11). No `Destroy` is needed.
-- `PlayerService.travelAsync` (Part 2) sets `MapId`, then calls `CombatService.spawnAsync`.
+- `PlayerService.travelAsync` (Part 2) sets `MapId`, then calls `CombatService.spawnAsync`; it relies on step 5b to stream the destination. `Workspace.StreamingIntegrityMode = MinimumRadiusPause` is a human setting (H-04, NotScriptable).
 - Combat config: the new life uses `CombatCfg = v` for its whole duration (Part 2 §2.6.6). `CharacterRemoving` unpins the old version.
 
 #### 3.13.5 Spawn protection (GDD §6.2, §15.5)
@@ -1489,7 +1719,7 @@ Phase 4 (server): any entry with `HP ≤ 0` and `St ≠ KO` → `St = KO`, `StF 
 
 #### 3.13.6 Rookie hooks
 
-Rookie rules are economic (GDD §15.5: no Treasure for a veteran killing the same Rookie more than twice in 10 minutes). Part 3 provides `KoEvent` with Player references; Part 5 reads the victim's `Rookie` Player attribute and applies `Economy.RookieKill`. Spawn protection applies to every player, so there is no Rookie-specific combat rule.
+Rookie rules are economic (GDD §15.5: "Veterans earn no Treasure from killing Rookies more than twice per 10 minutes"). The rule is per earner, across all Rookies: if the victim is a Rookie and the earner is not, the earner gets 0 Treasure from the 3rd and later Rookie KO (any Rookie) within `Economy.RookieKill.WindowSec` (600 s, `MaxTreasureKills = 2`). Part 3 provides `KoEvent` with Player references; Part 5 reads the `Rookie` Player attributes, keeps the server-memory log keyed per earner and applies `Economy.RookieKill`. Spawn protection applies to every player, so there is no Rookie-specific combat rule.
 
 #### 3.13.7 Signals, payloads and remotes
 
@@ -1505,9 +1735,11 @@ export type CombatServiceExtra = {
 	styleMoment: Signal.Signal<Player, string>,          -- Part 4 kits report Style Moments (GDD §7); +10 meter applied here
 	killAsync: (target: Player | Model, cause: "environment" | "dev") -> (),
 	isInCombat: (player: Player) -> boolean,             -- f - CombatF < CombatTagSec
-	-- Studio-only test seams (no-ops outside Studio):
+	-- Studio-only test seams (no-ops outside Studio; _getMeter returns 0 there):
 	_queuePatch: (target: Player | Model, patch: { [string]: any }) -> (), -- applied at the next server step
 	_setMeter: (player: Player, value: number) -> (),
+	_getMeter: (target: Player | Model) -> number,       -- server-memory meter of a player, bot or dummy (bots and
+	                                                     -- dummies have no Player `Meter` attribute)
 	_setRtt: (player: Player, seconds: number?) -> (),   -- overrides the ping sample (nil = live)
 }
 ```
@@ -1525,22 +1757,22 @@ export type CombatFeed = {
 
 `canTravel(player)` = entry exists, `St ∉ STUN ∪ {KO}`, and `f − CombatF ≥ toFrames(Chassis.CombatTagSec)` (8 s, td).
 
-**Verify (§3.13):** scenarios `combat.ko_respawn` (`Dev.Command kill` → `St = KO`; a `ko` log line; after 4 ± 0.1 s a new character, `ProtF − StF = 480`; `Life.Summary` received by the client); `combat.spawn_protection` (dummy hits during protection → `whiff`, HP unchanged; the player presses M1 → `ProtF = 0`; the next dummy hit lands); `combat.assist_credit` (bot A deals 16, bot B kills → KoEvent `assists = [A]`, meter +7 for A); `combat.streak_bounty` (scripted 3 KOs by player P → `streak` tier 3 event; P KO'd → `ended` with bounty 25); `combat.feed_fired` (client receives `Combat.Feed` once per KO).
+**Verify (§3.13):** scenarios `combat.ko_respawn` (`Dev.Command kill` → `St = KO`; a `ko` log line; after 4 ± 0.1 s a new character, `ProtF − StF = 480`; `Life.Summary` received by the client); `combat.spawn_protection` (dummy hits during protection → `whiff`, HP unchanged; the player presses M1 → `ProtF = 0`; the next dummy hit lands); `combat.assist_credit` (bot A = `"b1"` deals 16, bot B kills → KoEvent `assistBots = {"b1"}`, `assists` empty, `CombatService._getMeter(A)` +7); `combat.streak_bounty` (setup `Dev.Command setConfig Combat {"Streak":{"CountBots":true}}`, respawn P so the new pinned config applies; P KOs 3 brawl bots → `streak` tier-3 event; a bot KOs P → `ended`, bounty 25; restore `CountBots = false`); `combat.feed_fired` (client receives `Combat.Feed` once per KO); `combat.env_ko_credit` (needs Part 6's void kill: an `m1_spam` dummy hits the player once; 3 s later the player is teleported below the map's `KillY` → `killAsync(…, "environment")` → KoEvent `killerBot` = the dummy's BotId; repeat with 6 s → no killer); `world.travel_streams_destination` (travel from the battle map (`arena_duel_m0` at M0, `candy_kingdom` once T211 builds it) to `training`: the server logs no `stream_around_failed`; the client's root never goes below the destination map's `KillY + 5`; `RunService:GetPredictionStatus(root)` returns to `Predicted` within 2 s of the new character).
 
 ---
 
 ### 3.14 Classic fallback adapter (`Config.NetModel = "Classic"`)
 
-Activated only by a human decision at the M0 gate (H-10) if spikes SA-01, SA-03, SA-08 or SA-13 fail (§3.16.4). Core, MoveDefs, attributes and render are unchanged. Only the adapter changes:
+Activated only by a human decision at the M0 gate (H-10) if spikes SA-01, SA-03, SA-08 or SA-13 fail (§3.16.4). Core, MoveDefs, attributes and render are unchanged. Only the adapter changes; the Classic adapter is a local section of `Sim/Adapter.luau` (no `ClassicAdapter.luau`, §3.19 item 4):
 
 | Aspect | ServerAuthority (default) | Classic |
 |---|---|---|
 | Place | `AuthorityMode = Server` (H-04) | human sets `AuthorityMode = Automatic` |
 | Loop | `BindToSimulation` Hz60 on both peers | Server: fixed-step accumulator on `RunService.Heartbeat` (step 1/60, ≤ 4 catch-up steps, frame counter in server memory). Client: the same accumulator drives a **local shadow** `CharState` (Lua table) for the local character only. |
-| Input | `InputAction:GetState()` in the sim | If spike SA-16 shows the server can read IAS state in Automatic mode (with `PlayerScriptsUseInputActionSystem` enabled), unchanged. Otherwise the new C2S remote `Combat.Input` (UnreliableRemoteEvent; 30 Hz; payload `{seq, f, frames = {{bits, aim (3 × int16 quantized), mv (2 × int8)}} × 4}` redundancy, ≤ 120 B). Registered only when `NetModel == "Classic"`. |
+| Input | `InputAction:GetState()` in the sim | If spike SA-16 shows the server can read IAS state in Automatic mode (with `PlayerScriptsUseInputActionSystem` enabled), unchanged. Otherwise the new C2S remote `Combat.Input` (UnreliableRemoteEvent, the one C2S unreliable remote Part 2 §2.7.1 allows; sent at 30 Hz; `rate = {burst = 40, perSec = 30}`; payload `{seq, f, frames = {{bits, aim (3 × int16 quantized), mv (2 × int8)}} × 4}` redundancy, ≤ 120 B). Its spec sets `classicOnly = true` (Part 2 §2.7.3): created only when `NetModel == "Classic"`; `tree.runtime_objects` and `net.specs_complete` exclude it under ServerAuthority. |
 | State | HRP attributes written by both peers | HRP attributes written by the server only (normal replication). The client shadow FSM gives instant startup animation/VFX and is re-seeded from server attributes whenever they change. |
 | Movement | predicted, server-owned characters | client network ownership (engine default); the client applies dash movers locally; the server checks displacement per dash (≤ `Studs × 1.25`) and cooldowns, and logs `sim_reject` on violations |
-| Hit detection | server rewound queries | the client runs `Query` for its own attacks and sends `Combat.HitClaim {seq, key, victims: {rid}, attackerPos}` (C2S event, rate 30/10) |
+| Hit detection | server rewound queries | the client runs `Query` for its own attacks and sends `Combat.HitClaim {seq, key, victims: {rid}, attackerPos}` (C2S event, rate 30/10; spec `classicOnly = true`, like `Combat.Input`) |
 | Validation (Laser Tag 1A structure [reference-impl §1.3]) | — | (1) schema; (2) server FSM: attacker in the claimed action within active frames ± `Classic.ActiveSlackFrames` (6, td); (3) claimed origin within `Classic.OriginToleranceStuds` (6, td) of the rewound server root; (4) each victim's rewound hurtbox overlaps the hitbox inflated by `Classic.RangeToleranceStuds` (2, td); (5) victim in the hitbox's forward half-space (dot ≥ −0.2); (6) `workspace:Raycast` chest-to-chest in `WorldQuery` unobstructed; (7) one claim per key per victim. Failure → claim ignored + `ModerationService.signal(player, "sim_reject", {reason})`. |
 | Consequences | server, inside the sim step | server, in the Heartbeat step (same `Damage.resolve`) |
 | Knockback | prescribed movers on both peers | server `victimRoot:SetNetworkOwner(nil)` for the knockback/ragdoll window, movers applied server-side, then `SetNetworkOwnershipAuto()` |
@@ -1556,7 +1788,8 @@ Config keys for Classic live in `Combat.Chassis.Classic` (§3.17). Lune tests fo
 - There is exactly one simulation binding (Part 2 §2.3.2: "the single BindToSimulation loop"). BotService registers an intent provider in `BotService.init()`: `Adapter.setIntentProvider(function(f: number, bots: { Adapter.RosterEntry }) ... end)`. The server's `Adapter.step` calls it in phase 0c (after init, before phase 1), inside the same binding. The provider writes each bot HRP's intent attributes `BIn` (bitmask, `Fsm.IN` layout), `BAim` (unit Vector3), `BMv` (Vector3, |v| ≤ 1) with the Q-rule. These are written inside the sim callback, so §3.1.4 rule 2 holds. The provider must not yield, must use only Simulation-Access APIs, and is not called on clients.
 - The main loop reads them with `InputMap.readBot(root, prevBits)` and drives `humanoid:Move(BMv)`, the jump, and every combat input through the same `Fsm.step` as players. One code path.
 - Bot brains are server Lua (legal on the server, §3.1.8), deterministic with `Rng.hash01(f, rid, salt)`. They may read any sim attribute.
-- Spawning: `BotService.spawnAsync(spec: {kind: "dummy" | "brawl", styleId: StyleId, mapId: MapId, slot: number?}): Model`. It clones `ServerStorage.Templates.DummyRig` or `BotRig`, sets the Model attributes `IsBot`, `BotId` (`"b<n>"`), `EquippedStyle`, `Flair`, `Level`, `CombatCfg` **before** parenting (Part 2 §2.5.4), calls `Hurtbox.prepare(model)`, parents to `Workspace.Bots`, then `Adapter.track(model, {botId, styleId, cfgVersion, spawnCf})`. rid = −1000000 − n.
+- Spawning: `BotService.spawnAsync(spec: {kind: "dummy" | "brawl", styleId: StyleId, mapId: MapId, slot: number?}): Model?` (nil when a kill switch refuses it, below). It clones `ServerStorage.Templates.DummyRig` or `BotRig`, sets the Model attributes `IsBot`, `BotId` (`"b<n>"`), `EquippedStyle`, `Flair`, `Level`, `CombatCfg` **before** parenting (Part 2 §2.5.4), calls `Hurtbox.prepare(model)`, parents to `Workspace.Bots`, then `Adapter.track(model, {botId, styleId, cfgVersion, spawnCf})`. rid = −1000000 − n.
+- **Bot kill switches** (outside the sim, `Runtime.get()` at the call): when `Features.Bots == false`, `spawnAsync` refuses `brawl` bots (dev `spawnBots` and load-test bots), returns `nil` and logs `[ALG][Bot] WARN bots_disabled kind=brawl`; training dummies are still allowed. Load-test bots (`Features.LoadTestBots` brawl bots on `Features.LoadTestMapId`, Part 7 §7.6.7) spawn only when `not RunService:IsStudio() and table.find(cfg.Features.LoadTestGameIds, game.GameId) ~= nil and cfg.Features.Bots ~= false`, so Studio playtests of the dev place never get them even while the H-12 config is staged.
 - Client side: bots are tracked with `simulate = false`. Spike SA-12 checks whether clients auto-predict nearby NPC humanoids. If they do and mispredictions are high, the client calls `RunService:SetPredictionMode(botModel, Enum.PredictionMode.Off)` from `Workspace.Bots.ChildAdded`.
 
 #### 3.15.2 Dummy modes (`Training.Dummy` behavior enum)
@@ -1576,7 +1809,7 @@ Dummy lifecycle (`Respawn.Dummy`): KO plays the poof and the dummy respawns at i
 
 Load test: `Dev.Command spawnBots {count, mapId}` (≤ 20) and `clearBots` (new DevCmd entries, §3.18) spawn `brawl` bots for the GDD §18.2 gate (20 bots + 4 humans).
 
-**Verify (§3.15):** scenario `bot.dummy_modes` (each mode for 10 s against a scripted player: `block` → every front M1 is `block`; `perfect_block` → ≥ 80% of M1s are `perfect`; `m1_spam` → hits land; `dash_spam` → ≥ 3 dashes); scenario `bot.intent_path` (a bot with `BIn = Dash` and `BMv = right` performs a Side dash, identical in outcome to a player).
+**Verify (§3.15):** scenario `bot.dummy_modes` (each mode for 10 s against a scripted player: `block` → every front M1 is `block`; `perfect_block` → ≥ 80% of M1s are `perfect`; `m1_spam` → hits land; `dash_spam` → ≥ 3 dashes); scenario `bot.intent_path` (a bot with `BIn = Dash` and `BMv = right` performs a Side dash, identical in outcome to a player); scenario `bot.loadtest_off_in_studio` (`Dev.Command setConfig Features {"LoadTestBots":4,"LoadTestGameIds":[<game.GameId>]}`, respawn → no brawl bot appears in `Workspace.Bots` in Studio; restore); `Features.Bots == false` → `spawnAsync({kind = "brawl", …})` returns nil while `kind = "dummy"` still spawns.
 
 ---
 
@@ -1584,8 +1817,8 @@ Load test: `Dev.Command spawnBots {count, mapId}` (≤ 20) and `clearBots` (new 
 
 #### 3.16.1 Checklist (every P2/P3 PR; Part 7 automates items marked L)
 
-1. (L) Every `BindToSimulation(`/`BindToAnimation(` call passes `Enum.StepFrequency.Hz60`, and `BindToSimulation(` appears exactly once in `src/` (in `Simulation.luau`).
-2. (L) No banned token from §3.1.5 inside Core/Sim/Combat/Behaviors (allow-list: the single `IsServer()` at load in `Simulation.luau`, `Adapter.spawn`'s `Clone`).
+1. (L) Every `BindToSimulation(`/`BindToAnimation(` call passes `Enum.StepFrequency.Hz60`, and `BindToSimulation(` appears exactly once across `src/Shared`, `src/ServerScriptService` and `src/StarterPlayerScripts` (in `Simulation.luau`). Spike probes in `src/DevTools/Tests/Spikes/**` and `src/DevTools/Tests/Spike_*.luau` bind their own probe loops and are exempt from this rule (and from the `CreateVirtualInput` part of Part 7's `devtools-isolation`).
+2. (L) No banned token from §3.1.5 in `Core/**` and `Behaviors/**`, or between `-- @sim-begin`/`-- @sim-end` markers in `Sim/**` and `Combat/**` (allow-list: the single `IsServer()` at load in `Simulation.luau`, `Adapter.spawn`'s `:Clone(`).
 3. (L) Every HRP attribute write goes through `Adapter.writeDiff`/`Adapter.patch` with `Attr.N` names (no string literals in `SetAttribute` calls in Shared/).
 4. (L) No generalized iteration over dictionaries in Core without a `-- det:sorted` marker comment on a preceding sorted-keys line.
 5. (L) No `== f`/`f ==` comparisons in Core (entry effects run on transition).
@@ -1593,7 +1826,7 @@ Load test: `Dev.Command spawnBots {count, mapId}` (≤ 20) and `clearBots` (new 
 7. Server-only Lua state never feeds B-class attributes (review).
 8. Render never uses `GetAttributeChangedSignal` for one-shots (L in `RenderController.luau`).
 9. Carriers are created only via `Adapter.spawn` and destroyed only in the flush.
-10. The sim reads config only from the roster's pinned table; never `Runtime.get()` inside the sim.
+10. The sim reads config only from the roster's pinned tables (`cfg`, `fullCfg`, `kitSet`, `style.disabled`); never `Runtime.get()` inside the sim.
 11. Golden traces (`fsm.golden_*`) pass and are regenerated with `export_framedata --golden` on any tuning change.
 12. Values written to attributes obey the Q-rule (Lune `fsm.q_rule` scans `StepOut.s` over a 2,000-frame random-input fuzz: every number is an integer or a multiple of 0.1/0.01 as specified).
 13. The M0 gate run (Part 7): prediction success ≥ 97% in the SA visualizer, no visible rubber-banding on dashes, Perfect Block success within 5 points of the 30 ms baseline (GDD §18.2).
@@ -1611,7 +1844,7 @@ Load test: `Dev.Command spawnBots {count, mapId}` (≤ 20) and `clearBots` (new 
 
 #### 3.16.3 Spike procedure
 
-Each spike is a task in the phase listed in §3.20 (most are P0). It has a scenario module `src/DevTools/Tests/Spike_SAxx.luau` that prints `[ALG][TEST] spike.SA-xx PASS|FAIL <detail>`, and its result is recorded in `docs/agent/PROGRESS.md` → *Spike results* (Part 1 §1.2.8). Spikes need H-04 (AuthorityMode) done; SA-05 and SA-11 also need published placeholder animations (H-08).
+Each spike is a task in the phase listed in §3.20 (most are P0). It has a scenario module `src/DevTools/Tests/Spike_SAxx.luau` that prints `[ALG][TEST] spike.SA-xx PASS|FAIL <detail>` (spike runs pass `allowFail = {"^spike%."}` to `log_scan`; P0 probes that run before the harness exists print `[ALG][Spike] SA-xx PASS|FAIL <detail>` instead, Part 1 §1.4.6), and its result is recorded in `docs/agent/PROGRESS.md` → *Spike results* (Part 1 §1.2.8). Spikes need H-04 (AuthorityMode) done; SA-05 and SA-11 also need published placeholder animations (H-08).
 
 #### 3.16.4 Spike catalog
 
@@ -1629,7 +1862,7 @@ Each spike is a task in the phase listed in §3.20 (most are P0). It has a scena
 | SA-10 | Collision groups: groups registered in Edit exist on clients; Humanoid floor detection ignores `Hurtbox` | Stand a character on another's head; check `workspace:GetRegisteredCollisionGroups()` on a client | groups present; no standing on hurtboxes | Register at runtime on both peers; shrink the hurtbox Y offset |
 | SA-11 | Humanoid property writes from the sim (`WalkSpeed`, `SetStateEnabled(Jumping)`, `Jump`, `AutoRotate`) are predicted; `RootAttachment` exists; `Humanoid.MoveDirection` magnitude is analog for sticks; hurtbox `OffsetY` | Scripted state changes; compare client/server; inspect the rig | no persistent mispredictions; analog magnitude recorded | `ControllerLoco`; `RunAuto` = any stick push |
 | SA-12 | Prediction status of remote players' and bots' roots on a client | `RunService:GetPredictionStatus(remoteRoot)` | not `Predicted` (or mispredictions negligible) | `SetPredictionMode(model, Off)` on the client |
-| SA-13 | End-to-end prediction success under load | GDD §18.2 gate: 20 brawl bots + 4 clients, 150 ms ±30 ms, 1% loss, 5 minutes | ≥ 97% prediction success; server heartbeat ≥ 59 FPS | Reduce S-class writes; then Classic |
+| SA-13 | End-to-end prediction success under load | GDD §18.2 gate: 20 brawl bots + 4 clients, 150 ms ±30 ms, 1% loss, 5 minutes | ≥ 97% prediction success (GDD §18.2); server heartbeat ≥ 55 Hz in ≥ 95% of sampled seconds (GDD §18.7, §20.2; Part 7 §7.6.2 `pctSecAtOrAbove55 ≥ 95`) | Reduce S-class writes; then Classic |
 | SA-14 | Gamepad chord binding (`PrimaryModifier` with gamepad buttons) and multiple bindings on one Bool action | Press LS+RS via the Controller Emulator | `Awaken` true only with both | Bind `ButtonL3` alone |
 | SA-15 | Bot Model attributes set before parenting cause no rollback (Part 2 §2.14 Q6) | Spawn 10 bots near a client; watch Misprediction counts | none attributable | Move bot meta to server memory |
 | SA-16 | (Classic only) Can the server read IAS state with `AuthorityMode = Automatic` and `PlayerScriptsUseInputActionSystem` enabled? | Scratch place | server `GetState` mirrors the client | `Combat.Input` remote (§3.14) |
@@ -1666,7 +1899,7 @@ JSON-safe (Part 2 §2.6.1): numbers, strings, booleans, arrays, string-keyed tab
 				AssistConeDeg = 12, AssistRangeStuds = 40, -- GDD §15.2 (12°); range tuning default
 				CadenceSignalPerSec = 20, CadenceSignalSec = 3, -- tuning default (exploit signal only)
 			},
-			Sim = { Priority = 2000, MaxCarrierLifeFrames = 600 }, -- tuning default
+			Sim = { Priority = 2000, MaxCarrierLifeFrames = 780 }, -- tuning default (≥ GDD 12 s summon life + 60f arm margin)
 			Classic = { ActiveSlackFrames = 6, OriginToleranceStuds = 6, RangeToleranceStuds = 2, DashSlack = 1.25 }, -- tuning default
 		},
 		M1 = {
@@ -1775,14 +2008,19 @@ JSON-safe (Part 2 §2.6.1): numbers, strings, booleans, arrays, string-keyed tab
 		Streak = {
 			Tiers = { 3, 5, 10 }, Bounty = { 25, 60, 150 }, -- GDD §6.11
 			AssistWindowSec = 10, AssistMinDamage = 15, -- GDD §6.11
+			EnvKoCreditWindowSec = 5,                 -- GDD §11.1 (environment/hazard KO credit)
 			KoCreditWindowSec = 10, CountBots = false, -- tuning default
 		},
 	},
 ```
 
-`Schema.rules` added by Part 3 (validated at boot and on every ConfigService overlay, Part 2 §2.6.3): every `*Frames` int 0–3600; every `*Sec` num 0–600; `Damage.Rewind.MaxSec` num 0–0.2 (never above the GDD cap); `Chassis.MaxHp` int within `HpBand`; `Block.PerfectWindowFrames` int 1–20; `Damage.ScaleFloor` num 0.1–1; `Realm.MaxActive` int 0–4; `Chassis.Sim.Priority` int 1–10000. Cross-field checks: `M1.Air.MaxHits · (Startup+Active+Recovery) + Downslam.Startup ≤ Uppercut.RiseFrames + Uppercut.HangFrames` (Lune `m1.air_string_fits_hang`); `Chassis.Gravity` equals 196.2 unless the map builder also changes `workspace.Gravity` (asserted at boot).
+`Schema.rules` added by Part 3 (validated at boot and on every ConfigService overlay, Part 2 §2.6.3): every `*Frames` int 0–3600; every `*Sec` num 0–600; `Damage.Rewind.MaxSec` num 0–0.2 (never above the GDD cap); `Chassis.MaxHp` int within `HpBand`; `Block.PerfectWindowFrames` int 1–20; `Damage.ScaleFloor` num 0.1–1; `Realm.MaxActive` int 0–4; `Chassis.Sim.Priority` int 1–10000. Cross-field checks:
+- `M1.Air.MaxHits · (Startup+Active+Recovery) + Downslam.Startup ≤ Uppercut.RiseFrames + Uppercut.HangFrames`, counted in non-frozen frames because each air-M1 contact extends `HangF` by its hitstop (§3.5.3; Lune `m1.air_string_fits_hang`).
+- `Chassis.Sim.MaxCarrierLifeFrames ≥ toFrames(Damage.Summon.LifeSec[2]) + 60` (780 ≥ 720 + 60, so no GDD-valid summon or zone is cut short; Part 4 K09 accepts `lifeF` up to 720).
+- `Streak.EnvKoCreditWindowSec ≤ Streak.KoCreditWindowSec`.
+- `Chassis.Gravity` equals 196.2 unless the map builder also changes `workspace.Gravity` (asserted at boot).
 
-**Verify:** Lune `schema.defaults_valid` and `schema.defaults_json_safe` (Part 2) pass with this section; Lune `config.combat_gdd_values` asserts the GDD-cited numbers above against a literal table in the test (guards against accidental edits).
+**Verify:** Lune `schema.defaults_valid` and `schema.defaults_json_safe` (Part 2) pass with this section; Lune `config.combat_gdd_values` asserts the GDD-cited numbers above against a literal table in the test (guards against accidental edits), including `Streak.EnvKoCreditWindowSec = 5` (GDD §11.1). Part 6 does not duplicate this value (no `Perf.World.Hazard.KoCreditSec`).
 
 ---
 
@@ -1791,36 +2029,42 @@ JSON-safe (Part 2 §2.6.1): numbers, strings, booleans, arrays, string-keyed tab
 | # | Contract | Consumers |
 |---|---|---|
 | 1 | **HRP attribute schema** (§3.3.1): 49 player attributes + 3 bot intents, names, types, defaults, writer classes `B`/`BQ`/`S`/`S·B`/`B·S`; `Attr.SPECS`, `Attr.N`, `Attr.MAX = 56`; `CFlags` and `Flg` bit tables | Parts 4, 6, 7 |
-| 2 | **Player attributes** `Meter` (int 0–100) and `Streak` (int), written by CombatService's flush (Player attribute total becomes 19) | Parts 5, 6 |
+| 2 | **Player attributes** `Meter` (int 0–100) and `Streak` (int), written by CombatService's flush (Player attribute total becomes 20 with Part 2's 18) | Parts 5, 6 |
 | 3 | **State enum** `Fsm.S` ids 1–21, `Sub` codes per state, sets `NEUTRAL`/`STUN`/`ATTACK`; "Respawning" is not an HRP state | Parts 4, 6, 7 |
 | 4 | **Input**: `ReplicatedStorage.Inputs.Combat` (Priority 2000, `Sink = false`); 15 actions (`M1, Move1–4, Quirk, Awaken, Block, Dash, Jump, Run, RunAuto, Launcher, AimLock, Aim`); binding names `KBM`/`Pad`/`Touch`/`Script`; touch button ids (`PunchBtn`, `Move1Btn`…`Move4Btn`, `QuirkBtn`, `AwakenBtn`, `BlockBtn`, `DashBtn`, `JumpBtn`); `Fsm.IN` bit layout; `InputMap.ACTIONS/attach/actionsOf/read/readBot`; context cloned directly under `Player` as `Combat` | Parts 1, 2, 6, 7 |
 | 5 | **InputController API** `context/bindTouch/touchRoot/setCombatEnabled/fire`; `InputController.start()` starts the client simulation and animation bindings; Part 6's HUD builds buttons in `touchRoot()` and calls `bindTouch` | Part 6 |
 | 6 | **Per-character instances** created by `Hurtbox.prepare`: `Hurtbox`, `ALG_Proto` (Model children); `ALG_Vel`, `ALG_Face`, `ALG_Hold`, `ALG_Grab` (HRP children); character parts in group `Characters`; Humanoid settings | Parts 4, 6 |
 | 7 | **rid convention**: players = `UserId`; bots = −1000000 − n with `BotId = "b<n>"` | Parts 5, 6, 7 |
-| 8 | **Collision groups** `Characters`, `Hurtbox`, `HitQuery`, `WorldQuery`, `CosmeticNoQuery` + matrix; registered by `BuildInputs.build()`; map geometry stays in `Default`; every client visual uses `CanQuery = false` + `CosmeticNoQuery` | Parts 6, 7 |
-| 9 | **Core types** in `Core/Fsm.luau`: `CharState, InputFrame, StepCtx, StepOut, HitDef, HitboxReq, HitRequest, SpawnRequest, MotionCmd, FacingCmd, LocoCmd, SimEvent, ChassisMods, StyleRuntime`; `Damage.Outcome/HitResult/AttackerView/VictimView/HitCtx`, `Damage.BQ_FIELDS`, `Damage.predictAttacker` | Part 4 |
-| 10 | **Behavior hook contract** `BehaviorModule {step, onContact?, onEnd?}` with `BehaviorCtx`/`BehaviorOut`; carrier stepping `Behaviors.Projectile.stepCarrier(view, f)`, `Behaviors.Zone.stepCarrier(view, f)`; carrier attributes `Own, Kind, MoveId, F0, Dead, Hits` + ≤ 10 params; names `C_<rid>_<f>_<n>` under `workspace.Sim` | Part 4 |
-| 11 | **Status codec** in `Core/Moves.luau` (`Buffs`/`Debuffs` strings, ≤ 4 entries each) and the `Moves.STATUS` registry (Part 4 fills kinds and `mods`); `StatusMods` fields | Part 4 |
+| 8 | **Collision groups** `Characters`, `Hurtbox`, `HitQuery`, `WorldQuery`, `CosmeticNoQuery`, `MapBoundary`, `RagdollFx` + matrix (8 of 32); registered by `Hurtbox.ensureGroups()` from `BuildInputs.build()`; map geometry stays in `Default`; client visuals use `CanQuery = false` + `CosmeticNoQuery`, except ragdoll clones and debris (`RagdollFx`, Part 6 §6.1.5) | Parts 6, 7 |
+| 9 | **Core types** in the **Combat section of `Shared/Types.luau`** (re-exported by `Core/Fsm.luau`): `CharState, InputFrame, StepCtx` (incl. `status`), `StepOut, HitDef` (incl. Part 4 `kit`), `HitboxReq` (incl. `coneDeg`), `HitRequest` (incl. `heldOnly`, `carrier`), `SpawnRequest` (incl. `serverOnly`), `MotionCmd, FacingCmd, LocoCmd, SimEvent, ChassisMods, StyleRuntime` (incl. `variants`, `disabled`), `Status, StatusMods` (incl. `m1Chain`), `Movers, RewindRing, ServerData, RosterEntry` (incl. `animator`, `fullCfg`, `kitSet`, `anims` records, `combatIds`); constants `Types.CombatS/SET/IN/CF/FLG`; the §3.4.2 require order and Lune `core.require_graph_acyclic`; `Damage.Outcome/HitResult/AttackerView/VictimView/HitCtx`, `Damage.BQ_FIELDS`, `Damage.predictAttacker` | Parts 2, 4, 7 |
+| 10 | **Behavior hook contract** `BehaviorModule {step, onContact?, onEnd?}` with `BehaviorCtx` (`cfg` = pinned Combat section, `kits` = pinned `Kits`, `moves` = pinned `kitSet.move`)/`BehaviorOut`; carrier stepping `Behaviors.Projectile/Zone/Summon.stepCarrier(view, f)`; carrier hits apply no attacker-side state (§3.12.6); `kit.pull` = one S write of `KbV` + the B Push profile (§3.8.5); zone pull (`params.pullStudsPerSec`) = B-class in the victim's own step via Part 4's pure `Zone.pullVelocity` (§3.11.5); carrier attributes `Own, Kind, MoveId, F0, Dead, Hits, Cid` (`Cid` = the name, read instead of the non-Sim-Access `Name`) + ≤ 10 params; names `C_<rid>_<f>_<n>` under `workspace.Sim`; carriers enumerated in the sim with `workspace.Sim:GetChildren()` sorted by `Cid`; `CarrierView` gets the owner's pinned `cfg`/`kits`/`moves`; carrier caps from the spawning owner's pinned `Kits`; carrier life cap `Chassis.Sim.MaxCarrierLifeFrames` = 780 | Part 4 |
+| 11 | **Status codec** in `Core/Moves.luau` (`Buffs`/`Debuffs` strings, ≤ 4 entries each, `untilF` in base 62, eviction instead of an assert when > 50 chars) and the `Moves.STATUS` registry (Part 4 fills kinds and `mods`); `StatusMods` fields incl. `m1Chain` (M1 chain length 4–6, §3.5.1); per-move kill switch `StyleRuntime.disabled` + `Moves.canUse`/`Moves.slotName` from pinned `Features.DisabledMoves` | Parts 2, 4, 6 |
 | 12 | **Recognized `MoveDef.params` keys**: `air`, `iFrames {from,to}`, `cancelInto`, `cancelWindow {a,b}`, `cancelChainIndex`, `blockstun`, `ragdollFrames`, `hangFrames`, `wallSplat`, `cinematicFrames`, `groundOnly`, `hitstop`, `superArmorFrames {from,to}`. **Recognized passive/awakening keys** (`StyleDef.passive.params`, `AwakeningDef.modifiers`): `breakawayRefillMult`, `enderDamageAdd`, `lowHpThreshold` + `lowHp` (sub-table of the same keys), `ragdollFramesAdd`, `m1RangeAdd`, `walkSpeedMult`, `airDash`; `AwakeningDef.hurtboxScale` | Part 4 |
 | 13 | **Realm framework** in `Core/Realm.luau`: Part 3 lifecycle functions; Part 4 fills `Realm.rules[<moveId>]` (`RealmRules`); marker Model `Realm_<id>` in `workspace.Sim` with attributes `Center, Radius, OpenF, EndF, RuleId, Caster, Dead`; HRP `RlmId`/`RlmWardF` | Parts 4, 6 |
-| 14 | **Animation keys** (§3.11.8) and the sim-mirrored animation driver in `BindToAnimation`; Part 6 publishes placeholder animations under these `Assets` keys; `Render.MaxCombatTracks = 2`, `Render.UndoWindowFrames = 15` | Parts 6, 4 |
-| 15 | **RenderController contract**: transition table, undo rule, `RenderController.onRollback(f)` connected to `RunService.Rollback`; no `GetAttributeChangedSignal` for one-shots | Part 6 |
-| 16 | **CombatService extras**: `streak: Signal<StreakEvent>`, `styleMoment: Signal<Player, string>`, `killAsync`, `isInCombat`, Studio seams `_queuePatch/_setMeter/_setRtt`; `StreakEvent` and `CombatFeed` types (Part 2 adds them to `Types.luau`); `lifeEnded` handlers must not yield and may fill `treasureEarned/xpEarned/masteryXpEarned` before `Life.Summary` is sent | Parts 2, 5, 6 |
-| 17 | **Remotes**: `Combat.Feed` (S2C event, fireAll, payload `CombatFeed`). Classic-only (registered only when `NetModel == "Classic"`): `Combat.Input` (C2S unreliable, rate 40/30) and `Combat.HitClaim` (C2S event, rate 30/10) | Parts 2, 6 |
+| 14 | **Animation keys** (§3.11.8) and the sim-mirrored animation driver in `BindToAnimation` (cached `id`/`clipF`/`looped` per key from the `ReplicatedStorage.Anim` `Frames` attribute and `Loop`; stop-others via `combatIds`; no resync during hitstop; loop/clamp to the clip); Part 6 publishes placeholder animations under these `Assets` keys; `Render.MaxCombatTracks = 2`, `Render.UndoWindowFrames = 15`; `Animator.PreferLodEnabled = false` on characters (server), client LOD override for remote characters beyond 60 studs (Part 6) | Parts 6, 4 |
+| 15 | **RenderController contract**: entry = `St`/`Sub` (or M1 `M1Idx`) change; one-shots keyed by `(actionId, threshold)` with `firedMax`; remote views timed by observation time `eR` (Part 6 §6.6.1); hitstop shift vs hit refresh; undo rules (rollback, STUN/KO pre-emption, `Cnt` reset only with unchanged identity); `RenderController.onRollback(f)` connected to `RunService.Rollback`; no `GetAttributeChangedSignal` for one-shots | Part 6 |
+| 16 | **CombatService extras**: `streak: Signal<StreakEvent>`, `styleMoment: Signal<Player, string>`, `killAsync` (environment KOs credit within `Streak.EnvKoCreditWindowSec` = 5 s), `isInCombat`, Studio seams `_queuePatch/_setMeter/_getMeter/_setRtt`; `spawnAsync` streams the destination first (§3.13.4 step 5b); `StreakEvent` and `CombatFeed` types (Part 2 adds them to `Types.luau`); `lifeEnded` handlers must not yield and may fill `treasureEarned/xpEarned/masteryXpEarned` before `Life.Summary` is sent | Parts 2, 5, 6 |
+| 17 | **Remotes**: `Combat.Feed` (S2C event, fireAll, payload `CombatFeed`). Classic-only (spec flag `classicOnly = true`, Part 2 §2.7.3; created only when `NetModel == "Classic"`; excluded from `tree.runtime_objects`/`net.specs_complete` under ServerAuthority): `Combat.Input` (C2S UnreliableRemoteEvent, sent at 30 Hz, `rate = {burst = 40, perSec = 30}`, payload ≤ 120 B) and `Combat.HitClaim` (C2S event, rate 30/10) | Parts 2, 6 |
 | 18 | **`TrainingDummyReq.behavior` enum**: `"idle" \| "block" \| "perfect_block" \| "m1_spam" \| "dash_spam"` | Parts 2, 6 |
 | 19 | **DevCmd additions** (Part 2 §2.11.5 enum): `setMeter(value)`, `spawnBots(count, mapId)`, `clearBots()`, `combatPatch(json)` (→ `CombatService._queuePatch` on the caller's character) | Parts 2, 7 |
-| 20 | **Adapter API**: `track` (opts incl. `dummy`), `untrack`, `list`, `entryOf*`, `setIntentProvider` (BotService), `startClient`, `step`, `animate`, `heal`; exactly one `BindToSimulation` in `src/` | Parts 4, 7 |
+| 20 | **Adapter API**: `track` (opts incl. `dummy`; pins `fullCfg`, `cfg`, `kitSet`, `style.disabled`, the animation cache), `untrack`, `list`, `entryOf*`, `setIntentProvider` (BotService), `startClient`, `step`, `animate`, `heal`; exactly one `BindToSimulation` across `src/Shared`, `src/ServerScriptService`, `src/StarterPlayerScripts` (spike probes in `src/DevTools/Tests/Spikes/**` and `Spike_*.luau` exempt); sim-only code in `Sim/**`/`Combat/**` wrapped in `-- @sim-begin`/`-- @sim-end` (§3.1.5) | Parts 4, 7 |
 | 21 | **Moderation signal reasons**: `sim_input {reason = "cadence" \| "ping_spike"}`, `sim_reject {reason = <validator name>}` (Classic) | Part 2 |
 | 22 | **Studio snippets** (Part 1 catalog): `tools/studio/combat_attrs.luau` (args `{target}`: player name or bot id → JSON of every HRP SPEC attribute + `St` name) and `tools/studio/combat_force.luau` (args `{target, patch}` → `CombatService._queuePatch`) | Parts 1, 7 |
 | 23 | **Config**: complete `Defaults.Combat` (§3.17) incl. sub-tables `Chassis.Input`, `Chassis.Sim`, `Chassis.Classic`, `Damage.Hitstop`, `Damage.Rewind`, `Respawn.Dummy`; Part 3 `Schema.rules` | Parts 2, 4, 7 |
-| 24 | **Test names**: the Lune specs in §3.4.4 (+ `rewind.*`, `query.sweep_excludes`, `classic.*`, `config.combat_gdd_values`); scenarios `sim.*`, `input.*`, `combat.*`, `bot.*`, `render.undo_spark`, `spike.SA-01…SA-16` | Part 7 |
+| 24 | **Test names**: the Lune specs in §3.4.4 (incl. `moves.status_codec_long_uptime`, `moves.disabled_move_blocked`, `core.require_graph_acyclic`; + `rewind.*`, `query.sweep_excludes`, `classic.*`, `config.combat_gdd_values`); scenarios `sim.*`, `input.*`, `combat.*` (incl. `combat.disabled_move_kill_switch`, `combat.env_ko_credit`), `bot.*` (incl. `bot.loadtest_off_in_studio`), `world.travel_streams_destination`, `render.undo_spark`, `spike.SA-01…SA-16` | Part 7 |
+| 25 | **Bot kill switches**: `Features.Bots == false` refuses brawl and load-test bots (dummies allowed); load-test bots never spawn in Studio (`not RunService:IsStudio()` gate); `BotService.spawnAsync` returns `Model?` | Parts 2, 7 |
 
 ### 3.19 Issues with spine
 
 1. **Meter placement vs GDD §18.2.** The GDD lists `Meter` among simulation attributes. This part keeps the meter in server memory plus the Player attribute `Meter`, and exposes only `AwkRdy` to the sim, to avoid one attacker misprediction per hit (§3.3.5). This is consistent with §0.4, which places Meter on the Player or in server memory, but it differs from the GDD's wording. No GDD number changes.
 2. **"Fixed capsule" hurtbox.** `Enum.PartType` has no capsule [Docs]. The hurtbox is a box with the capsule's extents (§3.12.2). Queries via `GetPartBoundsInBox` are bounding-box tests anyway.
 3. **"Simulation input never uses remotes"** (§0.4) holds under ServerAuthority. The Classic fallback may need `Combat.Input` if the server cannot read IAS in Automatic mode (spike SA-16). Suggested spine wording: "under ServerAuthority".
-4. **File layout has no home** for the status codec, the animation driver or the Realm framework split. To avoid adding files to the "exact" layout, they live in `Core/Moves.luau`, `Sim/Adapter.luau` and `Core/Realm.luau` (framework by Part 3, rule tables by Part 4; Part 2 lists `Core/Realm` as Part 4-owned).
+4. **File layout has no home** for the status codec, the animation driver, locomotion, carrier stepping, the Classic adapter, the shared combat types or the Realm framework split. To avoid adding files to the "exact" layout:
+   - the status codec lives in `Core/Moves.luau`;
+   - the animation driver, `Loco` (Humanoid/`ControllerLoco`), `Carriers` (carrier stepping) and the Classic adapter are local sections of `Sim/Adapter.luau` (there is no `Sim/Loco.luau`, `Sim/Carriers.luau` or `Sim/ClassicAdapter.luau`; Part 2 §2.10 item 5 allows `Adapter.luau` up to 1,600 lines);
+   - the shared combat types live in the Combat section of `Types.luau` (§3.4.1);
+   - the Realm framework lives in `Core/Realm.luau` (framework by Part 3, rule tables by Part 4; Part 2 lists `Core/Realm` as Part 4-owned);
+   - recommended spine amendment (TASKS §16.2 item 6): allow `Sim/Adapter/` sub-modules.
 5. **Deprecated list (§0.4) is incomplete.** Add `AlignOrientation.PrimaryAxisOnly`, `Enum.HumanoidStateType.Ragdoll` (both deprecated in the snapshot) and `Player:LoadCharacter` (also raised by Part 2).
 6. **Attribute budget.** Part 0 says ≤ 64; Part 2 caps Part 3 at ≤ 56. This part uses 49/52 and follows the stricter cap.
 7. **"Simulation state lives in attributes … only"** (§0.4) is slightly narrower than reality: facing, grab holds and hurtbox poses are predicted *constraint/part properties*, not attributes. They follow the same "write only inside the sim" rule.

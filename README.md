@@ -36,6 +36,7 @@ The build runs on **your computer**, where Roblox Studio is: Studio's built-in M
 2. Do the one-time setup in build spec **§1.2**. In short:
    - install Claude Code and the Rokit toolchain
    - in Studio, enable the MCP server and connect Claude Code (Assistant → ⋯ → Manage MCP Servers → Quick connect)
+   - review `docs/agent/claude-settings.example.json` and copy it to `.claude/settings.json` (the agent's tool permissions; never committed)
    - turn on Script Sync for the four synced folders (§0.3)
 3. Complete the human-only steps **H-01…H-12** (§0.7) as the task plan reaches them. These include:
    - setting `Workspace.AuthorityMode = Server`
@@ -49,6 +50,6 @@ The build runs on **your computer**, where Roblox Studio is: Studio's built-in M
   - the owner's IP decision and publish gate (§5.7–§5.8)
   - the optional Character Look toggle
   - 2026 Roblox platform corrections
-- **Studio Build Spec:** see the status line at the top of [`docs/STUDIO_BUILD_SPEC.md`](docs/STUDIO_BUILD_SPEC.md).
+- **Studio Build Spec v1.0** (15 October 2026): reviewed. A 213-finding technical review has been applied and every blocker and major issue verified as resolved. 159 task cards.
 
 > ⚠️ *Adventure Time* is owned by Cartoon Network, now part of Skydance (Paramount + Warner Bros. Discovery). Development uses a Codename skin pack. A **public** Codename build is blocked by an informed-consent publish gate that only the owner can clear. A licensed or original-world launch remains the recommendation. See GDD §5 and build spec Part 8.

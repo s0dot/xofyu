@@ -4,11 +4,12 @@ description: Use when adding, editing or reviewing an Algebraic! Fighting Style 
 enabled: true
 ---
 
-A Fighting Style kit in Algebraic! is data: a typed StyleDef table plus small behavior hooks. Kits are edited on disk by the coding agent; never edit them in Studio. Follow the algebraic-conventions skill as well.
+A Fighting Style kit in Algebraic! is a builder function producing a StyleModule {def, hooks, moment, anim}: a typed StyleDef plus small passive hooks, an optional Style Moment and animation specs. Kits are edited on disk by the coding agent; never edit them in Studio. Follow the algebraic-conventions skill as well.
 
 ## Files
-- One kit per style: src/Shared/Styles/<id>.luau returning a StyleDef. The registry is src/Shared/Styles/init.luau.
+- One kit per style: src/Shared/Styles/<id>.luau returns a builder function `(K: KitBuilder) -> StyleModule` where `StyleModule = {def: StyleDef, hooks: PassiveHooks, moment: MomentDef?, anim: {[slot]: AnimMoveSpec}}`; kit files require only `../Behaviors/Buff` (kit kernel) and never `Styles/init` (build spec §4.1.1). The shape is `return function(K: Kit.KitBuilder): Kit.StyleModule … end`. The registry is src/Shared/Styles/init.luau; it calls each kit with the shared constructors.
 - Shared move behaviors live in src/Shared/Behaviors (Projectile, Rush, Grab, Counter, Zone, Summon, Buff, Mobility, RealmCast). A kit selects a behavior by name and passes typed params; it does not reimplement behavior logic.
+- Behaviors, carriers and hooks read config only from their context (build spec §4.2.0.2): `bc.cfg` is the pinned Combat section (read `bc.cfg.Chassis.X`, never `cfg.Combat.X`), `bc.kits` is the pinned Kits section and `bc.moves(moveId)` returns the pinned kit set's MoveDef (carriers and hooks get the same `cfg`, `kits` and `moves` on their own context). Only the boot validator `validate(def, cfg)` gets the full config. Never read Runtime or a bare Kits table.
 - Style IDs are fixed and IP-neutral: hero, stretch, sentry, granny, diva, tyrant, console, grappler, monarch, flame, butler, rocker, frost, huntress, decay, demon, wish, chaos. The vertical slice implements hero, stretch, monarch, rocker, frost and decay; every other style has implemented = false.
 
 ## Contract (from Shared/Types.luau)

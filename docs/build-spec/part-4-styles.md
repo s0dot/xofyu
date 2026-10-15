@@ -1,9 +1,5 @@
 [← Build spec index](../STUDIO_BUILD_SPEC.md) · **Part 4 of 8** · sections §4.x · Part 0 contracts (§0.x) are in the index file
 
-> ⚠️ **DRAFT — pre-review snapshot.** An editorial/technical review of this spec found ~200 issues and the fixed
-> v1.0 is still being prepared. **Agents: do not execute any task card beyond the P0 human-setup steps (H-01…H-12)
-> until this banner is gone.** Humans can start the one-time setup in Part 1 §1.2 now.
-
 ## 4. Style kit framework and vertical-slice kits
 
 This part specifies how a Fighting Style is represented, validated and executed. It covers:
@@ -16,7 +12,7 @@ This part specifies how a Fighting Style is represented, validated and executed.
 - presentation mapping (palettes, VFX, SFX, Style Gear);
 - the checklist for adding a style.
 
-**Relationship to Part 3 (binding).** Part 3 owns the simulation: the FSM, `Core/*` (including the status codec in `Core/Moves.luau` and the framework in `Core/Realm.luau`), hit resolution, carriers (spawned instances) and the adapter that calls behaviors. Part 4 plugs into Part 3's contracts **by name**, from Part 3 §3.4.2 and §3.9.3:
+**Relationship to Part 3 (binding).** Part 3 owns the simulation: the FSM, `Core/*` (including the status codec in `Core/Moves.luau` and the framework in `Core/Realm.luau`), hit resolution, carriers (spawned instances) and the adapter that calls behaviors. Part 4 plugs into Part 3's contracts **by name**, from Part 3 §3.4.1, §3.4.2 and §3.9.3. The shared combat types live in the Combat section of `src/Shared/Types.luau` (Part 3 §3.4.1) and `Core/Fsm.luau` re-exports them, so Part 4 code (which sits above `Fsm`) writes `Fsm.X`; Part 4 content inside Part 3's leaf modules (`Moves.STATUS`, `Realm.rules`) writes `Types.X`:
 - `Fsm.CharState`, `Fsm.StepCtx`, `Fsm.InputFrame`, `Fsm.HitDef`, `Fsm.HitboxReq`, `Fsm.HitRequest`, `Fsm.SpawnRequest`, `Fsm.MotionCmd`, `Fsm.SimEvent`, `Fsm.ChassisMods`, `Fsm.StyleRuntime`;
 - `BehaviorCtx`, `BehaviorOut`, `BehaviorModule {step, onContact?, onEnd?}`;
 - `Moves.Status` / `Moves.STATUS` / `Moves.statusAdd`;
@@ -162,7 +158,7 @@ export type StylesApi = {
 	moment: (id: string) -> Kit.MomentDef?,
 	anim: (id: string) -> { [string]: Kit.AnimMoveSpec },
 	behavior: (b: Types.Behavior) -> Kit.KitBehavior?,   -- nil for "Strike" (Core default, Part 3 §3.4.2)
-	variants: (def: Types.StyleDef) -> { [string]: { Types.MoveDef } }, -- Kit-mode variants (§4.3.4), for Part 3 StyleRuntime
+	variants: (def: Types.StyleDef) -> { [string]: { Types.MoveDef } }, -- Kit-mode variants (§4.2.8), for Part 3 StyleRuntime.variants
 	forConfig: (cfg: Types.Config) -> KitSet,            -- defs with Kits.Overrides applied (§4.1.6); cached per cfg table
 	validate: (cfg: Types.Config) -> (boolean, { Problem }),
 	maxDamage: (move: Types.MoveDef) -> number,          -- per-target maximum for one use (§4.1.4)
@@ -176,6 +172,7 @@ export type Problem = { rule: string, style: string, move: string?, detail: stri
 
 Semantics:
 - `get`/`all`/`move` return **frozen** tables (`table.freeze`, applied recursively at build). Callers that need a modified MoveDef use `table.clone`.
+- **Base registry vs pinned kit set.** `Styles.move`/`get` return the base registry (no `Kits.Overrides`); tools, UI and Lune tests use them. Inside the sim, MoveDefs always come from the character's **pinned kit set**: Part 3's `RosterEntry.kitSet = Styles.forConfig(fullCfg)`, where `fullCfg = Runtime.at(cfgVersion)` is frozen for the life (Part 3 §3.11.1). Behaviors, carriers and hooks see it as `moves` (`bc.moves`, `view.moves`, `h.moves`) and the pinned `Kits` section as `kits`; their `cfg` is the pinned **Combat section** only (`fullCfg.Combat`, Part 3 §3.4.2).
 - `isPlayable(id, cfg)` is the one gate for equipping. StyleService (Part 5) and BotService (Part 3) use it. It is false for `implemented = false` stubs (§0.10: collectible, not equippable).
 - `behavior("Strike")` returns `nil`. Part 3 Core handles plain melee for Strike moves (Part 3 §3.4.2). Every other `Types.Behavior` maps to the same-named module, with `Buff` covering Buff and Debuff moves.
 
@@ -207,6 +204,8 @@ Numeric thresholds come from config, not literals:
 - `Kits` (`AwakenedMaxDamage` 20, `AwakenedCooldownBand`, `PerHitGuardBand`), for the bands Part 3 does not define.
 
 The numbers in the table are the GDD values those keys hold.
+
+`cfg` in this section is the full `Types.Config` (the boot validator runs outside the sim), so rules read `cfg.Combat.*` and `cfg.Kits.*`. Calls into Part 3's pure modules pass `cfg.Combat`, the shape Part 3 §3.4.2 expects.
 
 `maxDamage(move)` is the per-target maximum damage for one use. It is computed by the behavior's `maxDamage` (§4.2):
 - single hit: `damage`;
@@ -241,7 +240,7 @@ The numbers in the table are the GDD values those keys hold.
 | K15 | damaging moves | `chip == 0.2` if `blockable(move)`, else `chip == 0` | GDD §6.4 |
 | K16 | all moves | `startup ≥ 1`, `active ≥ 1`, `recovery ≥ 0` (integers); total ≤ 600; `hitstun` integer 0–180; damaging moves `startup ≥ 6` | GDD §6.1, §18.2 |
 | K17 | all moves | `anim/vfx/sfx == "<kind>.<style>.<slot>"` (RealmCast `anim == "anim.<style>.realm"`, Part 3 §3.11.8), matching the Assets key pattern | Part 2 §2.9.1 |
-| K18 | all moves | `Moves.validate(def, slot, cfg)` (Part 3) returns no problems; `behavior(b).validate(def)` returns no problems | §4.2 |
+| K18 | all moves | `Moves.validate(def, slot, cfg.Combat)` (Part 3) returns no problems; `behavior(b).validate(def, cfg)` (full config) returns no problems | §4.2 |
 | K19 | all moves | Tags ⊆ `Types.Tag`. Behavior↔tag: Grab⇒`Grab`; Counter⇒`Counter`; Summon⇒`Summon`; RealmCast⇒`Realm`; Projectile⇒`Projectile`; Zone⇒`Zone` or `AoE`; Rush⇒`Rush`; Mobility⇒`Mobility`; Buff⇒ one of `Buff`/`Debuff`/`Utility`/`Mobility`; Strike⇒ any | GDD §6.7 |
 | K20 | implemented | `hitbox ~= nil` for Strike, Rush and Grab, except Grab with `params.sweep` | §4.2 |
 | K21 | multi-hit | `Σ params.hits` and `Σ params.ticks[i].damage` each equal `damage` (± 1e-6) | §4.5.1 |
@@ -267,7 +266,7 @@ The numbers in the table are the GDD values those keys hold.
 
 #### 4.1.6 `Kits` config section (new top-level key, §4.9 item 3)
 
-Kit numbers live in code, not config: StyleDefs contain `Vector3`/`Color3`, which are not JSON-safe (Part 2 §2.6.1). `Kits` gives live-ops a JSON-safe override layer and the carrier caps. It is **pinned with the combat config**: the character's life uses `Runtime.at(CombatCfg).Kits`.
+Kit numbers live in code, not config: StyleDefs contain `Vector3`/`Color3`, which are not JSON-safe (Part 2 §2.6.1). `Kits` gives live-ops a JSON-safe override layer and the carrier caps. It is **pinned with the combat config** (Part 2 §2.6.6, Part 3 §3.11.1): at spawn Part 3 resolves `fullCfg = Runtime.at(CombatCfg)` (the full snapshot, frozen for the life) outside the sim and stores it with `kitSet = Styles.forConfig(fullCfg)` in the `RosterEntry`. Core receives only `fullCfg.Combat`. Behaviors, carriers and hooks also get `kits = fullCfg.Kits` and `moves = kitSet.move` (§4.2.0.2, §4.2.0.3, §4.3.1). `fullCfg.Features.DisabledMoves` feeds Part 3's per-move kill switch (`StyleRuntime.disabled`, `Moves.canUse`; Part 3 §3.4.2). Sim code never reads `Runtime.get()` or a bare `Kits.X`.
 
 ```lua
 Kits = {
@@ -317,39 +316,41 @@ A behavior turns one `MoveDef` into commands, frame by frame. It is a table of p
 | Function | Called by (Part 3) | Peers | When |
 |---|---|---|---|
 | `step(bc) -> BehaviorOut?` | `Fsm.step` (state tick) | Owner client + server | Every frame the owner is in `St = Move` |
-| `onContact(bc, result) -> BehaviorOut?` | Hit resolution | Server always; owner client for BQ predictions | After a HitRequest from this move resolves on a target |
+| `onContact(bc, result) -> BehaviorOut?` | Hit resolution | Server always; owner client for BQ predictions | After a HitRequest from this move's own `step` resolves on a target. Never for carrier hits (`req.carrier` set): they change no owner state (Part 3 §3.12.6, §4.2.0.5 item 7) |
 | `onEnd(bc) -> BehaviorOut?` | State exit | Both | On Move exit, including interrupts and grab breaks |
 | `intercept(bc, hit, srcPos) -> Intercept?` (ext.) | Server hit pipeline, **before** `Damage.resolve` | Server | The victim is in `Move` and its def's behavior defines `intercept` |
 | `stepCarrier(view, f) -> CarrierOut?` (Part 3 name, §3.11.5) | Carrier loop (phase 1b) | Server; owner client for its own predicted carriers (Part 3: `Own == localRid`), where hits are ignored | Every frame per live carrier whose MoveDef uses this behavior |
 | `hurtCarrier(view, hit, attackerRid) -> CarrierOut?` (ext.) | Hit resolution | Server | A targetable summon carrier is hit |
 | `reflectCarrier(view, newOwnerRid) -> CarrierOut?` (ext.) | Hit resolution | Server | A projectile carrier hits a reflecting Counter (§4.2.5) |
-| `validate(def)`, `maxDamage(def)`, `tellFrames(def)`, `blockable(def)` (ext.) | `Styles.validate` | Lune + boot | Pure checks (§4.1.4) |
+| `validate(def, cfg)` (`cfg` = full `Types.Config`), `maxDamage(def)`, `tellFrames(def)`, `blockable(def)` (ext.) | `Styles.validate` | Lune + boot | Pure checks (§4.1.4) |
 
 "(ext.)" marks an extension to Part 3's `BehaviorModule`, requested in §4.9 item 4.
 
 ##### 4.2.0.2 Inputs and outputs (Part 3 types, used verbatim)
 
-- `BehaviorCtx = { f, e, phase, def, s, ctx, cfg, isServer }` (Part 3 §3.4.2).
+- `BehaviorCtx = { f, e, phase, def, s, ctx, cfg, kits, moves, isServer }` (Part 3 §3.4.2).
+  - `bc.cfg` is the pinned **Combat section** (`fullCfg.Combat`), so behaviors read `bc.cfg.Chassis.X`, `bc.cfg.Damage.X`, never `cfg.Combat.X`.
+  - `bc.kits` is the pinned `Kits` section (`fullCfg.Kits`, §4.1.6); `bc.moves(moveId)` is the pinned kit set's `move` (overrides applied). Behaviors never read a bare `Kits.X` or `Runtime`.
   - `bc.ctx.rootCf` is the root at step start.
   - Facing follows aim during startup and holds from the first active frame (Part 3 §3.2.7).
   - Part 4 additionally needs `bc.inp: Fsm.InputFrame` (aim, moveDir, bits) and `bc.ray(origin, dir) -> (Vector3?, Vector3?)`. `ray` is a static-world raycast in collision group `WorldQuery` that excludes `workspace.Sim` (§4.9 item 5).
 - `BehaviorOut = { motion?, hits?, spawns?, patch?, events? }`.
   - `patch` may write the owner's `MvA`, `MvB`, `Kit`, `Buffs`, `StDur` and `Cd1..Cd4/CdQ`. All are B or B·S class in Part 3 §3.3.1.
   - Part 3's Move entry effects set `MvA = MvB = 0` (requested in §4.9 item 15).
-- `HitRequest = { key, box: HitboxReq, hit: HitDef, maxTargets }`. Behaviors build `hit` with Part 3's `Moves.hitDef(def, cfg)` and then adjust per-hit fields. `key` is `"<moveId>#<n>"`; Part 3 scopes the registry to the current action instance.
+- `HitRequest = { key, box: HitboxReq, hit: HitDef, maxTargets }`. Behaviors build `hit` with Part 3's `Moves.hitDef(def, bc.cfg)` (Combat section) and then adjust per-hit fields. `key` is `"<moveId>#<n>"`; Part 3 scopes the registry to the current action instance.
 - `SpawnRequest = { kind, moveId, origin, params }`. `params` are JSON-safe carrier attributes (§4.2.0.5).
 
-Two Part 4 extension fields ride on Part 3's types (§4.9 items 6 and 7):
+Part 4's extension fields on Part 3's types (§4.9 items 6 and 7) are declared by Part 3 in the Combat section of `Types.luau` (Part 3 §3.4.1). `HitDef.kit` is typed `any?` there, so `Types` stays a leaf; its shape is `KitHitExt` below (in `Behaviors/Buff.luau`):
 
 ```lua
--- Fsm.HitDef gains:  kit: KitHitExt?          Fsm.HitboxReq gains:  coneDeg: number?  (Sphere only)
--- Fsm.HitRequest gains: heldOnly: boolean?    (targets = victims currently Grabbed by this attacker)
+-- Fsm.HitDef.kit: any? (= KitHitExt)          Fsm.HitboxReq.coneDeg: number?  (Sphere only)
+-- Fsm.HitRequest.heldOnly: boolean?           (targets = victims currently Grabbed by this attacker)
 export type StunFlavor = "hit" | "freeze" | "float" | "stumble" | "possess" | "flinch"
 export type StatusReq = { kind: string, frames: number, n: number }        -- relative duration; Part 3 adds f
 export type KitHitExt = {
 	stun: StunFlavor?,                               -- Hitstun Sub flavour (table below)
 	debuffs: { StatusReq }?,                         -- added to the victim's Debuffs on outcome "hit" (Moves.statusAdd)
-	pull: { stopStuds: number, frames: number }?,    -- victim pulled toward the attacker's root, stops stopStuds short
+	pull: { stopStuds: number, frames: number }?,    -- one KbV write toward the attacker on outcome "hit"; victim pushes itself (B), see "Pull" below
 	meterDrain: number?,                             -- victim server meter −n (floor 0)
 	healSelf: number?,                               -- attacker HP +n on outcome "hit"
 	grab: { holdF: number, sub: number, offset: Vector3 }?, -- catch: victim → Grabbed (Sub = sub) for holdF + 2 f
@@ -367,8 +368,14 @@ Stun flavours map to `Hitstun` Sub codes (§4.9 item 8). All of them obey Stun D
 | `freeze` | 2 | `freeze` | ice block (`vfx.status.freeze`) |
 | `float` | 3 | rise 4 studs over the first 12 f, then hold (`vector`) | levitate pose |
 | `stumble` | 4 | Part 3 push along `KbV` | backward stumble |
-| `possess` | 5 | pull (from `kit.pull`) | spectral tether |
+| `possess` | 5 | Part 3 push along `KbV` for the whole `StDur` (the pull, below) | spectral tether |
 | `flinch` | 6 | none | small flinch |
+
+**Pull (`kit.pull`).** Server Authority rule: the server writes the cause once and both peers derive the motion (Part 3 §3.1.2).
+- **Cause (S, once).** On outcome `"hit"` only (§4.2.0.4), in the server consequence phase, the server writes the victim's `KbV = d.Unit · (max(dist − stopStuds, 0) · 60 / frames)` with the Q-rule, where `d = Buff.flat(attRoot − vicRoot)` and `dist = d.Magnitude` (roots at resolution time). If `d` is zero, `KbV = Vector3.zero` (no pull). This replaces the hit's own knockback push, so moves with `kit.pull` carry no `knockback`.
+- **Effect (B, every frame).** The victim's FSM moves it at constant `KbV` with Part 3's existing **Push** profile (Part 3 §3.7, §3.8.5) for `N` frames: `N = StDur` for the `possess` flavour (`Hitstun` Sub 5), else `N = min(StDur, Stun.MoveKbFramesMax)` (12). Both peers derive `N` from replicated state, so after the one rollback the victim's client predicts the rest.
+- **Data rule.** `pull.frames` equals that `N` for the move's own hitstun: hero.3 `frames = 12` (`min(34, 12)`); decay.4 `frames = 72` (= its hitstun, `possess`). Projectile `validate` checks it (§4.2.3).
+- Zone pull (`params.pullStudsPerSec`) is a different, per-frame B-class effect (§4.2.6).
 
 ##### 4.2.0.3 Kit kernel (`Behaviors/Buff.luau` exports)
 
@@ -384,20 +391,23 @@ export type Intercept = {
 export type FighterLite = { rid: number, cf: CFrame, team: number, styleId: string, st: number, airborne: boolean }
 -- `view` argument of Part 3's `Behaviors.<B>.stepCarrier(view, f)` (Part 3 §3.11.5). Part 3 builds it per carrier per step.
 export type CarrierView = {
-	name: string,                     -- "C_<rid>_<f>_<n>" (Part 3); also the hit-registry key prefix
+	name: string,                     -- "C_<rid>_<f>_<n>" (Part 3; read from attribute Cid); also the hit-registry key prefix
 	kind: "projectile" | "zone" | "summon",
-	moveId: string, def: Types.MoveDef,  -- static data comes from the MoveDef (Styles.forConfig(cfg).move(moveId))
+	moveId: string, def: Types.MoveDef,  -- static data comes from the MoveDef (= view.moves(moveId), the owner's pinned kit set)
 	own: number, f0: number, age: number, -- attributes Own, F0; age = f − F0 (0 on the spawn step)
 	cf: CFrame, hits: number,          -- carrier CFrame; attribute Hits
 	p: { [string]: number | string | boolean }, -- dynamic per-carrier attributes (≤ 10 keys, Part 3 limit)
-	isServer: boolean, cfg: any,
+	isServer: boolean,
+	cfg: any,                          -- the owner's pinned Combat section (fullCfg.Combat, Part 3 §3.4.2)
+	kits: any,                         -- the owner's pinned Kits section (fullCfg.Kits, §4.1.6)
+	moves: (moveId: string) -> Types.MoveDef?, -- the owner's pinned kit set (RosterEntry.kitSet.move)
 	fighters: { FighterLite },        -- live fighters, ascending rid (server roster; client: local + replicated)
 	ownerCf: CFrame?, ownerAim: Vector3?, ownerAlive: boolean,
 	ray: (origin: Vector3, dir: Vector3) -> (Vector3?, Vector3?), -- static world (WorldQuery), excludes workspace.Sim
 }
 export type CarrierOut = {
 	cf: CFrame?, set: { [string]: number | string | boolean }?,
-	hits: { Fsm.HitRequest }?,        -- attacker = view.own; HitboxReq.prevCf for swept casts; ignored on the client
+	hits: { Fsm.HitRequest }?,        -- attacker = view.own (credit only); Part 3 sets req.carrier; HitboxReq.prevCf for swept casts; ignored on the client
 	dead: boolean?,                   -- Part 3 sets Dead = true in the sim; destroyed in the deferred flush (≥ 2 frames later)
 	newOwner: number?,                -- reflectCarrier only: Part 3 rewrites Own
 	ownerHeal: number?, events: { Fsm.SimEvent }?,
@@ -405,7 +415,8 @@ export type CarrierOut = {
 export type KitBehavior = {
 	name: Types.Behavior,
 	step: (bc: any) -> any, onContact: ((bc: any, result: any) -> any)?, onEnd: ((bc: any) -> any)?,
-	validate: (def: Types.MoveDef) -> { string }, maxDamage: (def: Types.MoveDef) -> number,
+	validate: (def: Types.MoveDef, cfg: Types.Config) -> { string }, -- boot validator: cfg is the FULL config (§4.1.4)
+	maxDamage: (def: Types.MoveDef) -> number,
 	tellFrames: (def: Types.MoveDef) -> number, blockable: (def: Types.MoveDef) -> boolean,
 	intercept: ((bc: any, hit: Fsm.HitDef, srcPos: Vector3) -> Intercept?)?,
 	stepCarrier: ((view: CarrierView, f: number) -> CarrierOut?)?,              -- Part 3 name (§3.11.5)
@@ -421,7 +432,7 @@ Helpers (pure):
 |---|---|
 | `Buff.flat(v: Vector3): Vector3` | `Vector3.new(v.X, 0, v.Z)`; returns `Vector3.zero` when the magnitude < 1e-4 |
 | `Buff.yawCf(rootCf: CFrame): CFrame` | `CFrame.new(rootCf.Position) * CFrame.Angles(0, yaw, 0)`, with `yaw` from `Movement.yawOf(rootCf.LookVector)` (Part 3) |
-| `Buff.hitN(bc, n: number, dmg: number, over: {[string]: any}?): Fsm.HitDef` | `Moves.hitDef(bc.def, bc.cfg)` cloned. `damage = dmg`. `guardDamage = def.guardDamage × dmg / maxDamage(def)`, rounded to 0.1. Fields in `over` are copied last |
+| `Buff.hitN(bc, n: number, dmg: number, over: {[string]: any}?): Fsm.HitDef` | `Moves.hitDef(bc.def, bc.cfg)` cloned (`bc.cfg` = Combat section). `damage = dmg`. `guardDamage = if maxDamage(def) > 0 then round1(def.guardDamage × dmg / maxDamage(def)) else 0` (`round1` = round to 0.1; zero-damage moves such as decay.q's front request get 0, never NaN). Fields in `over` are copied last |
 | `Buff.req(key: string, box: Fsm.HitboxReq, hit: Fsm.HitDef, maxTargets: number): Fsm.HitRequest` | Constructor |
 | `Buff.once(bc, bit: number): (boolean, number)` | `(MvA & bit) == 0`, plus the new `MvA` with the bit set (`bit32`) |
 | `Buff.aimPoint(bc, range: number): Vector3` | `p = root + flat(bc.inp.aim).Unit × range` (fallback `rootCf.LookVector`). Then `bc.ray(p + (0, 20, 0), (0, −60, 0))`. Returns the hit position, or `p` if nothing is hit. Q-rule rounded to 0.01 |
@@ -440,25 +451,26 @@ Helpers (pure):
 
 Lifecycle. Part 3 implements spawning, stepping and destruction (Part 3 §3.11.5); Part 4 defines the content.
 
-1. **Spawn.** A behavior returns `SpawnRequest{kind, moveId, origin, params}` from `step`. Part 3's `Adapter.spawn` clones the character's `ALG_Proto` **inside the sim**, so it is stitched on both peers for the owner. It sets `Name = C_<rid>_<f>_<n>` and the attributes `Own, Kind, MoveId, F0, Dead, Hits` plus `params`.
+1. **Spawn.** A behavior returns `SpawnRequest{kind, moveId, origin, params}` from `step`. Part 3's `Adapter.spawn` clones the character's `ALG_Proto` **inside the sim**, so it is stitched on both peers for the owner. It sets `Name = C_<rid>_<f>_<n>` and the attributes `Own, Kind, MoveId, F0, Dead, Hits, Cid` (`Cid` = the name; the sim reads `Cid`, because `Name` is not Simulation-Access, Part 3 §3.11.5) plus `params`.
    - **Server-only spawns.** Summons and homing projectiles depend on other characters' positions, so their SpawnRequest carries `serverOnly = true` (§4.9 item 9). Part 3 takes its server-only creation path for them.
    - **Targetable summons.** For `hp > 0`, Part 3 also sets on the carrier: `CanQuery = true`, `CollisionGroup = "Hurtbox"` and `Size = params.hurtbox` (default 3×5×3, td). The carrier part **is** the summon's hurtbox (Part 3 §3.12.1 lists summon hurtboxes in the `Hurtbox` group).
 2. **Static vs dynamic data.**
-   - Static configuration (speeds, radii, ticks, telegraph shape) is **never** copied into attributes. `stepCarrier` reads it from `view.def.params` (the MoveDef found via the `MoveId` attribute), identically on both peers.
-   - `params`/`set` hold only per-instance dynamic values, **≤ 10 keys** (Part 3 limit), names ≤ 12 alphanumeric characters.
-   - Every carrier includes `lifeF` (total frames). Part 3 uses it for its own lifetime cap (`Chassis.Sim.MaxCarrierLifeFrames` = 600), so every kit carrier lives ≤ 600 f.
+   - Static configuration (speeds, radii, ticks, telegraph shape) is **never** copied into attributes. `stepCarrier` reads it from `view.def.params` (the MoveDef found via the `MoveId` attribute in the owner's pinned kit set, `view.moves`), identically on both peers.
+   - `params`/`set` hold only per-instance dynamic values, **≤ 10 keys** (Part 3 limit), names ≤ 12 alphanumeric characters. The attribute names of item 1 (`Own, Kind, MoveId, F0, Dead, Hits, Cid`) are reserved and are never a `params`/`set` key.
+   - Every carrier includes `lifeF` (total frames). Part 3 caps it with `Chassis.Sim.MaxCarrierLifeFrames` = 780 (the GDD 12 s summon maximum plus a 60 f arm margin, Part 3 §3.11.5), so no GDD-valid summon (K09: `lifeF ≤ 720`) or zone is cut short.
 3. **Step.** `Behaviors.<Behavior>.stepCarrier(view, f)` runs in phase 1b:
-   - on the server for every live carrier, in name order;
+   - on the server for every live carrier, in name order (Part 3 enumerates `workspace.Sim` and sorts by `Cid`, §3.11.5);
    - on the owner client for its predicted carriers (`Own == localRid`), where only `cf`/`set` apply and hits are ignored.
 
    The dispatch module is the MoveDef's behavior, with one exception: a Rush echo carrier (`Kind = "zone"`, `sub = 1`) is stepped by `Zone.stepCarrier`.
 4. **Death.** `dead = true` makes Part 3 set `Dead = true` in the sim. The server destroys the carrier in the deferred flush, ≥ 2 frames later, **outside** the sim (Part 3 §3.1.5).
-5. **Caps.** `Kits.MaxCarriersPerFighter` evicts the oldest owned carrier; `Kits.MaxCarriersServer` refuses the spawn. Server log via the flush queue: `[ALG][Style] carrier cap owner=<rid> evicted=<name>`.
+5. **Caps.** Read from the spawning owner's pinned `Kits` (`RosterEntry.fullCfg.Kits`, the same table as `bc.kits`): `MaxCarriersPerFighter` evicts the oldest owned carrier; `MaxCarriersServer` refuses the spawn. Server log via the flush queue: `[ALG][Style] carrier cap owner=<rid> evicted=<name>`.
 6. **Owner KO or untrack.** Part 3 marks every carrier with that `Own` as `Dead` on the next server step (td). This prevents posthumous damage.
 7. **Hit bookkeeping.**
    - Carrier hit requests use keys `<view.name>#<suffix>`; Part 3 keeps carrier registries with the carrier (Part 3 §3.12.5).
    - Zone ticks use one suffix per tick (`#t<j>`), so a target can be hit once per tick.
    - Per-target caps (`maxHitsPerTarget`) are counted in **server memory** keyed by carrier name and cleared on death. This is legal per Part 3 §3.1.8: carrier hits are S-class consequences.
+   - **No owner state.** Part 3's adapter tags every carrier hit with `req.carrier` in phase 1b. Such hits credit the owner (`Own`) but change none of its state: no `Cnt`, no hitstop or `StF` shift, no Uppercut follow, no `onContact` call. Only server-memory meta applies (meter dealt, ledger, `lastHit`), plus the owner's `CombatF = f` when `f − CombatF ≥ 60` (td). Victim effects, including victim hitstop, apply as usual (Part 3 §3.12.6).
 
 Rendering: the client renders a carrier from its `Kind`, `MoveId` (→ `def.vfx` or `params.model`) and dynamic attributes. Telegraphs come from §4.2.0.6.
 
@@ -470,6 +482,8 @@ Telegraphs come from two sources. Both render on the dedicated telegraph layer i
 |---|---|---|
 | `MoveDef.telegraph` (`params.teleAnchor` absent or `"self"`) | From move frame `S − leadFrames + 1` to the first active frame | The owner's root: the hitbox centre if `hitbox` is set, else `params.teleFwd` studs ahead (default `size.z/2`). It follows the facing during startup (Part 3 §3.2.7) |
 | `params.teleAnchor = "carrier"` | From carrier spawn while `age < armF` (zones) or `age < flightF` (lobs). Summon attacks show while `age − a0 < attack.startupF` | Carrier `cf` (lobs: landing point `lx,ly,lz`). Shape and size come from `MoveDef.telegraph` (summon attacks: an `Arc` sized from `attack.size`) |
+
+Render-side carrier age: for carriers the local player owns, `age = fNow − F0`; for carriers not owned by the local player, RenderController uses the observation age `ageR = fNow − seenF(carrier)` (Part 6 §6.6.1) in these `age` windows, so a remote carrier's telegraph is shown for its full length.
 
 `tellFrames(def)` per behavior is the number of frames between the earliest visible tell and the first frame that can damage:
 - self-anchored moves (Rush, Grab, Strike, beams, bullets, waves, homing, instant self zones): `startup`;
@@ -483,8 +497,8 @@ K08 uses it (§4.1.4).
 
 ##### 4.2.0.7 Presentation hooks
 
-- **Move start.** The client RenderController (Part 6) sees `St = Move` with `Sub` (Part 3 §3.2.1). It plays `def.anim` (`Assets.get`) and fires the `def.vfx` and `def.sfx` timing from the clip's `VFX`/`SFX` markers. A RenderStepped frame counter on `e` is the fallback when the clip is unavailable.
-- **Hit and carrier effects** are keyed on attributes: `Cnt`, victim `St`/`Sub`, carrier `vis`/`tS`.
+- **Move start.** Part 3's `Adapter.animate` plays `def.anim`. Combat animations are played only there, inside `RunService:BindToAnimation(fn, Enum.StepFrequency.Hz60)` on both peers (Part 3 §3.11.8): never on RenderStepped, never gated on `RunService:IsResimulating()`, and AnimationTracks are never cached. RenderController (Part 6) sees `St = Move` with `Sub` (Part 3 §3.2.1) and fires `def.vfx`/`def.sfx` at the data frames: `e ≥ S`, and `e ≥ S + hitFrames[i] − 1` for barrage hit `i` (one-shots, P4-R3). VFX/SFX are render-side (RenderStepped) and skipped while `RunService:IsResimulating()`. Their timing comes from MoveDef frame data, never from clip markers. Clip markers exist only for the §4.6.4 timing-lock check.
+- **Hit and carrier effects** are keyed on attributes: the attacker's `Cnt` (melee hits from the owner's `step` only; carrier hits never set the owner's `Cnt`, §4.2.0.5 item 7), victim `St`/`Sub`/`HP`, carrier `vis`/`tS`.
 - **Undoable.** Effects started for predicted transitions follow Part 3 §3.1.7 (undo within 15 f).
 
 ##### 4.2.0.8 Interaction rules (all behaviors)
@@ -494,10 +508,10 @@ K08 uses it (§4.1.4).
 | `superArmor` | Implemented by Part 3 (`Damage.resolve` row 8, Part 3 §3.12.6): during `params.superArmorFrames` (default startup + active), hits deal damage and meter only, with no stun or knockback. No VS move uses it |
 | `projectileArmor` | Part 3 row 8: during startup, only vs `HitDef.kind == "projectile"`. Used by `hero.4` |
 | Parry | `parryable = true` → Perfect Block negates the hit (Part 3 §3.6.3). Grabs are parryable only when flagged |
-| Block chip | Blockable damaging moves: `chip = 0.2` (GDD §6.4). Multi-hit chip is per hit. Zone ticks are unblockable unless `tick.blockable` |
+| Block chip | Blockable damaging moves: `chip = 0.2` (GDD §6.4). Multi-hit chip is per hit. Zone ticks are unblockable unless `tick.blockable == true`; zone bursts are blockable unless `b.blockable == false` (§4.2.6) |
 | Reflect | Only carrier projectiles with `refl = true` (§4.2.5). Beams, arms, waves and whips are not reflectable |
 | Grabs | Ignore block and Counter stances; miss i-frames, airborne victims (`groundOnly = true`) and Perfect Block if parryable (GDD §6.4) |
-| Summons | Take 2× M1 damage (GDD §6.7). `Summon.hurtCarrier` multiplies M1-family hits (`m1`, `ender`, `airm1`, `dashm1`) by `cfg.Combat.Damage.Summon.M1DamageMult` (2) |
+| Summons | Take 2× M1 damage (GDD §6.7). `Summon.hurtCarrier` multiplies M1-family hits (`m1`, `ender`, `airm1`, `dashm1`) by `view.cfg.Damage.Summon.M1DamageMult` (2; `view.cfg` is the Combat section) |
 | Statuses | Applied only on outcome `"hit"` (§4.2.0.4) |
 
 #### 4.2.1 Strike (Core default, no module)
@@ -539,9 +553,9 @@ Per frame (`step`):
 
 | Phase | Output |
 |---|---|
-| Travel window (resolved `from ≤ e+1 ≤ to`, skipped once `MvA` bit 1 "stopped" is set) | `ground`: `motion = planar` at `v = studs·60/N` along the facing, where `N = to − from + 1`. `leap`: `motion = vector` with horizontal `v` and `vy(k) = 4·height·60/N·(1 − 2k/N)`, `k = e+1−from` (symmetric arc whose summed rise is `height`, td) |
+| Travel window (resolved `from ≤ e+1 ≤ to`, skipped once `MvA` bit 1 "stopped" is set) | `ground`: `motion = planar` at `v = studs·60/N` along the facing, where `N = to − from + 1`. `leap`: `motion = vector` with horizontal `v` and `vy(k) = 4·height·60/N·(1 − (2k+1)/N)` for `k = e+1−from ∈ [0, N−1]` (td). `Σ vy/60 = 0` exactly (net rise 0); the apex, reached at the end of frame `k = N/2 − 1`, equals `height` exactly for even `N` and is within `height/N²` for odd `N`. Example hero.1: `N = 12`, `height = 6` → apex 6.0 after frame k = 5, back to the start height after k = 11 |
 | Active (`S ≤ e < S+A`) | `hits`: single-hit moves emit `Buff.req(id.."#1", Moves.hitbox(def, ctx), Buff.hitN(bc, 1, def.damage), 4)`. Multi-hit moves follow §4.2.0.4; the last hit applies `lastHit` overrides. `coneDeg` is copied into the HitboxReq |
-| Recovery | `selfBounce` (if `MvA` bit 2 "connected"): `vector` back along −facing, `studs·60/frames` horizontal plus a `height` arc over `frames` frames. Otherwise `motion = none` |
+| Recovery | `selfBounce` (if `MvA` bit 2 "connected"): `vector` back along −facing, `studs·60/frames` horizontal plus a `height` arc over `frames` frames (the leap `vy(k)` formula with `N = frames`, `k = e − (S + A)`; nothing after `k = N − 1`). Otherwise `motion = none` |
 
 `onContact`: sets `MvA` bit 2 (connected) and, if `stopOnHit`, bit 1 (stopped).
 
@@ -562,7 +576,7 @@ Edge cases:
 - **Walls.** If travel hits a wall, Part 3's mover simply stops. No special handling.
 - **Interrupted move.** `onEnd` emits nothing. Carriers already spawned (echo) persist.
 
-**Verify:** Lune `behaviors.rush_travel_distance` (Σ planar displacement over the window = `studs` ± 0.05); `behaviors.rush_leap_apex` (Σ vy·dt = 0 ± 0.05, apex = height ± 0.1); `behaviors.rush_multi_hit_sum` (hero.2 emits 6 keys with Σ damage 11); `behaviors.rush_echo_spawns_once`.
+**Verify:** Lune `behaviors.rush_travel_distance` (Σ planar displacement over the window = `studs` ± 0.05); `behaviors.rush_leap_apex` (hero.1 and rocker.a2: Σ vy·dt = 0 ± 0.05, apex = height ± 0.1 with `vy(k) = 4·height·60/N·(1 − (2k+1)/N)`); `behaviors.rush_multi_hit_sum` (hero.2 emits 6 keys with Σ damage 11); `behaviors.rush_echo_spawns_once`.
 
 #### 4.2.3 Projectile (`Behaviors/Projectile.luau`)
 
@@ -609,7 +623,8 @@ Other functions:
 - `validate`:
   - `range > 0`;
   - beam needs `width`; bullet/homing need `speed` and `radius`; lob needs `flightF ≥ 8`, `impactRadius` and `#pattern == count`; wave needs `speed`, `width`, `height`;
-  - `Σ hits == damage` when `hits` is set.
+  - `Σ hits == damage` when `hits` is set;
+  - `onHit.pull` (§4.2.0.2): `knockback == nil`, `stopStuds ≥ 0`, and `pull.frames == hitstun` when `onHit.stun == "possess"`, else `pull.frames == min(hitstun, cfg.Combat.Stun.MoveKbFramesMax)`.
 - `maxDamage`: `Σ hits` or `damage`.
 - `tellFrames`: `flightF` for lob, else `startup`.
 - `blockable = true` for every kind.
@@ -722,14 +737,14 @@ export type ZoneParams = {
 	lifeF: number,                     -- frames the zone persists after arming (0 = bursts only)
 	bursts: { ZoneBurst }?,
 	tick: { everyF: number, damage: number, count: number?, blockable: boolean? }?,
-	stay: StatusReq?,                  -- debuff refreshed every Kits.StatusStayRefreshFrames on enemies inside
+	stay: StatusReq?,                  -- debuff refreshed every view.kits.StatusStayRefreshFrames on enemies inside
 	ownerTick: { everyF: number, heal: number }?,
 	maxHitsPerTarget: number?, pullStudsPerSec: number?, followMove: boolean?,
 	dmgModel: ("total" | "perHit")?, cinematicFrames: number?, teleAnchor: ("self" | "carrier")?, hangFrames: number?,
 }
 ```
 
-**Instant self zone** (`anchor = "self"`, `lifeF = 0`, every burst `atF = 0`): no carrier. The owner `step` emits the burst on the active frames as a HitRequest. This gives the owner BQ-predicted contact (Part 3 §3.1.2). Shape:
+**Instant self zone** (`anchor = "self"`, `lifeF = 0`, every burst `atF = 0`): no carrier. The owner `step` emits the burst on the active frames as a HitRequest (same fields and `unblockable` rule as the carrier burst row below). This gives the owner BQ-predicted contact (Part 3 §3.1.2). Shape:
 - circle: `Sphere` with diameter `2·radius`;
 - cone: `Sphere` with diameter `2·radius` plus `coneDeg`;
 - line: `Box (width, 6, radius)` ahead.
@@ -748,29 +763,39 @@ Used by `rocker.4` and `monarch.a3`.
 |---|---|
 | `selfFollow` | `cf = yaw(ownerCf)` every frame; `dead` if `ownerAlive == false` |
 | `k < 0` | Nothing (arming; the telegraph shows) |
-| Burst `b` with `k ≥ b.atF`, not yet fired (bit `b` in `st`) | HitRequest key `<name>#b<b>` with the shape box, `damage = b.damage`, `hitstun`, `kit.stun`, `knockback`, `kind = "zone"`, `unblockable = not b.blockable` (default blockable, zone centre as source) |
-| Tick: `k ≥ 0`, `k % tick.everyF == 0`, `tk < count` | HitRequest key `<name>#t<j>` (j = `tk + 1`; `set.tk = j`), `damage = tick.damage`, `tick = true` (Part 3: no hitstun, hitstop or combo count), `unblockable = not tick.blockable`. Per-target cap `maxHitsPerTarget` enforced by server memory |
-| Stay: `k ≥ 0`, `k % Kits.StatusStayRefreshFrames == 0` | Zero-damage `tick` HitRequest key `<name>#s<k>` with `kit.debuffs = {stay}` |
+| Burst `b` with `k ≥ b.atF`, not yet fired (bit `b` in `st`) | HitRequest key `<name>#b<b>` with the shape box, `damage = b.damage`, `hitstun`, `kit.stun`, `knockback`, `kind = "zone"`, `unblockable = (b.blockable == false)` (default **blockable**; zone centre as source) |
+| Tick: `k ≥ 0`, `k % tick.everyF == 0`, `tk < count` | HitRequest key `<name>#t<j>` (j = `tk + 1`; `set.tk = j`), `damage = tick.damage`, `tick = true` (Part 3: no hitstun, hitstop or combo count), `unblockable = (tick.blockable ~= true)` (default **unblockable**). Per-target cap `maxHitsPerTarget` enforced by server memory |
+| Stay: `k ≥ 0`, `k % view.kits.StatusStayRefreshFrames == 0` | Zero-damage `tick` HitRequest key `<name>#s<k>` with `kit.debuffs = {stay}`, `unblockable = true` (tick default) |
 | Owner tick: `k % ownerTick.everyF == 0` and the owner is inside | `ownerHeal = ownerTick.heal` (routed through `Adapter.heal`, so realm heal multipliers apply, Part 3 §3.9.3) |
-| Pull (`params.pullStudsPerSec`) | Not a hit. Part 3 applies it as an S-class planar push toward the carrier centre on enemies inside (§4.9 item 11) |
+| Pull (`params.pullStudsPerSec`) | Not a hit and not an output of `stepCarrier`. **B-class**, computed in each victim's own step (both peers), see "Zone pull" below |
 | `k ≥ lifeF` and all bursts fired | `dead = true` |
 
 The periodic `k % N == 0` tests are the one allowed modulo use (Part 3 §3.8.7): a skipped frame skips a tick identically on both peers.
 
-`followMove` (`stretch.a4`): during the owner's active frames, the owner `step` outputs `motion = planar` from `bc.inp.moveDir × WalkSpeed × 0.6` (td) instead of `none`.
+**Zone pull (B-class, §4.9 item 11).** Per-frame mover writes on another character from the server would mispredict every frame on the victim's client, so the pull is derived by the victim's own step instead (Part 3 §3.1.2). In each character's step (phase 1, after the behavior hook), on both peers, Part 3's adapter (Part 3 §3.11.5 "Zone pull" implements this):
+1. scans the live carriers in `workspace.Sim` with the same enumeration `Carriers.step` uses in phase 1b (sorted by `Cid`, Part 3 §3.11.5), for zone carriers (attributes `Kind == "zone"`, `Dead == false`, `MoveId`) whose MoveDef (looked up with `moves`, the pinned kit set; `params` are not overridable, §4.1.6, so every peer agrees) has `params.pullStudsPerSec`, and whose owner (`Own`) is not this character (party membership is server-only data, so party allies are not exempt; the pull deals no damage; attribute and `CFrame` reads only);
+2. for each, calls the pure helper **`Zone.pullVelocity(def, carrierPos: Vector3, rootPos: Vector3): Vector3`**: `Vector3.zero` if the planar distance from the carrier centre to the root is > `radius` or < 0.5 studs; otherwise `Buff.flat(carrierPos − rootPos).Unit · pullStudsPerSec`, each component rounded to 0.01 (Q-rule);
+3. sums the contributions, rounds each component to 0.01 (Q-rule) and adds the result to the FSM's `MotionCmd` for that frame: `none` becomes `planar` (`moveDir · walkSpeed` + pull), `planar` adds to `vx`/`vz`, `vector`/`freeze` (knockback, hitstop, Wall Splat) are unchanged (Part 3 §3.11.5).
+
+`pullStudsPerSec` is valid only with `shape = "circle"` (Zone `validate`).
+
+Spike S-P4-3 measures the rollback rate this causes on a victim inside `stretch.a4` (§4.11).
+
+`followMove` (`stretch.a4`): during the owner's active frames, the owner `step` outputs `motion = planar` from `bc.inp.moveDir × bc.cfg.Chassis.WalkSpeed × 0.6` (td) instead of `none`.
 
 Other functions:
-- `validate`: `radius > 0`; `armF ≥ 0`; tick zones need `count` or `maxHitsPerTarget`; `cinematicFrames ≤ 120`.
+- `validate`: `radius > 0`; `armF ≥ 0`; tick zones need `count` or `maxHitsPerTarget`; `cinematicFrames ≤ 120`; `pullStudsPerSec` requires `shape == "circle"`.
+- `pullVelocity(def, carrierPos, rootPos)`: zone pull helper (above), pure, called by Part 3's adapter.
 - `maxDamage`: `Σ burst.damage + min(tick.damage × (count or ∞), tick.damage × maxHitsPerTarget)`, capped by `damage`. For `perHit` it is `tick.damage × maxHitsPerTarget`.
 - `tellFrames`: `armF` for `aim` zones; `startup + armF` for `self`/`selfFollow` zones, instant or carrier (§4.2.0.6).
-- `blockable`: any burst or tick with `blockable ~= false`.
+- `blockable(def)`: true if any burst has `b.blockable ~= false`, or the tick has `tick.blockable == true`. This matches the runtime defaults above (bursts blockable unless `false`; ticks unblockable unless `true`), so K14/K15 judge exactly what Part 3 resolves. Examples: monarch.3, frost.a1, decay.3, decay.a2 (ticks only, no flag) → false (`chip = 0`, no guard damage); rocker.4, frost.2, frost.a4, monarch.a3 (bursts) → true; hero.a4, stretch.a4, frost.a3 (`tick.blockable = true`) → true.
 
 Edge cases:
 - An aim zone over a pit snaps to the first ground within 60 studs below, else spawns at aim height.
 - Two zones from the same owner apply independent caps.
 - Leaving a zone ends `stay` effects within `StatusStayRefreshFrames` + the status duration.
 
-**Verify:** Lune `behaviors.zone_tick_cap` (Chemistry Flask on a stationary target for 10 s → exactly 5 ticks, 10 damage); `behaviors.zone_burst_once`; `behaviors.zone_selfFollow_tracks_owner`; `behaviors.zone_owner_heal`. Scenario `kit.decay.well_heal` (decay at 80 HP inside its own pool for 3 s → +3 HP ± 0, Part 3 regen disabled).
+**Verify:** Lune `behaviors.zone_tick_cap` (Chemistry Flask on a stationary target for 10 s → exactly 5 ticks, 10 damage); `behaviors.zone_burst_once`; `behaviors.zone_selfFollow_tracks_owner`; `behaviors.zone_owner_heal`; `behaviors.zone_blockable_defaults` (`Zone.blockable`: monarch.3 → false, rocker.4 → true, hero.a4 → true; a tick request without `blockable` has `unblockable = true`, a burst request without `blockable` has `unblockable = false`); `behaviors.zone_pull_b_class` (`Zone.pullVelocity(stretch.a4, centre, root)`: root 10 studs from the centre → planar magnitude 4 ± 0.02 toward the centre, components rounded to 0.01; 26 studs → zero; 0.3 studs → zero; stretch.a4's `stepCarrier` outputs never contain a pull). Scenario `kit.decay.well_heal`: decay at 80 HP (`Dev.Command combatPatch {"HP":80}`) first lands one M1 on an `idle` dummy, then casts decay.3 with the dummy inside the pool; the pool ticks on the dummy keep decay's `CombatF` fresh, so Part 3's out-of-combat regen (§3.8.7) never ticks. Sample decay's HP 1 f before the cast and at k = 179 → exactly +3 HP (owner ticks at k = 0, 60, 120).
 
 #### 4.2.7 Summon (`Behaviors/Summon.luau`)
 
@@ -804,7 +829,7 @@ export type SummonParams = {
 | `marked` | Untargetable set piece. At `age ≥ a0` and every `aE` frames: the target is the enemy closest to the owner's aim ray (`ownerAim`) within `aBr` studs and ±30°. The telegraph is a Line from the carrier to the target's position, locked at telegraph start, for `aS` frames. Then a Cast HitRequest along the locked line (`aBw` wide), key `#<shot>`, `kind = "projectile"`, not reflectable |
 
 `hurtCarrier(view, hit, attackerRid)` (targetable summons only):
-- `dmg = hit.damage × (if M1 family then cfg.Combat.Damage.Summon.M1DamageMult else 1)` (2, GDD §6.7 "summons take 2× M1 damage");
+- `dmg = hit.damage × (if M1 family then view.cfg.Damage.Summon.M1DamageMult else 1)` (2, GDD §6.7 "summons take 2× M1 damage"; `view.cfg` is the owner's pinned Combat section);
 - `set {hp = hp − dmg}`; `dead` when `hp ≤ 0`;
 - event `{k = "summon_down", rid = ownerRid}` for render.
 
@@ -845,7 +870,7 @@ Other functions:
 - `validate`: `toggleMode.count ≥ 2`; every `effects[i].move` exists in the same style; status kinds exist in `Moves.STATUS`.
 - `maxDamage = 0`; `tellFrames = startup`; `blockable = false`.
 
-Mode variants. `Styles.variants(def)` precomputes, for every `ModeEffect` target move, an array indexed by `Kit + 1`:
+Mode variants. `Styles.variants(def)` precomputes, for every `ModeEffect` target move, an array indexed by `Kit + 1`. Part 3 calls it with the pinned kit set's StyleDef (`kitSet.get(styleId)`, overrides applied) when it builds `StyleRuntime` for the life:
 - the variant for mode `m` = the base def with `startup += startupDelta` or `guardDamage = round(guardDamage × guardDamageMult)` from `effects[m + 1]`;
 - modes with no effect for that move use the base def.
 
@@ -868,8 +893,8 @@ export type MobilityParams = {
 | Mode | Behavior |
 |---|---|
 | `dash` / `slide` | Active frames: `motion = planar` along the facing at `studs·60/A`. `slide` sets `vis` trail (render) |
-| `flight` | First active frame (once-bit 1): store pitch `MvB = round3(clamp(asin(aim.Y), ±pitchClampDeg))`. Each active frame: `motion = vector` along the yaw/pitch direction at `studs·60/A` |
-| `grapple` | First active frame (once-bit 1): `hit, n = bc.ray(root, aim.Unit × maxRange)`. If hit: `travelF = min(maxTravelF, ceil(dist·60/speed))`; `patch {MvA = 1 + 256 × travelF, MvB = round3(pitch), StDur = S + 1 + travelF + recovery}`. Yaw is the held facing. During travel (`e − S < travelF`): `motion = vector` along (yaw, pitch) at `speed`. On miss: `patch {StDur = S + 1 + whiffRecoveryF, CdQ = f + toFrames(whiffCooldownSec)}` |
+| `flight` | First active frame (once-bit 1): store the pitch in **radians**, `MvB = round3(math.clamp(math.asin(math.clamp(aim.Y, -1, 1)), -math.rad(pitchClampDeg), math.rad(pitchClampDeg)))` with `aim = bc.inp.aim` (unit). `math.asin` returns radians and `pitchClampDeg` is in degrees, so the clamp converts with `math.rad` (rocker.q: ±30° = ±0.524 rad). Each active frame: `motion = vector` along the yaw/pitch direction at `studs·60/A` |
+| `grapple` | First active frame (once-bit 1): `hit, n = bc.ray(root, aim.Unit × maxRange)`. If hit: `travelF = min(maxTravelF, ceil(dist·60/speed))`; `patch {MvA = 1 + 256 × travelF, MvB = round3(pitch), StDur = S + 1 + travelF + recovery}` (`pitch = math.asin(math.clamp(dir.Unit.Y, -1, 1))` in radians, `dir` = hit point − root). Yaw is the held facing. During travel (`e − S < travelF`): `motion = vector` along (yaw, pitch) at `speed`. On miss: `patch {StDur = S + 1 + whiffRecoveryF, CdQ = f + toFrames(whiffCooldownSec)}` |
 
 `iFrames` are honoured by Part 3 (`Fsm.isInvulnerable`, Part 3 §3.2.1).
 
@@ -877,7 +902,7 @@ Other functions:
 - `validate`: `studs > 0` for dash/slide/flight; grapple needs `maxRange`, `speed`, `maxTravelF`, `whiffRecoveryF`; `iFrames.to ≤ total frames`.
 - `maxDamage = 0`; `tellFrames = startup`; `blockable = false`.
 
-**Verify:** Lune `behaviors.mobility_flight_distance` (rocker.q: Σ displacement 25 ± 0.1); `behaviors.mobility_grapple_hit` (fake ray hits at 30 studs → travel 15 f at 120 st/s); `behaviors.mobility_grapple_whiff` (`CdQ = f + 120`). Scenario `kit.rocker.batshift_iframes` (dummy `m1_spam` hits during move frames 1–6 → whiff; frame 7+ → hit).
+**Verify:** Lune `behaviors.mobility_flight_distance` (rocker.q: Σ displacement 25 ± 0.1); `behaviors.mobility_flight_pitch_clamp` (rocker.q with aim straight up → `MvB = 0.524`, i.e. 30°; straight down → `−0.524`; level → 0); `behaviors.mobility_grapple_hit` (fake ray hits at 30 studs → travel 15 f at 120 st/s); `behaviors.mobility_grapple_whiff` (`CdQ = f + 120`). Scenario `kit.rocker.batshift_iframes` (dummy `m1_spam` hits during move frames 1–6 → whiff; frame 7+ → hit).
 
 #### 4.2.10 RealmCast (`Behaviors/RealmCast.luau`)
 
@@ -889,7 +914,7 @@ Part 3 runs the whole Realm lifecycle (Part 3 §3.9.3):
 - `Cd4 = AwkEndF` (once per Awakening).
 
 The Move state is not used, so `step` is never called for RealmCast. This module provides:
-- `validate(def)`:
+- `validate(def, cfg)` (`cfg` = the full `Types.Config`, boot validator):
   - `startup == cfg.Combat.Realm.CastFrames` (90, GDD §6.10), `active == 1`, `recovery == 0`, `cooldown == 0`, `damage == 0`;
   - `Realm.rules[def.id] ~= nil`;
   - telegraph `Circle` with `size.X == 2 · cfg.Combat.Realm.RadiusStuds` (80) and `leadFrames == 90`.
@@ -911,8 +936,14 @@ local FakeCtx = {}
 function FakeCtx.bc(def: any, e: number, s: any?, inp: any?, world: FakeWorld?): any
 	-- returns { f = 1000 + e, e = e, phase = <from def>, def = def, s = s or Fsm.initial(100, 1000, cfg),
 	--   ctx = { f = 1000 + e, rid = 1, grounded = true, rootCf = CFrame.new(0, 3, 0), vel = Vector3.zero, ... },
-	--   cfg = Defaults.Combat, isServer = true, inp = inp or { bits = 0, pressed = 0, aim = Vector3.new(0, 0, -1), moveDir = Vector3.zero },
+	--   cfg = Defaults.Combat (the Combat section, as Part 3 passes it), kits = Defaults.Kits,
+	--   moves = Styles.forConfig(Defaults).move, isServer = true,
+	--   inp = inp or { bits = 0, pressed = 0, aim = Vector3.new(0, 0, -1), moveDir = Vector3.zero },
 	--   ray = <plane at groundY + vertical walls> }
+	return {} :: any
+end
+function FakeCtx.view(def: any, age: number, p: { [string]: any }?, world: FakeWorld?): any
+	-- returns a CarrierView (§4.2.0.3) with the same cfg/kits/moves/ray as FakeCtx.bc, own = 1, f0 = 1000, age = age
 	return {} :: any
 end
 function FakeCtx.run(def: any, frames: number, world: FakeWorld?): { any } -- calls step for e = 0..frames-1, applying patch to s
@@ -934,8 +965,10 @@ Passives are **data first** (§4.3.2–§4.3.4). Kit-specific logic goes in `Sty
 ```lua
 export type HookKind = "use" | "hitDealt" | "hitTaken" | "blocked" | "perfectBlocked" | "ko" | "lowHp" | "wallsplat" | "awaken" | "awakenEnd"
 export type HookCtx = {
-	f: number, rid: number, styleId: string, style: Fsm.StyleRuntime, s: Fsm.CharState, cfg: any, isServer: boolean,
-	moves: (moveId: string) -> Types.MoveDef?,                  -- Styles.forConfig(cfg).move (overrides applied)
+	f: number, rid: number, styleId: string, style: Fsm.StyleRuntime, s: Fsm.CharState, isServer: boolean,
+	cfg: any,                                                   -- pinned Combat section (fullCfg.Combat, Part 3 §3.4.2)
+	kits: any,                                                  -- pinned Kits section (fullCfg.Kits, §4.1.6)
+	moves: (moveId: string) -> Types.MoveDef?,                  -- pinned kit set: RosterEntry.kitSet.move (overrides applied)
 }
 export type HitInfo = {
 	attackerRid: number, victimRid: number, attackerStyle: string, victimStyle: string,
@@ -988,18 +1021,18 @@ Part 3 owns the codec. Part 4 owns these entries (Part 3 §3.4.2). Each entry is
 
 | Kind | Name | List | maxStacks | `mods(n)` | Flags | Source (GDD) |
 |---|---|---|---|---|---|---|
-| `rt` | root | Debuffs | 1 | `rooted = true` | — | monarch.1, 36 f (§7.3.9) |
+| `rt` | root | Debuffs | 1 | `rooted = true` | — | monarch.1, 36 f (GDD §7.3.9) |
 | `sl` | slow | Debuffs | 60 | `speedMult = 1 − n/100` (n = percent; same-kind adds, capped at 60%, td) | — | frost.1 20%, monarch.3 15%, frost.a1 30%, decay.a2 40%, rocker.a1 50% |
-| `si` | silence | Debuffs | 1 | `silenced = true` | — | rocker.a1 "can't use moves for 60f" (§7.3.12) |
-| `wh` | whispered | Debuffs | 1 | `blockDelayF = 6` | `consumeOn = "block"` | decay.q (§7.3.15) |
-| `dc` | decay | Debuffs | 5 | `regenBlocked = true` | `incomingFrom = {style = "decay", perStack = 1, max = 5}` | decay passive (§7.3.15) |
-| `iv` | invisible | Buffs | 1 | `{}` (render reads it, §4.7.6) | `consumeOn = "attack"` | rocker.2, 120 f (§7.3.12) |
+| `si` | silence | Debuffs | 1 | `silenced = true` | — | rocker.a1 "can't use moves for 60f" (GDD §7.3.12) |
+| `wh` | whispered | Debuffs | 1 | `blockDelayF = 6` | `consumeOn = "block"` | decay.q (GDD §7.3.15) |
+| `dc` | decay | Debuffs | 5 | `regenBlocked = true` | `incomingFrom = {style = "decay", perStack = 1, max = 5}` | decay passive (GDD §7.3.15) |
+| `iv` | invisible | Buffs | 1 | `{}` (render reads it, §4.7.6) | `consumeOn = "attack"` | rocker.2, 120 f (GDD §7.3.12) |
 | `nh` | next-hit bonus | Buffs | 5 | `nextHitAdd = n` (owner's outgoing hits only) | `consumeOn = "hit"` | rocker.2 "+5" |
-| `ff` | frenzy | Buffs | 1 | `m1Chain = 6` | — | rocker.a3, 300 f (§7.3.12) |
+| `ff` | frenzy | Buffs | 1 | `m1Chain = 6` | — | rocker.a3, 300 f (GDD §7.3.12) |
 
 Rules:
 - **`nextHitAdd` and `incomingFrom` (decay bonus).** Part 3's `Damage.resolve` adds the attacker's `nextHitAdd` and the victim's `incomingFrom` value (when the attacker's style matches) to `flatAdds` (Part 3 §3.8.4). Both apply **only on `hit.kit.firstOfUse`**, and are **clamped** so the move's per-target total for this use cannot exceed its band cap (base 18, a1–a3 20, a4 30, M1 family unclamped; GDD §6.7). `nh` is removed on the first landed hit.
-- **`m1Chain = 6` (Fool's Frenzy).** Part 3's `M1.onPress` allows indexes up to 6 while active. Hits 4 and 5 use the M1-3 frame data and hit 6 is the Ender (td reading of GDD §7.3.12 "her M1 chain becomes 6 hits").
+- **`m1Chain = 6` (Fool's Frenzy).** Part 3's `StatusMods.m1Chain: number?` sets `chainLen = mods.m1Chain or 4` (the Ender index; Part 3 §3.5.1). `M1` is a leaf module, so it reads the mods from `StepCtx.status`, which the adapter computes with `Moves.statusMods` from `Buffs`/`Debuffs` at step start (`mods = ctx.status`, Part 3 §3.4.1). `M1.onPress` continues the chain while `s.M1Idx >= 1 and s.M1Idx < chainLen` within the chain window and returns `(St, Sub, chainIndex)`; the chain index becomes `M1Idx`. Non-Ender hits enter `M1` with `Sub = math.min(idx, 3)`, so hits 4 and 5 reuse the M1-3 frame data and the `anim.<style>.m1_3` clip; `M1Idx` (range 0–6) keeps the chain count, and render treats an `M1Idx` change while `St = M1` as a new entry (Part 3 §3.11.8, Part 6 §6.6.1). The Ender triggers when `idx == chainLen` (hit 6 under Frenzy). No `M1` Sub code above 3 and no `m1_4`/`m1_5` clip exists (td reading of GDD §7.3.12 "her M1 chain becomes 6 hits").
 - **Capacity.** At most 4 entries per list (Part 3 codec). With 5 debuff kinds possible, the entry with the smallest `untilF` is evicted (Part 3 `statusAdd`).
 
 **Verify:** Lune `kit_status.registry_kinds` (every kind used by any kit exists); `kit_status.slow_additive_cap60`; `kit_status.decay_bonus_only_from_decay` (a `dc` 5 victim hit by hero.2 → no add; by decay.1 → +5 on the first hit only); `kit_status.bonus_clamped_to_band` (decay.a1 16 + 5 → 20); `kit_status.nh_consumed_on_hit`; `kit_status.wh_consumed_on_block`; `kit_status.iv_removed_on_attack`.
@@ -1028,7 +1061,7 @@ Part 3's recognized passive/awakening keys are `breakawayRefillMult`, `enderDama
 
 For styles with `passive.params.hoverSec` (`rocker` 3 s, GDD §7.3.12; `frost` 2.5 s, GDD §7.3.13), `Styles.passiveStep`:
 - `St == Air` and Jump held (`Fsm.IN.Jump` bit in `inp.bits`) and `s.Kit > 0` and vertical velocity ≤ 0 →
-  - `motion = vector (md.X·W, 0, md.Z·W)`, where `md = inp.moveDir` and `W = cfg.Chassis.WalkSpeed`;
+  - `motion = vector (md.X·W, 0, md.Z·W)`, where `md = inp.moveDir` and `W = h.cfg.Chassis.WalkSpeed` (`h.cfg` is the pinned Combat section);
   - `patch.Kit = s.Kit − 1`.
 - `St == Idle` (grounded) and `s.Kit ≠ hoverSec·60` → `patch.Kit = hoverSec·60` (refill per jump).
 - Otherwise nothing.
@@ -1047,19 +1080,19 @@ GDD §6.9: +10 meter per landed style moment; GDD §9.2: mastery XP. The tracker
 After each push:
 1. Test the style's `MomentDef.seq` as an ordered subsequence within the last `windowF` frames.
 2. With `sameVictim`, every `:hit` and `wallsplat` token must share one victim (`:use` tokens match any victim).
-3. On a match: append `{k = "style_moment", rid, f, a = victim}` to `HookOut.events`, clear the ring, and block further moments for `Kits.MomentCooldownFrames`.
+3. On a match: append `{k = "style_moment", rid, f, a = victim}` to `HookOut.events`, clear the ring, and block further moments for `h.kits.MomentCooldownFrames` (the attacker's pinned `Kits`).
 4. Log outside the sim: `[ALG][Style] moment style=<id> rid=<rid> victim=<rid>`.
 
 Part 3 grants +10 meter on `style_moment` (Part 3 §3.9.2). Part 5 grants mastery XP from the flushed event.
 
 | Style | Moment (GDD) | Definition |
 |---|---|---|
-| hero | Grass Sword Lash → pull → Flying Kick → Wall Splat (§7.3.1) | `seq = {"hero.3:hit", "hero.4:hit", "wallsplat"}`, `windowF = 180` (td), `sameVictim = true` |
-| stretch | Reflect a projectile back into its owner (§7.3.2) | `onHitDealt`: `info.reflectedHome` → event |
-| monarch | Move 1 root into move 4 beam (§7.3.9) | `seq = {"monarch.1:hit", "monarch.4:hit"}`, `windowF = 180` (td), `sameVictim = true` |
-| rocker | Bat Shift → Invisible Ambush → Red Drain (§7.3.12) | `seq = {"rocker.q:use", "rocker.2:use", "rocker.3:hit"}`, `windowF = 360` (td), `sameVictim = true` |
-| frost | Freeze in Ice Prison, then land the Quirk summon (§7.3.13) | `seq = {"frost.2:hit", "frost.q:hit"}`, `windowF = 180` (td), `sameVictim = true` |
-| decay | Stack 5 Decay, then KO (§7.3.15) | `onKO`: the victim's `dc` stacks ≥ 5 → event |
+| hero | Grass Sword Lash → pull → Flying Kick → Wall Splat (GDD §7.3.1) | `seq = {"hero.3:hit", "hero.4:hit", "wallsplat"}`, `windowF = 180` (td), `sameVictim = true` |
+| stretch | Reflect a projectile back into its owner (GDD §7.3.2) | `onHitDealt`: `info.reflectedHome` → event |
+| monarch | Move 1 root into move 4 beam (GDD §7.3.9) | `seq = {"monarch.1:hit", "monarch.4:hit"}`, `windowF = 180` (td), `sameVictim = true` |
+| rocker | Bat Shift → Invisible Ambush → Red Drain (GDD §7.3.12) | `seq = {"rocker.q:use", "rocker.2:use", "rocker.3:hit"}`, `windowF = 360` (td), `sameVictim = true` |
+| frost | Freeze in Ice Prison, then land the Quirk summon (GDD §7.3.13) | `seq = {"frost.2:hit", "frost.q:hit"}`, `windowF = 180` (td), `sameVictim = true` |
+| decay | Stack 5 Decay, then KO (GDD §7.3.15) | `onKO`: the victim's `dc` stacks ≥ 5 → event |
 
 **Verify:** Lune `kits.moments_sequence` (a token stream per style → exactly one event; an out-of-order stream → none; the second match within 600 f → none). Scenario `kit.moment_meter` (hero performs its moment on a dummy → meter +10 beyond the damage gains; `[ALG][Style] moment` line).
 
@@ -1067,12 +1100,12 @@ Part 3 grants +10 meter on `style_moment` (Part 3 §3.9.2). Part 5 grants master
 
 | Style | Passive (GDD) | Implementation | Quirk (GDD) | Implementation |
 |---|---|---|---|---|
-| hero | Hero's Heart: below 30 HP Breakaway refills 50% faster and the Ender deals +2 (§7.3.1) | Data: `lowHpThreshold = 30, lowHp = {breakawayRefillMult = 1.5, enderDamageAdd = 2}` (Part 3 recognized keys). `onLowHP`: event `{k = "face", s = "grit"}` (render) | Sword Swap: toggle between two swords, mode A (move 1 startup −3f) and mode B (move 1 +30% guard damage), CD 3 | `Buff` with `toggleMode` (§4.2.8). `Kit` 0 = first mode (spawn), 1 = second. Variants of `hero.1` via `Styles.variants`. Gear blade colour follows `Kit` (§4.7.4) |
-| stretch | Rubber Body: ragdolls end 10f earlier (§7.3.2) | Data: `ragdollFramesAdd = -10` (Part 3 `Stun.ragdollFrames`) | Stretch Grapple to terrain ≤ 40 studs, CD 6 | `Mobility` mode `grapple` (§4.2.9) |
-| monarch | Scientific Method: landing two *different* moves within 4 s reduces all cooldowns by 1 s (§7.3.9) | `onHitDealt` (server, `outcome == "hit"`, `firstOfUse`, kind ≠ M1 family). Server memory `sm[rid] = {slot, f}`. If `sm.slot ≠ nil`, `sm.slot ≠ info.slot` and `f − sm.f ≤ 240` → `cooldownsMinusSec = 1` and `sm = nil` (td: each pair triggers once). Otherwise `sm = {info.slot, f}`. Summon and zone hits count for their source move (td) | Analyze: shows the target's cooldowns and meter for 5 s, CD 8 | `Buff` with `analyze` (presentation only, §4.2.8) |
-| rocker | Color Drain: each Ender she lands heals 2 HP; she can hover 3 s per jump (§7.3.12) | `onHitDealt`: `info.isEnder and outcome == "hit"` → `heal = 2`. Hover data `hoverSec = 3`, `hoverMode = "hold"` (§4.3.4) | Bat Shift: fly 25 studs, i-frames on frames 1–6, CD 5 | `Mobility` mode `flight`, `iFrames = {from = 1, to = 6}` |
-| frost | Beard Flight: hold Jump to hover 2.5 s (§7.3.13) | Data `hoverSec = 2.5`, `hoverMode = "hold"` | Quirk summon: waddles to the nearest enemy and smashes a bottle (18f flinch), 3 dmg, CD 6 | `Summon` `ai = "chase"`, `once = true`, `stun = "flinch"` |
-| decay | Extinction: hits apply Decay (max 5 stacks, 8 s); each stack blocks regen and adds +1 damage to his next hit (max +5) (§7.3.15) | `onHitDealt` (outcome `hit`, `firstOfUse`): `n = def.params.decayStacks or 1` for moves, 1 for the **Ender only** among M1s (td, see §4.11 Q1), 0 for `tick` hits → `debuffsOnVictim = {{kind = "dc", frames = 480, n = n}}`. The bonus is `incomingFrom` (§4.3.2). `onKO`: moment | Hypnotic Whisper: Whispered for 4 s, camera sway, next block raises 6f later, CD 8 | `Buff` `target = "front"`, `debuffs = {{kind = "wh", frames = 240, n = 1}}`. The camera sway is client-local on the victim, scaled to 0 with Reduced Motion (Part 6) |
+| hero | Hero's Heart: below 30 HP Breakaway refills 50% faster and the Ender deals +2 (GDD §7.3.1) | Data: `lowHpThreshold = 30, lowHp = {breakawayRefillMult = 1.5, enderDamageAdd = 2}` (Part 3 recognized keys). `onLowHP`: event `{k = "face", s = "grit"}` (render) | Sword Swap: toggle between two swords, mode A (move 1 startup −3f) and mode B (move 1 +30% guard damage), CD 3 | `Buff` with `toggleMode` (§4.2.8). `Kit` 0 = first mode (spawn), 1 = second. Variants of `hero.1` via `Styles.variants`. Gear blade colour follows `Kit` (§4.7.4) |
+| stretch | Rubber Body: ragdolls end 10f earlier (GDD §7.3.2) | Data: `ragdollFramesAdd = -10` (Part 3 `Stun.ragdollFrames`) | Stretch Grapple to terrain ≤ 40 studs, CD 6 | `Mobility` mode `grapple` (§4.2.9) |
+| monarch | Scientific Method: landing two *different* moves within 4 s reduces all cooldowns by 1 s (GDD §7.3.9) | `onHitDealt` (server, `outcome == "hit"`, `firstOfUse`, kind ≠ M1 family). Server memory `sm[rid] = {slot, f}`. If `sm.slot ≠ nil`, `sm.slot ≠ info.slot` and `f − sm.f ≤ 240` → `cooldownsMinusSec = 1` and `sm = nil` (td: each pair triggers once). Otherwise `sm = {info.slot, f}`. Summon and zone hits count for their source move (td) | Analyze: shows the target's cooldowns and meter for 5 s, CD 8 | `Buff` with `analyze` (presentation only, §4.2.8) |
+| rocker | Color Drain: each Ender she lands heals 2 HP; she can hover 3 s per jump (GDD §7.3.12) | `onHitDealt`: `info.isEnder and outcome == "hit"` → `heal = 2`. Hover data `hoverSec = 3`, `hoverMode = "hold"` (§4.3.4) | Bat Shift: fly 25 studs, i-frames on frames 1–6, CD 5 | `Mobility` mode `flight`, `iFrames = {from = 1, to = 6}` |
+| frost | Beard Flight: hold Jump to hover 2.5 s (GDD §7.3.13) | Data `hoverSec = 2.5`, `hoverMode = "hold"` | Quirk summon: waddles to the nearest enemy and smashes a bottle (18f flinch), 3 dmg, CD 6 | `Summon` `ai = "chase"`, `once = true`, `stun = "flinch"` |
+| decay | Extinction: hits apply Decay (max 5 stacks, 8 s); each stack blocks regen and adds +1 damage to his next hit (max +5) (GDD §7.3.15) | `onHitDealt` (outcome `hit`, `firstOfUse`): `n = def.params.decayStacks or 1` for moves, 1 for the **Ender only** among M1s (td, see §4.11 Q1), 0 for `tick` hits → `debuffsOnVictim = {{kind = "dc", frames = 480, n = n}}`. The bonus is `incomingFrom` (§4.3.2). `onKO`: moment | Hypnotic Whisper: Whispered for 4 s, camera sway, next block raises 6f later, CD 8 | `Buff` `target = "front"`, `debuffs = {{kind = "wh", frames = 240, n = 1}}`. The camera sway is client-local on the victim, scaled to 0 with Reduced Motion (Part 6) |
 
 **Verify:** Lune `kits.hero_heart_low_hp` (via `kit_status.chassis_from_data`), `kits.monarch_scientific_method` (hits 1 then 3 within 240 f → `cooldownsMinusSec = 1`; 1 then 1 → none; 1 then 3 at 241 f → none), `kits.rocker_color_drain`, `kits.decay_stacks_per_use` (decay.a3: three skulls hitting one target → +1 stack total, because only the `firstOfUse` hit counts, td), `kits.decay_m1_ender_only`.
 
@@ -1100,12 +1133,12 @@ Part 3 runs activation (72 f, invulnerable, heal 10, +1 pip, shockwave), duratio
 
 | Style | Awakening (GDD) | `hurtboxScale` | `modifiers` |
 |---|---|---|---|
-| hero | M1 range +3 studs (§7.3.1) | 1 | `{ m1RangeAdd = 3 }` |
-| stretch | Giant form: hurtbox ×1.5, walk −15%, AoEs ×1.5 (§7.3.2) | 1.5 | `{ walkSpeedMult = 0.85, visualScale = 2 }` |
-| monarch | Battle armour, visual only (§7.3.9) | 1 | `{}` |
-| rocker | Essence swirl, visual only (§7.3.12) | 1 | `{}` |
-| frost | Crown flare, visual only (§7.3.13) | 1 | `{}` |
-| decay | Towering form: hurtbox ×1.3, decay aura (§7.3.15) | 1.3 | `{ visualScale = 1.6, aura = "vfx.decay.aura" }` |
+| hero | M1 range +3 studs (GDD §7.3.1) | 1 | `{ m1RangeAdd = 3 }` |
+| stretch | Giant form: hurtbox ×1.5, walk −15%, AoEs ×1.5 (GDD §7.3.2) | 1.5 | `{ walkSpeedMult = 0.85, visualScale = 2 }` |
+| monarch | Battle armour, visual only (GDD §7.3.9) | 1 | `{}` |
+| rocker | Essence swirl, visual only (GDD §7.3.12) | 1 | `{}` |
+| frost | Crown flare, visual only (GDD §7.3.13) | 1 | `{}` |
+| decay | Towering form: hurtbox ×1.3, decay aura (GDD §7.3.15) | 1.3 | `{ visualScale = 1.6, aura = "vfx.decay.aura" }` |
 
 Notes:
 - **stretch giant-form AoE ×1.5.** It is authored into the a1–a4 data, which exists only in that form (td reading, see §4.11 Q2). There is no runtime `aoeScale`.
@@ -1126,6 +1159,7 @@ Part 3 keys rules by `RuleId` = the MoveDef id (Part 3 §3.9.3).
 ```lua
 --!strict
 -- content of Realm.rules in src/Shared/Core/Realm.luau (Part 4 fills; Part 3 owns the type and framework)
+-- Realm is a leaf Core module: it requires only Types/Frames/Rng, so it writes Types.Status/Types.HitDef (Part 3 §3.4.1)
 rules["decay.a4"] = {
 	healMult = function(m: MemberView): number
 		return if m.isCaster then 1 else -1 -- GDD §7.3.15 "enemy healing is reversed (heals deal damage instead)"
@@ -1134,7 +1168,7 @@ rules["decay.a4"] = {
 		return 0.7 -- GDD §7.3.15: the caster's move cooldowns are −30%
 	end,
 	tickFrames = 120, -- GDD §7.3.15 "+1 Decay every 2 s"
-	tick = function(_r: RealmView, m: MemberView, f: number): { statusAdd: Moves.Status?, hit: Fsm.HitDef? }?
+	tick = function(_r: RealmView, m: MemberView, f: number): { statusAdd: Types.Status?, hit: Types.HitDef? }?
 		if m.isCaster or m.warded then
 			return nil -- Stubborn Heart negates rule effects (GDD §6.10)
 		end
@@ -1149,8 +1183,8 @@ Implications enforced by Part 3's framework:
 - **Decay +1 per 2 s.** It feeds the passive's `incomingFrom` bonus, so the caster's first hit per use gains up to +5 inside the Realm.
 
 **Verify:** Lune `kits.realm_well_rules` in `kits.spec.luau` (an enemy MemberView → `healMult −1`; caster → 1; warded → `tick` nil; `cooldownMult 0.7`). Scenario `kit.decay.realm` (decay awakened casts a4 with 2 dummies at 10 and 30 studs and 1 at 45):
-- after 90 f, members are 2, and `[ALG][Combat] realm_open` appears (Part 3 event log);
-- each member has `dc` stacks = 1 after 2 s and 3 after 6 s;
+- after 90 f, members are **3**: `RlmId` is set on the caster and on the 2 dummies inside 40 studs (members include the caster, Part 3 §3.9.3), not on the dummy at 45; `[ALG][Combat] realm_open` appears (Part 3 event log);
+- each non-caster member has `dc` stacks = 1 after 2 s and 3 after 6 s; the caster gets none (the rule returns nil for `m.isCaster`);
 - a dummy healed 5 by the test seam loses 5 instead;
 - `Cd1` set while inside is `0.7 ×` the base cooldown;
 - the realm closes at 12 s.
@@ -1223,7 +1257,7 @@ return function(K: Kit.KitBuilder): Kit.StyleModule
 				behavior = "Projectile", tags = { "Projectile", "Extender" }, damage = 6, cooldown = 12, -- GDD §7.3.1
 				startup = 10, active = 4, recovery = 18, guardDamage = 20, hitstun = 34, -- (td)
 				params = { kind = "beam", range = 28, width = 2, extendF = 4, reflectable = false, -- 28 studs: GDD §7.3.1
-					onHit = { pull = { stopStuds = 4, frames = 12 } } }, -- "yanks the target toward" (GDD); (td)
+					onHit = { pull = { stopStuds = 4, frames = 12 } } }, -- "yanks the target toward" (GDD); (td); frames = min(hitstun, 12) (§4.2.0.2)
 			}),
 			M("hero.4", { -- canon: GDD §7.3.1 row 4
 				behavior = "Rush", tags = { "Rush", "Opener" }, signature = true, damage = 14, cooldown = 16, -- GDD §7.3.1
@@ -1346,7 +1380,7 @@ return function(K: Kit.KitBuilder): Kit.StyleModule
 			}),
 		},
 		awakening = {
-			id = "stretch.awaken", durationSec = 60, hurtboxScale = 1.5, -- GDD §6.9; ×1.5 (GDD §6.2, §7.3.2)
+			id = "stretch.awaken", durationSec = 60, hurtboxScale = 1.5, -- GDD §6.9; ×1.5 (GDD §6.2, GDD §7.3.2)
 			modifiers = { walkSpeedMult = 0.85, visualScale = 2 }, -- walk −15%, 2× size (GDD §7.3.2)
 			moves = {
 				M("stretch.a1", { -- canon: GDD §7.3.2 A1
@@ -1737,7 +1771,7 @@ return function(K: Kit.KitBuilder): Kit.StyleModule
 end
 ```
 
-#### 4.5.7 `decay` (GDD §7.3.15, Legendary, DecayLich)
+#### 4.5.7 `decay` (GDD §7.3.15, Legendary, DecayUndead)
 
 ```lua
 --!strict
@@ -1747,7 +1781,7 @@ local Kit = require("../Behaviors/Buff")
 return function(K: Kit.KitBuilder): Kit.StyleModule
 	local M, box, kb, tele, v3 = K.move, K.box, K.kb, K.tele, K.v3
 	local def = {
-		id = "decay", rarity = "legendary", archetype = "DecayLich", implemented = true, hp = 100, -- GDD §7.2, §6.2
+		id = "decay", rarity = "legendary", archetype = "DecayUndead", implemented = true, hp = 100, -- GDD §7.2, §6.2
 		palette = { primary = K.rgb(124, 255, 79), secondary = K.rgb(30, 42, 30), accent = K.rgb(216, 210, 184) },
 		passive = { id = "decay.passive", params = { maxStacks = 5, stackFrames = 480, perStack = 1, maxBonus = 5 } }, -- GDD §7.3.15
 		quirk = M("decay.q", { -- canon: GDD §7.3.15 Quirk
@@ -1780,7 +1814,7 @@ return function(K: Kit.KitBuilder): Kit.StyleModule
 				startup = 10, active = 2, recovery = 22, guardDamage = 30, hitstun = 72, -- 10f telegraph; possessed 72f (GDD)
 				telegraph = tele("Line", 10, 3, 40),
 				params = { kind = "bullet", speed = 160, range = 40, radius = 1.5, pierce = 0, reflectable = true, -- (td)
-					onHit = { stun = "possess", pull = { stopStuds = 5, frames = 72 }, meterDrain = 15 } }, -- pulled, −15 meter (GDD)
+					onHit = { stun = "possess", pull = { stopStuds = 5, frames = 72 }, meterDrain = 15 } }, -- pulled, −15 meter (GDD); frames = hitstun (possess, §4.2.0.2)
 			}),
 		},
 		awakening = {
@@ -1864,7 +1898,7 @@ return function(K: Kit.KitBuilder): Kit.StyleModule
 end
 ```
 
-Stack rule implemented by `decay.onHitDealt` (`h.moves` is `Styles.move`, passed in `HookCtx`, §4.3.1):
+Stack rule implemented by `decay.onHitDealt` (`h.moves` is the attacker's pinned kit set `move`, passed in `HookCtx`, §4.3.1):
 
 | Hit (outcome `"hit"`, `firstOfUse`) | Stacks added |
 |---|---|
@@ -1987,7 +2021,7 @@ Markers (`KeyframeMarker` via `Keyframe:AddMarker`; `Name` + `Value`, [Docs `Key
 | `Recovery` | `MoveId` | K5 (time `S + A`; the builder adds a pose-less keyframe if needed) |
 | `Face` | `face.recovery` (default `neutral`) | K5 |
 
-The notation "`Face:<expr>`" (agent-assets §7.2) means `Name = "Face"`, `Value = "<expr>"`. Expression names are from the 24-key face set: `neutral, smile, grit, shout, awaken, …` (Part 6). Listeners use `AnimationTrack:GetMarkerReachedSignal(name)`, which is not Simulation-Access. It is used **only** in RenderController, never for gameplay timing (Part 3 §3.1.5).
+The notation "`Face:<expr>`" (agent-assets §7.2) means `Name = "Face"`, `Value = "<expr>"`. Expression names are from the 24-key face set: `neutral, smile, grit, shout, awaken, …` (Part 6). **No runtime code listens to these markers**: `AnimationTrack:GetMarkerReachedSignal` is not Simulation-Access, and VFX/SFX/face timing comes from MoveDef frame data (§4.2.0.7, Part 3 §3.1.5). The markers exist for the §4.6.4 timing-lock check and as the animator's timing sheet.
 
 Studio registration: `Assets.registerStudioClips(ReplicatedStorage.Anim)` (Part 2 §2.9.1) calls `AnimationClipProvider:RegisterAnimationClip` per sequence. `KeyframeSequenceProvider` is deprecated and banned. Online and multi-peer tests need published IDs (§0.5, H-08).
 
@@ -2057,7 +2091,10 @@ A final (artist) animation for key `anim.<style>.<slot>` MUST:
 Check: Studio scenario `anim.timing_lock` (server, Studio only). For every manifest key with `kind = "anim"` and `status = "final"`:
 1. `AnimationClipProvider:GetAnimationClipAsync(id)` (yields, security None [Docs `AnimationClipProvider.yaml`]), wrapped in `pcall`;
 2. read `AnimationClip.Length`, polling until non-zero, timeout 5 s [Docs];
-3. walk `KeyframeSequence:GetKeyframes()` / `Keyframe:GetMarkers()` and compare against the placeholder spec recomputed from the MoveDef.
+3. collect `(name, time)` markers by the clip's class, then compare against the placeholder spec recomputed from the MoveDef:
+   - `clip:IsA("KeyframeSequence")`: `KeyframeSequence:GetKeyframes()`, then `Keyframe:GetMarkers()` on each; name = `KeyframeMarker.Name`, time = the parent `Keyframe.Time` [Docs `KeyframeSequence.yaml`, `Keyframe.yaml`, `KeyframeMarker.yaml`];
+   - `clip:IsA("CurveAnimation")` (common for final artist clips; it has no keyframes): every descendant `MarkerCurve`; name = the `MarkerCurve`'s `Name`, times from `MarkerCurve:GetMarkers()`, which returns the time and string value of each marker [Docs `CurveAnimation.yaml`, `MarkerCurve.yaml`]. The record field names and the one-curve-per-marker-name layout are checked on the first final clip (verify in spike);
+   - any other class: `[ALG][TEST] anim.timing_lock FAIL key=<key> unsupported clip class <ClassName>`.
 
 `anim.placeholders_built` asserts that every MoveDef and M1 variant key resolves to a sequence whose `Frames` attribute equals S+A+R. It also asserts that marker counts match.
 
@@ -2161,7 +2198,8 @@ Build rules:
 - **Unions.** `GeometryService:UnionAsync(part, parts, {SplitApart = false})` (yields; security None; returns an array [Docs `GeometryService.yaml`]) runs at **Edit time** inside the builder. Never at runtime.
 - **Flags.** All parts: `CanCollide = false`, `CanQuery = false`, `CanTouch = false`, `Massless = true`, `CastShadow = false`, Material `SmoothPlastic`.
 - **Colours.** From the palette unless stated.
-- **Attaching.** Part 6's AppearanceController attaches gear client-side (`Humanoid:AddAccessory` on the look model). It is shown only when `ShowStyleGear` is on and Character Look is off (§0.4 Appearance).
+- **Attaching.** Part 6's AppearanceController attaches gear client-side: it welds each Handle so that its named attachment matches the same-named attachment on the proxy or real part (Part 6 §6.8.3). The look model is a Humanoid-less `LookRig_R15` proxy, so `Humanoid:AddAccessory` is not used. Gear is shown only when `ShowStyleGear` is on and Character Look is off (§0.4 Appearance).
+- **Look sets.** The recipes in this section and §4.7.5 are the **`Codename`** look set (also used for Canon until licensed art exists). The **`Original`** look set (Part 8 §8.5.6; e.g. hero: sprout cap, satchel, leaf-blade) keeps the same keys, attachments and `kitProps`, and `BuildTemplates` builds one look set per run (attribute `LookSet`). Lune `ip.gear_not_codename_clone` (Part 8) compares each Original recipe against the recipes here, skipping `model.frost.summon_golem` (unchanged). With `Features.CodenameLooks == false`, Part 6's AppearanceController hides the Codename look set (Part 8 §8.6.3).
 
 | Key | Attach | Parts (shape, size in studs, colour, offset from Handle) |
 |---|---|---|
@@ -2200,7 +2238,7 @@ RenderController (Part 6) reads `Buffs`/`Debuffs` (decoded with `Moves.statusDec
 - **Debuffs.** `rt`, `sl`, `si` and `dc` show `VFX_Status_Pips` above the head; `dc` shows n pips. The freeze flavour (`Hitstun` Sub 2) shows `VFX_Encase_Block`. `wh` sways the victim's own camera by ±1.5° at 0.5 Hz, scaled by the camera-shake setting and set to 0 with Reduced Motion (GDD §16.3).
 - **Stealth `iv`.** For viewers who are enemies of the owner and farther than 12 studs (GDD §7.3.12), hide the look (`LocalTransparencyModifier = 1`) and the nameplate (td), keeping `VFX_Stealth_Shimmer`. The owner and allies see the owner at 50% transparency. Telegraphs and hit flashes are never hidden.
 
-**Verify:** scenario `look.stealth_ranges` (two clients: an enemy at 20 studs sees the shimmer only; at 8 studs it sees the look).
+**Verify:** scenario `look.stealth_ranges`, level **`multi`** (two clients; skipped outside multi mode, so it runs only through `multi(2, Baseline30, look.stealth_ranges)`, never a solo `studio(…)` selector): an enemy at 20 studs sees the shimmer only; at 8 studs it sees the look.
 
 ---
 
@@ -2228,7 +2266,7 @@ RenderController (Part 6) reads `Buffs`/`Debuffs` (decoded with `Moves.statusDec
 9. **Skin keys.** `style.<id>.name`, `style.<id>.epithet`, `move.<id>.{1..4,q,a1..a4,passive,awaken}.name` in the `Codename` and `Original` packs (Part 8). `lint_strings` must be clean.
 10. **Tests.**
     - `lune run tests/run.luau`: `styles.*`, `kits.<id>.gdd_numbers` (add the row to §4.5.9's table), `behaviors.*`, `kit_status.*`;
-    - scenario `kit.<id>.smoke`: each slot used on a training dummy; HP delta = `maxDamage` for single-target hits (± 0.1, chip excluded); cooldown attribute = `f + toFrames(cooldown)`; no `[ALG][Style] ERROR`;
+    - scenario `kit.<id>.smoke`: each slot used on a training dummy. Before each slot, clear carried-over flat adds: `CombatService._queuePatch(dummy, {Debuffs = ""})` and `CombatService._queuePatch(attacker, {Buffs = "", Kit = 0})` (Studio seams; or use a fresh dummy slot). Otherwise decay.1's Decay stack adds +1 to decay.2 and rocker.2's `nh` adds +5 to rocker.3 (§4.3.2). Expected HP delta = `maxDamage` for single-target hits (± 0.1, chip excluded), or `maxDamage` + the active flat adds clamped to the band cap when the scenario deliberately chains a slot; cooldown attribute = `f + toFrames(cooldown)`; no `[ALG][Style] ERROR`;
     - `kit.awaken.swap`, `anim.placeholders_built`.
 11. **Docs.**
     - `lune run tools/export_framedata.luau` (regenerates `docs/reference/framedata.json`);
@@ -2245,34 +2283,37 @@ RenderController (Part 6) reads `Buffs`/`Debuffs` (decoded with `Moves.statusDec
 3. **Config.** New top-level `Kits` section (§4.1.6) with ConfigService key `ALG_Kits`, pinned with `CombatCfg` (Part 2 §2.6.6).
    - `Combat.Realm` keys read here: `CastFrames` (90), `RadiusStuds` (40), as Part 3 §3.17 names them.
    - `Combat.Awakening.DurationSec` (60) is read by K10.
-4. **`BehaviorModule` extensions** (Part 3 §3.4.2 / §3.18 item 10): optional `name`, `validate`, `maxDamage`, `tellFrames`, `blockable`, `intercept`, `hurtCarrier`, `reflectCarrier`, plus Part 3's `stepCarrier(view, f)` on `Projectile`, `Zone` **and `Summon`** (§4.2.0.1).
+4. **`BehaviorModule` extensions** (Part 3 §3.4.2 / §3.18 item 10): optional `name`, `validate(def, cfg)` (`cfg` = full `Types.Config`; boot validator), `maxDamage`, `tellFrames`, `blockable`, `intercept`, `hurtCarrier`, `reflectCarrier`, plus Part 3's `stepCarrier(view, f)` on `Projectile`, `Zone` **and `Summon`** (§4.2.0.1), and the pure helper `Zone.pullVelocity(def, carrierPos, rootPos)` (§4.2.6).
    - Part 3 calls `intercept` before `Damage.resolve` when the victim is in `Move` and its behavior defines it.
    - Part 3 calls `hurtCarrier` when a carrier hurtbox is hit, and `reflectCarrier` on a `reflect` verdict.
    - `Styles.behavior("Strike")` returns `nil`.
-5. **`BehaviorCtx` additions:** `inp: Fsm.InputFrame` and `ray(origin, dir) -> (Vector3?, Vector3?)` (static world, `WorldQuery` group, excluding `workspace.Sim`).
-   - **Carrier view content:** the `view` argument of `stepCarrier` is `CarrierView`, with `CarrierOut` and `FighterLite` (§4.2.0.3).
+5. **`BehaviorCtx` additions:** `inp: Fsm.InputFrame` and `ray(origin, dir) -> (Vector3?, Vector3?)` (static world, `WorldQuery` group, excluding `workspace.Sim`). Pinned config (Part 3 §3.11.1 `RosterEntry.fullCfg`/`kitSet`, §3.4.2): `cfg` stays the pinned **Combat section**; Part 3 adds `kits` (= `fullCfg.Kits`) and `moves` (= `kitSet.move`). Behaviors and hooks never read `cfg.Combat.X`, a bare `Kits.X` or `Runtime`.
+   - **Carrier view content:** the `view` argument of `stepCarrier` is `CarrierView`, with `CarrierOut` and `FighterLite` (§4.2.0.3). `view.cfg`, `view.kits` and `view.moves` are the carrier owner's pinned Combat section, `Kits` section and kit set.
    - **Carrier params:** dynamic only, ≤ 10, always including `lifeF`; static data is read from the MoveDef.
    - **Death:** `dead` → `Dead = true`.
    - **Rush echo:** an echo carrier (`Kind = "zone"`, `sub = 1`) is dispatched to `Zone.stepCarrier`.
-6. **`Fsm.HitDef.kit: KitHitExt?`** (§4.2.0.2):
+6. **`Fsm.HitDef.kit: KitHitExt?`** (§4.2.0.2; Part 3 §3.4.1 declares it as `kit: any?` so `Types` stays a leaf):
    - `stun`, `debuffs`, `pull`, `meterDrain`, `healSelf`, `grab`, `release`, `reflectable`, `firstOfUse`;
-   - Part 3 applies them in the server consequence phase, only on outcome `"hit"` (`grab` on catch);
+   - Part 3 applies them in the server consequence phase, only on outcome `"hit"` (`grab` on catch); `pull` is a single `KbV` write whose motion the victim derives (item 11);
    - Part 3 sets `firstOfUse`.
-7. **`Fsm.HitboxReq.coneDeg`** (Sphere angular filter) and **`Fsm.HitRequest.heldOnly`** (targets = victims Grabbed by this attacker).
+7. **`Fsm.HitboxReq.coneDeg`** (Sphere angular filter) and **`Fsm.HitRequest.heldOnly`** (targets = victims Grabbed by this attacker), both declared in Part 3 §3.4.1. Part 3 adds `HitRequest.carrier` itself (§4.2.0.5 item 7).
 8. **`Hitstun` Sub codes** 2 freeze, 3 float, 4 stumble, 5 possess, 6 flinch (§4.2.0.2), and **`Grabbed` Sub codes** 1–6 (§4.2.4). `Stagger` Sub 3 is used for counter bounces with the reaction's `hitstun`.
-9. **`SpawnRequest.serverOnly: boolean?`**: when true, Part 3 creates the carrier on the server branch only (Part 3 §3.11.5 "server-only creation"). Used by summons and homing projectiles. Targetable summon carriers (`hp > 0`) also get `CanQuery = true`, `CollisionGroup = "Hurtbox"` and `Size = params.hurtbox` (default 3×5×3).
+9. **`SpawnRequest.serverOnly: boolean?`** (declared in Part 3 §3.4.1): when true, Part 3 creates the carrier on the server branch only (Part 3 §3.11.5 "server-only creation"). Used by summons and homing projectiles. Targetable summon carriers (`hp > 0`) also get `CanQuery = true`, `CollisionGroup = "Hurtbox"` and `Size = params.hurtbox` (default 3×5×3).
 10. **Grab release.** Part 3 detaches `ALG_Hold` whenever the holder leaves `Move`, and whenever a hit with `kit.release = true` resolves.
-11. **Zone pull.** A zone MoveDef with `params.pullStudsPerSec` makes Part 3 apply an S-class planar push toward the carrier centre on enemies inside, every step. Grabs: on catch, Part 3 sets the attacker's `ALG_Grab.CFrame = CFrame.new(kit.grab.offset)` and the victim's `ALG_Hold.Attachment1` to it; on release it resets `ALG_Grab` to (0, 0, −2.5).
-12. **Kit-mode variants.** `Fsm.StyleRuntime.variants: { [moveId]: { MoveDef } }` from `Styles.variants(def)`. `Moves.defFor` returns `variants[id][s.Kit + 1]` when present.
+11. **Pulls (Server Authority: cause once, effect derived).**
+    - **`kit.pull`** (§4.2.0.2): on outcome `"hit"` the server writes the victim's `KbV` once, `flat(attRoot − vicRoot).Unit · (max(dist − stopStuds, 0)·60/frames)` (Q-rule). The victim's FSM applies it as a planar push with the existing Push profile (B-class) for `N` frames: `N = StDur` for `Hitstun` Sub 5 (`possess`), else `min(StDur, Stun.MoveKbFramesMax)`.
+    - **Zone pull** (§4.2.6): B-class, implemented by Part 3 §3.11.5. In each character's own step (both peers), Part 3's adapter scans the live zone carriers in `workspace.Sim` whose MoveDef has `params.pullStudsPerSec` and whose `Own` is not this character, and adds `Zone.pullVelocity(def, carrierPos, rootPos)` (planar, toward the carrier centre, rounded to 0.01) to the character's motion. There is no per-frame S-class mover write.
+    - **Grab attachments:** on catch, Part 3 sets the attacker's `ALG_Grab.CFrame = CFrame.new(kit.grab.offset)` and the victim's `ALG_Hold.Attachment1` to it; on release it resets `ALG_Grab` to (0, 0, −2.5).
+12. **Kit-mode variants.** `Fsm.StyleRuntime.variants: { [moveId]: { MoveDef } }` (declared in Part 3 §3.4.1) from `Styles.variants(def)`. `Moves.defFor` returns `variants[id][s.Kit + 1]` when present.
 13. **Hook dispatch.**
     - Part 3 calls `Styles.passiveStep(h, inp)` after `Fsm.step` (both peers); its `motion` applies only when the FSM motion is `none` and `St == Air`.
     - Part 3 calls `Styles.serverHook(kind, h, info)` for `use, hitDealt, hitTaken, blocked, perfectBlocked, ko, lowHp, wallsplat` (server, consequence phase) and `awaken/awakenEnd` (both).
-    - `HookCtx` includes `moves = Styles.move` for lookups.
+    - `HookCtx` includes `cfg` (pinned Combat section), `kits` (pinned `Kits`) and `moves` (= `RosterEntry.kitSet.move`, the pinned kit set) for lookups.
     - `HookOut` fields are applied as in §4.3.1.
 14. **`Moves.STATUS` content** (§4.3.2), the `consumeOn` flag, the `incomingFrom` field and `StatusMods.m1Chain`.
     - `nextHitAdd` applies to the owner's outgoing hits only.
     - Both adds apply on `firstOfUse`, clamped to the move's band cap.
-    - Part 3's `M1.onPress` honours `m1Chain`.
+    - Part 3's `M1.onPress` honours `m1Chain`, read from `StepCtx.status` (`mods = ctx.status`): `chainLen = mods.m1Chain or 4`; continue while `s.M1Idx >= 1 and s.M1Idx < chainLen`; returns `(St, Sub, chainIndex)` with non-Ender `Sub = math.min(idx, 3)`; Ender when `idx == chainLen`; `M1Idx` range 0–6 (Part 3 §3.5.1, §3.3).
 15. **Move entry and chassis data.** Part 3's `Move` entry effects zero `MvA` and `MvB`. **Chassis data convention:** kits use exactly Part 3's recognized keys (`ragdollFramesAdd`, `lowHpThreshold` + `lowHp`, `m1RangeAdd`, `walkSpeedMult`, …). Part 4-only keys are `hoverSec`/`hoverMode` (read by `passiveStep`) and the render-only `visualScale`/`aura` in `awakening.modifiers`, which Part 3 must ignore (§4.3.3). Behavior `patch` writes `MvA`, `MvB`, `Kit` (B) and `Buffs`, `StDur`, `CdQ` (B·S). Part 3's adapter must accept these from behavior and hook outputs (Part 3 §3.11.4).
 16. **`Kit` attribute semantics per style:** hero = Sword Swap mode; rocker and frost = hover frames left; others = 0. `MvA`/`MvB` usage per behavior: once-bits, hit counters, grab hold data (§4.2).
 17. **SimEvent kinds added:** `"face"` (render-only face cue), `"summon_down"`. `"style_moment"` uses `a = victim rid`.
@@ -2282,7 +2323,7 @@ RenderController (Part 6) reads `Buffs`/`Debuffs` (decoded with `Moves.statusDec
     - `Styles.SFX_SPEED`.
 19. **Placeholder animation contract** (§4.6): naming, attributes (`AssetKey`, `MoveId`, `Frames`, `Gen`), marker names and values, the timing-lock rule, and `docs/reference/framedata.json`.
 20. **Log lines:** `[ALG][Style] registry ok …`, `[ALG][Style] registry loaded …`, `[ALG][Style] ERROR rule=…`, `[ALG][Style] moment …`, `[ALG][Style] carrier cap …`.
-21. **Lune specs and test files:** `tests/core/styles.spec.luau`, `kits.spec.luau`, `behaviors.spec.luau`, `kit_status.spec.luau`, `tests/shim/FakeCtx.luau`. **Scenarios:** `style.registry_boot`, `config.kits_override_next_life`, `kit.<style>.smoke` ×6, `kit.awaken.swap`, `kit.awaken.hurtbox`, `kit.grab_vs_jump`, `kit.grab_breakaway`, `kit.stretch.shield_reflect`, `kit.rocker.batshift_iframes`, `kit.frost.hover`, `kit.decay.well_heal`, `kit.decay.realm`, `kit.moment_meter`, `anim.placeholders_built`, `anim.timing_lock`, `look.stealth_ranges`.
+21. **Lune specs and test files:** `tests/core/styles.spec.luau`, `kits.spec.luau`, `behaviors.spec.luau`, `kit_status.spec.luau`, `tests/shim/FakeCtx.luau`. **Scenarios:** `style.registry_boot`, `config.kits_override_next_life`, `kit.<style>.smoke` ×6, `kit.awaken.swap`, `kit.awaken.hurtbox`, `kit.grab_vs_jump`, `kit.grab_breakaway`, `kit.stretch.shield_reflect`, `kit.rocker.batshift_iframes`, `kit.frost.hover`, `kit.decay.well_heal`, `kit.decay.realm`, `kit.moment_meter`, `anim.placeholders_built`, `anim.timing_lock`, and `look.stealth_ranges` (level `multi`: `multi(2, Baseline30, look.stealth_ranges)` only). Lune tests that pin the zone blockable defaults, the B-class zone pull and the flight pitch clamp: `behaviors.zone_blockable_defaults`, `behaviors.zone_pull_b_class`, `behaviors.mobility_flight_pitch_clamp`.
 22. **Realm content:** `Realm.rules["decay.a4"]` (§4.4.3), keyed by MoveDef id (Part 3 §3.9.3).
 
 ### 4.10 Issues with spine
@@ -2292,7 +2333,7 @@ RenderController (Part 6) reads `Buffs`/`Debuffs` (decoded with `Moves.statusDec
 3. **No file for shared kit types.** §0.3 fixes the file list. Part 4's shared types and helpers live in `Behaviors/Buff.luau` (the "kit kernel"), because a separate module would add a file.
 4. **Core ownership.** Part 2 lists `Core/Realm.luau` as Part 4's; Part 3 claims the framework and leaves only `Realm.rules` to Part 4. This part follows Part 3, and also writes `Moves.STATUS` content inside Part 3's `Core/Moves.luau`.
 5. **Canon references.** The brief asks for canon references in comments, but Part 1/Part 8 forbid canonical names in code. Comments use `canon: GDD §7.3.N <slot>` pointers.
-6. **Extender rule vs GDD kits.** GDD §6.7 requires ≥ 1 extender per base kit. The GDD kit tables for `monarch`, `frost` and `decay` (§7.3.9, §7.3.13, §7.3.15) tag no move `Extender`. K04 accepts a frame-verified `params.extender` (monarch.1, frost.1, decay.1) without changing GDD tags. Design should confirm.
+6. **Extender rule vs GDD kits.** GDD §6.7 requires ≥ 1 extender per base kit. The GDD kit tables for `monarch`, `frost` and `decay` (GDD §7.3.9, GDD §7.3.13, GDD §7.3.15) tag no move `Extender`. K04 accepts a frame-verified `params.extender` (monarch.1, frost.1, decay.1) without changing GDD tags. Design should confirm.
 7. **Log tag.** The brief says `[ALG][STYLE]`; Part 2's tag list uses `Style`, so lines read `[ALG][Style]`.
 
 ### 4.11 Open questions / spikes
@@ -2300,7 +2341,7 @@ RenderController (Part 6) reads `Buffs`/`Debuffs` (decoded with `Moves.statusDec
 Spikes (proposed for P0):
 - **S-P4-1 Predicted carriers.** This is Part 3 spike SA-09 (stitching when two characters spawn carriers in the same frame). If it fails, Part 3 falls back to server-only carriers plus a cosmetic ghost. Part 4 content works either way: `stepCarrier` is deterministic and hits are server-only. To support ghosts, `Projectile` exports the pure `Projectile.trajectory(def, origin, age) -> CFrame`, which RenderController (Part 6) uses.
 - **S-P4-2 Grab hold smoothness** under SA via `ALG_Hold` (AlignPosition) for the victim's client at 150 ms. Measure misprediction count per hold.
-- **S-P4-3 Status write cost.** An S-class `Debuffs` write per hit plus zone `stay` refreshes every 6 f: measure rollbacks per second on a victim standing in a zone. Fallback: a refresh every 12 f with `frames = 24`.
+- **S-P4-3 Status write and pull cost.** An S-class `Debuffs` write per hit plus zone `stay` refreshes every 6 f: measure rollbacks per second on a victim standing in a zone. Also measure rollbacks per second on a victim inside `stretch.a4` (B-class zone pull toward a `selfFollow` carrier, §4.2.6) and on hero.3 / decay.4 `kit.pull` victims (one `KbV` write, §4.2.0.2). Fallback for statuses: a refresh every 12 f with `frames = 24`. Fallback for the zone pull: drop `pullStudsPerSec` from stretch.a4 (td value, no GDD number) and record it in `PROGRESS.md`.
 - **S-P4-5** `RightGripAttachment` exists on the default R15 `RightHand` (not in the docs snapshot).
 - **S-P4-6** `@lune/roblox` exposes `Vector3.new`, `CFrame.Angles`, `CFrame.lookAt` and `Color3.fromRGB` for the Lune shim.
 - **S-P4-7** Pose sign conventions (§4.6.2) via `Animator:StepAnimations` + `screen_capture`.
@@ -2316,8 +2357,8 @@ Design questions:
 - **Q3 decay awakening "decay aura".** Cosmetic or a gameplay pulse? Currently cosmetic.
 - **Q4 Diameter reading.** "N-stud pool/cloud/storm/area/circle" is read as a diameter (decay.3 radius 5, frost.2 radius 3).
 - **Q5 Scientific Method.** Do summon and zone hits count as "landing" a move (currently yes, once per use)? Does one pair trigger once or chain (currently once per pair)?
-- **Q6 Fool's Frenzy** frame data for M1 hits 5–6 (currently: hits 4–5 reuse M1-3, hit 6 is the Ender).
+- **Q6 Fool's Frenzy** frame data for M1 hits 4–5 (currently: hits 4–5 reuse M1-3 frame data and the `m1_3` clip with `Sub = 3`, hit 6 is the Ender; §4.3.2).
 - **Q7 Unspecified sizes.** Grey Slime size (14-stud pool, td) and the monarch.a2 robot's post-dash life (idles until 6 s to satisfy the Summon tag's 6–12 s rule).
 - **Q8 Slow stacking.** Additive slows capped at 60% (td) vs strongest-wins.
-- **Q10 Archetype strings.** They are the GDD §7.2 "IP-neutral archetype" column in PascalCase (e.g. `DecayLich`, `VampireRocker`). If Part 8's denylist flags a generic word inside one of them, rename that archetype (e.g. `DecayUndead`). The id is not player-visible, and S05 only checks the pattern.
+- **Q10 Archetype strings.** They are the GDD §7.2 "IP-neutral archetype" column in PascalCase (e.g. `SwordHero`, `VampireRocker`). If Part 8's denylist flags a word inside one of them, rename that archetype: `decay` uses `DecayUndead`, not the GDD column's word, because Part 8's denylist flags it (TASKS §16.1 C12, Part 8 §8.8 item 3). The id is not player-visible, and S05 only checks the pattern.
 - **Q9 Stealth vs Style Tell.** Hiding the nameplate beyond 12 studs while invisible conflicts with "Style Tell always on" (§0.4). Proposal: stealth suppresses the nameplate only, and the shimmer keeps the style colour.

@@ -6,11 +6,16 @@
   `mcp__Roblox_Studio__<tool>` (e.g. `mcp__Roblox_Studio__execute_luau`). If the client defers MCP tool schemas,
   load all `mcp__Roblox_Studio__*` schemas before preflight. If no such tools exist, MCP is not connected:
   write a `tool-failure` blocker pointing the human to build spec §1.2.3; do not try to work around it.
-- **Permissions:** `.claude/settings.json` allowlists the read/test MCP tools and the host commands
+- **Permissions:** The human installs `.claude/settings.json` from `docs/agent/claude-settings.example.json`
+  (build spec §1.2.4; never committed); it allowlists the read/test MCP tools and the host commands
   (`stylua`, `selene`, `luau-lsp analyze`, `lune run`, `rojo sourcemap/build`, safe `git` subcommands).
-  `multi_edit`, `insert_asset`, `generate_*`, `store_image`, `subagent`, `rokit`, `git push`, `git restore`
-  ask first; `upload_image` and history-rewriting git commands are denied. Never edit `.claude/settings*.json`;
-  if you need a permission change, say so in a blocker.
+  `multi_edit`, `insert_asset`, `generate_*`, `store_image`, `subagent`, `rokit`, `git push`, `git restore`,
+  `git stash pop` and `lune run tools/upload_anims.luau` ask first; `upload_image`, history-rewriting git commands and Edit/Write on the human-signed files
+  (`docs/agent/PUBLISH_ACK.md`, `LICENSE_CONFIRMATION.md`, `TITLE_CLEARANCE.md`) are denied. Never create or edit
+  `.claude/settings*.json`; to change permissions, propose a diff to the example in a blocker.
+- **New sessions after setup:** MCP servers added and Rokit `PATH` changes made after a session started are not
+  visible to it. After H-02 / the Rokit install (and after T000 if `CLAUDE.md` was missing at session start), the
+  human restarts Claude Code in the repo root and you resume from `docs/agent/PROGRESS.md`.
 - **Drive playtests yourself.** Start, poll, assert, read logs and stop through MCP (build spec §1.4.5). The
   human plays only for feel (H-10) and device (H-12) gates.
 - **Keep `ARCHITECTURE.md` current in the same turn** as any file or instance-folder change, and update the
