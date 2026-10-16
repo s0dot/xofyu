@@ -5,8 +5,8 @@
 This part defines how every requirement in Parts 2–6 is proven: the Lune host tests, the in-Studio scenario harness, MCP input tests, multi-client and network-condition tests, performance measurement, human checklists, milestone gates and CI. It owns:
 - `tests/run.luau`, `tests/shim/*` (runner, test API, module loader, datatype shims) and the Part 7 spec files;
 - `src/DevTools/Tests/**` (scenario framework, client test driver, Part 7 suites) and `src/ServerScriptService/Services/TestHarness.luau`;
-- `tools/check_manifest.luau`, the mechanism of `tools/lint_strings.luau` (rules data is Part 8's), `tools/export_framedata.luau`;
-- `tools/plugin/AlgebraicTestHarness/` and `tools/plugin/build.luau`;
+- `tools/check_manifest.luau`, `tools/lint_retired_keys.luau` (with the format of its key list `tools/retired_keys.txt`), the mechanism of `tools/lint_strings.luau` (including how it reads the local denylist `tools/denylist.local.txt`; rules data is Part 8's), `tools/export_framedata.luau`;
+- `tools/plugin/HullabrawlTestHarness/` and `tools/plugin/build.luau`;
 - the test snippets in `tools/studio/` listed in §7.3.6–§7.6;
 - `.github/workflows/ci.yml`;
 - the gate checklists (§7.7).
@@ -18,7 +18,7 @@ Conventions:
 - `(td)` = tuning default chosen here where the GDD gives no number; it never changes a GDD number.
 - `(verify in spike T7-Sn)` = an engine or tool behaviour the docs do not settle; the spike is in §7.11.
 - Every engine API named here was checked in the offline creator-docs snapshot (2026-10-10). Lune APIs were checked in `lune-org/lune` and run on Lune 0.10.5.
-- Test result lines follow §0.4 exactly. Informational lines use `[ALG][Test] …` (Part 2 tag `Test`), never a third `[ALG][TEST]` form.
+- Test result lines follow §0.4 exactly. Informational lines use `[HB][Test] …` (Part 2 tag `Test`), never a third `[HB][TEST]` form.
 
 ---
 
@@ -31,7 +31,7 @@ Conventions:
 | L1 Host unit | `lune` | Lune 0.10.5 on the host or CI: pure `Core/*`, `Wish/*`, `Config/*`, `Types`, `Log`, `Skin`, `Net/Schemas`, `Styles` data, kit validator, lints, tools | `lune run tests/run.luau` (inside `tools/check.luau`) | Every task (host gate, Part 1 §1.4.2), every CI push | Full suite ≤ 60 s on CI; any single test > 1 s is tagged `slow` |
 | L2 In-Studio scenario | `studio` | `TestHarness` + `DevTools/Tests` suites in a solo Play session (server + 1 client), driven through `execute_luau` | `tools/studio/test_run.luau` (§7.3.6) | Tasks whose card lists scenarios; phase end; gates | ≤ 180 s per playtest (Part 1 §1.4.5); gate batches ≤ 900 s |
 | L3 MCP input-driven | `mcp` | Same session; real input through `user_keyboard_input`, `user_mouse_input`, `character_navigation` | `test_run` ops `setup` → MCP input → `assert` (§7.3.7) | Input, HUD and UI tasks; gates | ≤ 120 s per test |
-| L4 Multi-client | `multi` | `StudioTestService:ExecuteMultiplayerTestAsync` (server + 2–8 clients): Option A `execute_luau`, else the `AlgebraicTestHarness` plugin | `tools/studio/multi_run.luau` (§7.3.8) | P3+ networking tasks; gates | ≤ 600 s per run |
+| L4 Multi-client | `multi` | `StudioTestService:ExecuteMultiplayerTestAsync` (server + 2–8 clients): Option A `execute_luau`, else the `HullabrawlTestHarness` plugin | `tools/studio/multi_run.luau` (§7.3.8) | P3+ networking tasks; gates | ≤ 600 s per run |
 | L5 Network conditions | tag `net` on `studio`/`multi` tests | `NetworkSettings` delay/jitter/loss (Network Simulator) | `tools/studio/net_profile.luau` before Play/launch | Rewind, prediction, input-timing tasks; M0 gate | — |
 | L6 Perf and soak | `perf` | Server `PerfSampler`, client `PerfProbe`, server bots (`Dev.Command spawnBots`) | `perf.*` selectors, multi mode | P8; gates | ≤ 15 min per run |
 | L7 Human | `human` | Human playtests (H-10) and device test (H-12) | Gate checklists §7.7.4–§7.7.5 | Gates; per-style feel checks | — |
@@ -54,9 +54,9 @@ Conventions:
 
 #### 7.1.4 IDs, tags and evidence
 
-- **Test ID** (all levels): matches the Lua pattern `^[%w_]+%.[%w_%.%-]+$`, lower-case domain first (`combat.wall_splat`, `spike.SA-08`, `styles.rule_K06_detects`). IDs are unique across Lune and Studio. Names fixed by Parts 2–6 are binding and are reused verbatim in §7.4, except the IP-neutral renames of TASKS §16.1 C12 (e.g. `stun.stretch_ragdoll_minus10`).
-- **Tags** (Studio scenarios): exactly one milestone tag `m0` or `m1g`, plus any of `net`, `slow`, `spike`, `release`, `selftest`. Lune tests may carry `slow` and `release`. The Lune tests tagged `release` (decision D-46; `T.test(id, fn, {tags = {"release"}})`) are exactly: `lint.manifest_release_detects_placeholder`, `lint.manifest_raw_id_detected`, `net.validators_reject_fuzz`, `skin.canon_locked`, `ip.leak_detect`, `ip.product_keys_original_only`, so `lune run tests/run.luau --tag release` runs ≥ 6 tests (zero matches exits 2, §7.2.2). Scenarios tagged `spike` (e.g. `store.receipt_live_spike`, the P0 `Spike_*` wrappers) need optional human steps or record exploratory results; every gate selector excludes them with `-@spike`.
-- **Evidence** (Part 1 §1.4.7): host `[ALG][TEST] SUMMARY pass=<n> fail=0`; Studio `studio: <selector> SUMMARY pass=<n> fail=0 id=<first 8 chars>`; multi `multi(<n>,<profile>): <selector> SUMMARY pass=<n> fail=0`; perf `perf: <id> <key metrics>`; human `H-10 HF-01..HF-14 PASS (notes)`; agent procedure (`proc(<name>)`, TASKS §1.3; never a `studio(…)` selector) `proc(<name>): <the lines its card lists>`, e.g. `proc(ip.gate_dry_run): publish-ip PASS target=Original commit=<sha7> errors=0 warnings=<m>; publish FAIL target=Original items=<n>/<n> (R2); sync agg equal before and after` (§7.7.6, Part 8 §8.4.7).
+- **Test ID** (all levels): matches the Lua pattern `^[%w_]+%.[%w_%.%-]+$`, lower-case domain first (`combat.wall_splat`, `spike.SA-08`, `styles.rule_K06_detects`). IDs are unique across Lune and Studio. Names fixed by Parts 2–6 are binding and are reused verbatim in §7.4.
+- **Tags** (Studio scenarios): exactly one milestone tag `m0` or `m1g`, plus any of `net`, `slow`, `spike`, `release`, `selftest`. Lune tests may carry `slow` and `release`. The Lune tests tagged `release` (`T.it(id, fn, {tags = {"release"}})`) are exactly: `lint.manifest_release_detects_placeholder`, `lint.manifest_raw_id_detected`, `net.validators_reject_fuzz`, `lint.retired_keys_clean`, `lint.retired_keys_detects_fixture`, `lint.denylist_stays_local`, so `lune run tests/run.luau --tag release` runs ≥ 6 tests (zero matches exits 2, §7.2.2). Scenarios tagged `spike` (e.g. `store.receipt_live_spike`, the P0 `Spike_*` wrappers) need optional human steps or record exploratory results; every gate selector excludes them with `-@spike`.
+- **Evidence** (Part 1 §1.4.7): host `[HB][TEST] SUMMARY pass=<n> fail=0`; Studio `studio: <selector> SUMMARY pass=<n> fail=0 id=<first 8 chars>`; multi `multi(<n>,<profile>): <selector> SUMMARY pass=<n> fail=0`; perf `perf: <id> <key metrics>`; human `H-10 HF-01..HF-14 PASS (notes)`; agent procedure (`proc(<name>)`, TASKS §1.3; never a `studio(…)` selector) `proc(<name>): <the lines its card lists>`, e.g. `proc(ip.gate_dry_run): publish-ip PASS commit=<sha7> errors=0 warnings=<m>; publish FAIL items=<n>/<n> (R2); publish-hook FAIL items=3/4; sync agg equal before and after` (§7.7.6, Part 8 §8.4.7, Part 1 §1.4.7).
 
 #### 7.1.5 Network-condition profiles
 
@@ -119,8 +119,8 @@ Part 7 spec files: `tests/core/shim.spec.luau` (`shim.*`, `runner.*`), `tests/co
 
 Contract:
 - Discovers `tests/**/*.spec.luau` (or `--root <dir>`), sorted by path, skipping folders named `shim`, `fixtures` and `golden`.
-- Each spec file returns `function(T: TestApi)`; the runner calls it once. A spec that fails to load or register prints `[ALG][TEST] load.<path_with_underscores> FAIL <error>` and counts as one failure.
-- Tests run in file order, then registration order, each inside `pcall`. Output: `[ALG][TEST] <id> PASS` or `[ALG][TEST] <id> FAIL <one-line detail>`, then `[ALG][TEST] SUMMARY pass=<n> fail=<m>`. Info lines: `[ALG][Test] slow id=<id> ms=<n>` (> 1,000 ms), `[ALG][Test] pending id=<id> task=<T0xx>`.
+- Each spec file returns `function(T: TestApi)`; the runner calls it once. A spec that fails to load or register prints `[HB][TEST] load.<path_with_underscores> FAIL <error>` and counts as one failure.
+- Tests run in file order, then registration order, each inside `pcall`. Output: `[HB][TEST] <id> PASS` or `[HB][TEST] <id> FAIL <one-line detail>`, then `[HB][TEST] SUMMARY pass=<n> fail=<m>`. Info lines: `[HB][Test] slow id=<id> ms=<n>` (> 1,000 ms), `[HB][Test] pending id=<id> task=<T0xx>`.
 - Flags: `--filter <substring of id>`, `--tag <tag>`, `--file <substring of path>`, `--root <dir>`, `--fast` (skip tag `slow`), `--list`, `--json <path>`.
 - Exit code: `0` if `fail == 0`; `1` on any failure or load error; `2` on a usage error or when a filter matches nothing.
 
@@ -149,13 +149,13 @@ local function parseArgs(argv: { string }): Args
 		elseif k == "--filter" or k == "--tag" or k == "--file" or k == "--root" or k == "--json" then
 			local v = argv[i + 1]
 			if v == nil then
-				print(`[ALG][Test] ERROR missing value for {k}`)
+				print(`[HB][Test] ERROR missing value for {k}`)
 				process.exit(2)
 			end
 			(a :: any)[string.sub(k, 3)] = v
 			i += 1
 		else
-			print(`[ALG][Test] ERROR unknown argument {k}`)
+			print(`[HB][Test] ERROR unknown argument {k}`)
 			process.exit(2)
 		end
 		i += 1
@@ -201,7 +201,7 @@ for _, file in files do
 		if not ok then
 			fail += 1
 			local id = "load." .. string.gsub(string.sub(file, 7, -6), "[/%.]", "_")
-			print(`[ALG][TEST] {id} FAIL {oneLine(tostring(err))}`)
+			print(`[HB][TEST] {id} FAIL {oneLine(tostring(err))}`)
 			table.insert(results, { id = id, ok = false, detail = tostring(err), ms = 0 })
 		end
 	end
@@ -232,31 +232,31 @@ for _, c in T.cases() do
 			local ms = math.floor((os.clock() - t0) * 1000)
 			if ok then
 				pass += 1
-				print(`[ALG][TEST] {c.id} PASS`)
+				print(`[HB][TEST] {c.id} PASS`)
 			else
 				fail += 1
 				local msg = if type(err) == "table" then tostring((err :: any).msg) else tostring(err)
-				print(`[ALG][TEST] {c.id} FAIL {oneLine(msg)}`)
+				print(`[HB][TEST] {c.id} FAIL {oneLine(msg)}`)
 			end
 			if ms > 1000 then
-				print(`[ALG][Test] slow id={c.id} ms={ms}`)
+				print(`[HB][Test] slow id={c.id} ms={ms}`)
 			end
 			table.insert(results, { id = c.id, ok = ok, detail = if ok then nil else tostring(err), ms = ms })
 		end
 	end
 end
 for _, p in T.pendings() do
-	print(`[ALG][Test] pending id={p.id} task={p.taskId}`)
+	print(`[HB][Test] pending id={p.id} task={p.taskId}`)
 end
 
 if args.list then
 	process.exit(0)
 end
 if ran == 0 and (args.filter or args.tag or args.file) then
-	print("[ALG][Test] ERROR no tests matched the selection")
+	print("[HB][Test] ERROR no tests matched the selection")
 	process.exit(2)
 end
-print(`[ALG][TEST] SUMMARY pass={pass} fail={fail}`)
+print(`[HB][TEST] SUMMARY pass={pass} fail={fail}`)
 if args.json then
 	fs.writeFile(args.json, serde.encode("json", { pass = pass, fail = fail, results = results }, true))
 end
@@ -297,7 +297,7 @@ local cases: { TestCase } = {}
 local pendings: { { id: string, taskId: string, file: string } } = {}
 local seen: { [string]: string } = {}
 local function fail(msg: string): never
-	error({ alg = "assert", msg = msg }, 0) -- the runner prints .msg
+	error({ hb = "assert", msg = msg }, 0) -- the runner prints .msg
 end
 local function expect(actual: any): Matchers
 	return {
@@ -593,10 +593,10 @@ Rules: one spec file per module or concern; test IDs as in §7.1.4; no `print` i
 | Client driver | `src/DevTools/Tests/Client/Driver.luau`, `Client/Steps.luau`, `Client/PerfProbe.luau` | Client (cloned at run time) | Client steps, input, reports (§7.3.9) |
 | Suites | `src/DevTools/Tests/Suites/<Name>.luau` | Server | One module per domain, written by the owning part's tasks |
 | Spikes | `src/DevTools/Tests/Spike_<ID>.luau` (dashes removed: `Spike_SA07`, `Spike_SP4_2`, `Spike_SP6_2`; scenario id `spike.<ID>`, TASKS C4) | Server | Part 3 §3.16.3 (fixed path) for `Spike_SAxx`; Part 4 §4.11 S-P4-2, S-P4-3; Part 6 §6.15 S-P6-2 |
-| Plugin | `tools/plugin/AlgebraicTestHarness/Main.luau` | Edit, plus client DMs | Launches multi-client tests; misprediction attribution (§7.3.8) |
+| Plugin | `tools/plugin/HullabrawlTestHarness/Main.luau` | Edit, plus client DMs | Launches multi-client tests; misprediction attribution (§7.3.8) |
 | Snippets | `tools/studio/test_run.luau`, `test_result.luau`, `multi_run.luau`, `net_profile.luau`, `device_sim.luau`, `mispred_probe.luau` | via `execute_luau` | Agent entry points |
 
-Suite files (names fixed; owner part writes the scenarios, Part 7 writes the framework and the suites marked P7): `Boot`, `Config`, `Net`, `Data`, `Player`, `Security`, `Tree` (P2); `Sim`, `Input`, `CombatM1`, `CombatDefense`, `CombatMovement`, `CombatStun`, `CombatMeter`, `CombatRealm`, `CombatKo`, `CombatRewind`, `Bot`, `Render` (P3); `Style`, `Kit`, `Anim`, `Look` (P4); `Wish`, `Policy`, `Shop`, `Progress`, `Store`, `Appearance`, `Tel`, `Mod` (P5); `Harness`, `NetCond`, `MultiClient`, `Mcp`, `Perf` (P7). Part 6 adds `Ui`, `World`, `Vfx` as needed under the same rules.
+Suite files (names fixed; owner part writes the scenarios, Part 7 writes the framework and the suites marked P7): `Boot`, `Config`, `Net`, `Data`, `Player`, `Security`, `Tree` (P2); `Sim`, `Input`, `CombatM1`, `CombatDefense`, `CombatMovement`, `CombatStun`, `CombatMeter`, `CombatRealm`, `CombatKo`, `CombatRewind`, `Bot`, `Render` (P3); `Style`, `Kit`, `Anim`, `Look` (P4); `Wish`, `Policy`, `Shop`, `Progress`, `Store`, `Appearance`, `Tel`, `Mod` (P5); `Harness`, `NetCond`, `MultiClient`, `Mcp`, `Perf` (P7). Part 6 adds `Ui`, `World`, `Vfx` and Part 8 adds `Ip` (its two Studio scenarios) as needed under the same rules.
 
 #### 7.3.2 Scenario format
 
@@ -657,7 +657,7 @@ export type Ctx = {
 	clientStep: (role: string, step: string, params: { [string]: any }?) -> (),
 	report: (role: string, key: string, timeoutF: number) -> any,
 	perf: () -> any,                                       -- PerfSampler.start() (§7.6.2)
-	log: (msg: string) -> (),                              -- [ALG][Test] <scenario> <msg>
+	log: (msg: string) -> (),                              -- [HB][Test] <scenario> <msg>
 }
 export type Scenario = {
 	name: string, level: Level, tags: { string }, needs: { string }?, timeoutF: number?,
@@ -696,7 +696,7 @@ local suite: T.Suite = {
 			timeoutF = 900,
 			setup = function(ctx: T.Ctx)
 				local pad = ctx.pad()
-				ctx.state.att = ctx.bot({ styleId = "hero", at = pad.a })
+				ctx.state.att = ctx.bot({ styleId = "attendant", at = pad.a })
 				ctx.state.def = ctx.dummy("block", pad.b)
 				ctx.state.rec = ctx.tap()
 			end,
@@ -757,7 +757,7 @@ Authoring rules (all parts):
 
 | Need | Check | On failure |
 |---|---|---|
-| `sa` | `Runtime.get().NetModel == "ServerAuthority"` and the server log history contains a `[ALG][Sim] bound hz=60` line (tag compared case-insensitively) | FAIL `unmet need sa` |
+| `sa` | `Runtime.get().NetModel == "ServerAuthority"` and the server log history contains a `[HB][Sim] bound hz=60` line (tag compared case-insensitively) | FAIL `unmet need sa` |
 | `anims` | Every `anim.*` key used by the implemented kits resolves to `rbxassetid://…` (H-08) | FAIL |
 | `mockData` | `Defaults.Data.StudioLiveData == false` | FAIL |
 | `clients:<n>` | ≥ n players with `DataLoaded == true` | FAIL |
@@ -765,13 +765,13 @@ Authoring rules (all parts):
 | `map:<mapId>` | `Fixtures.hasMap(mapId)` using Part 6's map marker | FAIL |
 | `net:<profile>` | Request field `net` equals the profile | FAIL |
 
-With request arg `allowSkip = true` (never in gate runs) an unmet need prints `[ALG][Test] skip id=<name> reason=unmet:<need>` and is not counted.
+With request arg `allowSkip = true` (never in gate runs) an unmet need prints `[HB][Test] skip id=<name> reason=unmet:<need>` and is not counted.
 
 #### 7.3.4 Runner semantics
 
 - **Registration:** `Registry.load()` requires every ModuleScript under `DevTools.Tests.Suites` and every `DevTools.Tests.Spike_*` once per play session; each returns a `Suite`. A duplicate scenario name, a name not matching the ID pattern (§7.1.4), or a scenario without exactly one milestone tag fails the load: every request then ends with `state = "error"` and `err` naming the problem.
 - **Selectors** (`sel`): comma-separated terms; a term is an exact name, a prefix `combat.*`, or a tag `@m0`. Terms without `-` are unioned; terms with a leading `-` are then removed (`@m0,-@slow` = every `m0` scenario except `slow` ones). There is no intersection operator. Order = registry order (suites alphabetical, scenarios as declared). A bare word is **not** a prefix: `combat` is looked up as the exact name `combat` (which no scenario has); write `combat.*`. If the whole selection matches zero scenarios, the request ends with `state = "error"`, `err = "empty_selection"` (never `done` with `pass = 0`).
-- **Level filter:** in `op = "run"`, `mcp` scenarios are skipped (`[ALG][Test] skip … reason=mcp_needs_setup_assert`); `multi` scenarios and `perf` scenarios with `clients ≥ 2` are skipped outside multi mode.
+- **Level filter:** in `op = "run"`, `mcp` scenarios are skipped (`[HB][Test] skip … reason=mcp_needs_setup_assert`); `multi` scenarios and `perf` scenarios with `clients ≥ 2` are skipped outside multi mode.
 - **Execution** of one scenario: check `needs` → spawn a thread running `setup`, `act`, `assert` → wait on `RunService.PostSimulation` until done or `frame() ≥ start + timeoutF` → on timeout `task.cancel` the thread → always run teardown (`sc.teardown`, reversible dev commands, Trove cleanup: bots, TestPad children, tap and trace connections, `ReplicatedStorage.TestRun` steps) → result.
 - **Result:** `ok` = no hard failure, no soft failures, teardown succeeded. `detail` = the first failure message (≤ 200 chars) or `""`. Output via Part 2 `Log.test(name, ok, detail)`; after the selection `Log.summary(pass, fail)`.
 - **Report:** after every scenario the runner rewrites `ServerStorage.AgentTestResult.Value` with the `RunReport` JSON (`state = "running"`), and finally with `state = "done"` (or `"error"` if the runner itself failed). A StringValue is used, not an attribute, because under Server Authority string attribute values replicate only up to 50 characters (attribute names ≤ 50 characters; only the first 64 attributes of an instance replicate) [Docs `projects/server-authority/index.md#attribute-limits`], while a StringValue holds 200,000 characters. (The "100 characters or less" rule in `Instance:SetAttribute` is a naming requirement for attribute names, not a cap on string values.)
@@ -885,7 +885,7 @@ function TestHarness.start()
 		local ok, req = pcall(function()
 			return HttpService:JSONDecode(raw)
 		end)
-		if ok and type(req) == "table" and req.alg == 1 and req.mode == "multi" then
+		if ok and type(req) == "table" and req.hb == 1 and req.mode == "multi" then
 			task.spawn(runner().runMulti, req) -- always ends with StudioTestService:EndTest(<json>)
 			return
 		end
@@ -910,7 +910,7 @@ Studio-only guards (all MUST):
 1. `TestHarness.init/start/run` do nothing unless `RunService:IsStudio()` (seam `_isStudio`).
 2. `ServerStorage.DevTools` is required only by `TestHarness.luau`; `ReplicatedStorage.TestRun` is referenced only by `TestHarness`, `DevTools/**` and the `Main.client.luau` hook (lint `devtools-isolation`, §7.5.5).
 3. `Dev.Command` exists only in Studio (Part 2 §2.11.5); the client hook (§7.3.9) runs only when `RunService:IsStudio()`.
-4. Every Studio seam used here (`_tap`, `_setBrain`, `_dispatch`, `_queuePatch`, `_setMeter`, `_getMeter`, `_setRtt`, `_setSeedMaster`, `_forceFail`, `_setPerfSampled`, `_leaveTest`, `_readStored`, `_devAccessCheck`, `_devContextOverride`) is a no-op unless `RunService:IsStudio()` (`_getMeter` returns 0, `_readStored` returns nil and `_leaveTest` returns false outside Studio; `_devAccessCheck` ignores its `opts` there). `CombatService._getMeter(target: Player | Model) -> number` (Part 3 §3.13.7) reads the server-memory meter of a player, bot or dummy; `combat.perfect_block` and `combat.assist_credit` use it.
+4. Every Studio seam used here (`_tap`, `_setBrain`, `_dispatch`, `_queuePatch`, `_setMeter`, `_getMeter`, `_setRtt`, `_setSeedMaster`, `_forceFail`, `_setPerfSampled`, `_leaveTest`, `_readStored`, `_devAccessCheck`) is a no-op unless `RunService:IsStudio()` (`_getMeter` returns 0, `_readStored` returns nil and `_leaveTest` returns false outside Studio; `_devAccessCheck` ignores its `opts` there). `CombatService._getMeter(target: Player | Model) -> number` (Part 3 §3.13.7) reads the server-memory meter of a player, bot or dummy; `combat.perfect_block` and `combat.assist_credit` use it.
 5. `UserInputService:CreateVirtualInput()` is used only in `DevTools/Tests/Client/**` and in the P0 probe files `DevTools/Tests/Spikes/**` and `DevTools/Tests/Spike_*.luau` (exempt per decision D-12), and its result is nil-checked [Docs `UserInputService.yaml`: "or nil if the feature is not available"].
 6. **Verify:** `harness.studio_only_guard`, `security.dev_hooks_studio_only` (Part 2), `standards.devtools_isolation`.
 
@@ -1033,11 +1033,11 @@ Assertions in `mcp` scenarios read tap records and traces collected since `setup
 
 **Launch paths.**
 - **Option A (direct).** `multi_run.luau` with `"via":"direct"` calls `StudioTestService:ExecuteMultiplayerTestAsync(n, req)` inside `task.spawn` from `execute_luau` (Edit). The method is `PluginSecurity` and documented as "can only be called from plugin scripts" [Docs `StudioTestService.yaml`], so Option A is used only if spike T7-S1 passes.
-- **Option B (plugin, default).** `multi_run.luau` writes `ServerStorage.AgentTestRequest` (`mode = "multi"`) in the Edit DataModel. The local plugin `AlgebraicTestHarness` picks it up, destroys the request, launches the test and writes the result to `ServerStorage.AgentTestResult` (Edit).
+- **Option B (plugin, default).** `multi_run.luau` writes `ServerStorage.AgentTestRequest` (`mode = "multi"`) in the Edit DataModel. The local plugin `HullabrawlTestHarness` picks it up, destroys the request, launches the test and writes the result to `ServerStorage.AgentTestResult` (Edit).
 
 Both paths pass the request **as a JSON string** (a string is always Roblox-serializable) and receive the server's `EndTest` value **as a JSON string**.
 
-`tools/studio/multi_run.luau` (Edit; 1,342 bytes):
+`tools/studio/multi_run.luau` (Edit; 1,341 bytes):
 
 ```lua
 --!strict
@@ -1061,7 +1061,7 @@ local function put(name: string, s: string)
 end
 local id = HS:GenerateGUID(false)
 local req = HS:JSONEncode({
-	alg = 1,
+	hb = 1,
 	v = 1,
 	id = id,
 	mode = "multi",
@@ -1127,11 +1127,11 @@ end
 return HS:JSONEncode({ ok = true, profile = A.profile, values = cur })
 ```
 
-**Plugin** (`tools/plugin/AlgebraicTestHarness/Main.luau`, built into `build/AlgebraicTestHarness.rbxm` by `lune run tools/plugin/build.luau [--install]`; `--install` writes the file into `roblox.studioPluginPath()` [Lune `@lune/roblox`], then the human restarts Studio once; verify in spike T7-S2; `build.luau` writes both files only through `tools/lib/SafeWrite.luau`, §7.5):
+**Plugin** (`tools/plugin/HullabrawlTestHarness/Main.luau`, built into `build/HullabrawlTestHarness.rbxm` by `lune run tools/plugin/build.luau [--install]`; `--install` writes the file into `roblox.studioPluginPath()` [Lune `@lune/roblox`], then the human restarts Studio once; verify in spike T7-S2; `build.luau` writes both files only through `tools/lib/SafeWrite.luau`, §7.5):
 
 ```lua
 --!strict
--- tools/plugin/AlgebraicTestHarness/Main.luau — local Studio plugin. Edit DM: launches multi-client tests requested
+-- tools/plugin/HullabrawlTestHarness/Main.luau — local Studio plugin. Edit DM: launches multi-client tests requested
 -- through ServerStorage.AgentTestRequest. Running client DMs: misprediction attribution. Spec §7.3.8.
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
@@ -1153,8 +1153,8 @@ if RunService:IsRunning() then
 				end
 			end
 			if lp then -- client-local attributes, never replicated; read by the client driver
-				lp:SetAttribute("AlgMpN", total)
-				lp:SetAttribute("AlgMpTop", (require(script:FindFirstChild("Top") :: any) :: any)(counts)) -- ≤ 48 chars
+				lp:SetAttribute("HbMpN", total)
+				lp:SetAttribute("HbMpTop", (require(script:FindFirstChild("Top") :: any) :: any)(counts)) -- ≤ 48 chars
 			end
 		end)
 	end
@@ -1190,7 +1190,7 @@ local function launch(sv: StringValue)
 	sv:Destroy() -- the Play copy of the Edit DataModel must not contain the request
 	put("AgentTestMultiArgs", raw) -- copied into the session; read only if GetTestArgs() is nil (spike T7-S14)
 	put("AgentTestResult", HttpService:JSONEncode({ v = 1, id = req.id, state = "running" }))
-	print(`[ALG][Harness] multi start id={req.id} n={req.n} net={req.net}`)
+	print(`[HB][Harness] multi start id={req.id} n={req.n} net={req.net}`)
 	task.spawn(function()
 		local okRun, ret = pcall(function()
 			return StudioTestService:ExecuteMultiplayerTestAsync(req.n, raw)
@@ -1203,7 +1203,7 @@ local function launch(sv: StringValue)
 			then ret
 			else HttpService:JSONEncode({ v = 1, id = req.id, state = "error", err = tostring(ret) })
 		put("AgentTestResult", out)
-		print(`[ALG][Harness] multi end id={req.id} ok={okRun}`)
+		print(`[HB][Harness] multi end id={req.id} ok={okRun}`)
 		busy = false
 	end)
 end
@@ -1223,7 +1223,7 @@ if existing then
 end
 ```
 
-(The `Top` helper is a ModuleScript child of the plugin Script that formats the three largest counts as `St:41,HP:12,p.CFrame:9`; `build.luau` adds it from `tools/plugin/AlgebraicTestHarness/Top.luau`.)
+(The `Top` helper is a ModuleScript child of the plugin Script that formats the three largest counts as `St:41,HP:12,p.CFrame:9`; `build.luau` adds it from `tools/plugin/HullabrawlTestHarness/Top.luau`.)
 
 **Server side** (`Lib/Multi.luau`, called by `runner().runMulti(req)`):
 1. Start a watchdog: after `req.timeoutSec + 30` s without completion, `EndTest` with `state = "error"`, `err = "watchdog"`.
@@ -1237,7 +1237,7 @@ end
 1. No playtest running (`get_studio_state` shows Edit only).
 2. `net_profile.luau` `{"profile":"<name>"}`; check the read-back values.
 3. `multi_run.luau` `{"n":<2..8>,"sel":"<selector>","net":"<name>","timeoutSec":<s>,"via":"plugin"}` → `id`.
-4. Within 30 s `test_result.luau` (Edit) must show `state = "running"` (plugin) or the Studio state must show a running test. If it stays `queued`: blocker `human-step` "install/enable AlgebraicTestHarness and restart Studio", or retry with `"via":"direct"` if T7-S1 passed.
+4. Within 30 s `test_result.luau` (Edit) must show `state = "running"` (plugin) or the Studio state must show a running test. If it stays `queued`: blocker `human-step` "install/enable HullabrawlTestHarness and restart Studio", or retry with `"via":"direct"` if T7-S1 passed.
 5. Poll `test_result.luau` (Edit) every ≥ 5 s until `done`/`error`, at most `timeoutSec + 120` s.
 6. Read all pages, then call `test_result.luau` with `"consume":true` (removes both StringValues from Edit; `Verify` flags leftovers, §7.9 item 6).
 7. `net_profile.luau` `{"profile":"Off"}`.
@@ -1311,7 +1311,6 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `PlayerService._leaveTest` | Part 2 | `(player: Player) -> boolean` (false outside Studio); runs the leave path (`CombatService.onPlayerRemoving`, `DataService.releaseAsync`, trove cleanup) for a player who stays in game, then the join path again (§2.3.5); used by `player.leave_releases` in a solo run |
 | `DataService._readStored` | Part 2 | `(userId: number) -> Types.PlayerData?`; yields; the stored profile (nil outside Studio; §2.8.5); used by `data.rejoin_persists` (§2.8.7) |
 | `PlayerService._devAccessCheck` | Part 2 (hosted for Part 8) | `(player: Player, opts: { forceDevUniverse: boolean?, member: boolean?, dryRun: boolean? }?) -> boolean`; the dev-universe members-only rule with forced answers; `dryRun = true` logs `dry_run=true` instead of kicking; `opts` ignored outside Studio (§2.3.5, Part 8 §8.2.6); used by `ip.dev_universe_members_only` |
-| `ConfigReplicator._devContextOverride` | Part 2 (hosted for Part 8) | `boolean?`; TestHarness only; overrides the pack guard's dev-context test (§2.6.4 step 9, Part 8 §8.2.6); used by `ip.runtime_guard_public_sim` |
 | `Main.client.luau` test hook | Part 2 | §7.3.9 block |
 | DevCmd `testReport` | Part 2 enum, Part 7 handler | §7.3.9 |
 | `Moves.frameRows` | Part 3 (`Core/Moves.luau`) | Pure; §7.5.3 (live code: Part 6 Training panel) |
@@ -1329,7 +1328,8 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 - **Owner:** the part whose task implements the test (P2–P7). Names from other parts are binding.
 - **M:** milestone tag (`M0` tests also run at M1-G).
 - A row like `kit.<id>.smoke ×6` stands for one test per implemented style id.
-- Part 8's tests (`ip.*`, `skin.resolve_pack_matrix`, `skin.look_active_only` and the Studio scenarios `ip.runtime_guard_public_sim`, `ip.canon_locked_runtime`, `ip.pack_switch_live`, `ip.dev_universe_members_only`, `ip.no_missing_keys_tour`) are catalogued with level and milestone in Part 8 §8.4.9 and not repeated here; `ip.gate_dry_run` is an agent procedure, not a test.
+- Part 8's tests (the Lune `skin.base_shape` and `ip.*`, including the Studio scenarios `ip.dev_universe_members_only` and `ip.no_missing_keys_tour`) are catalogued with level and milestone in Part 8 §8.4.9 and not repeated here; `ip.gate_dry_run` is an agent procedure, not a test.
+- The blind tests T7–T11 (GDD §5.5, Part 8 §8.5.3) are human gates run by the producer, not automated tests. The agent only stages captures (`look.gear_silhouette`, `look.clip_stage`) and appends `pending` rows to `docs/agent/RECOGNIZABILITY.md`; humans fill in and sign the results (§7.4.11, §7.7).
 
 #### 7.4.2 Infrastructure, standards and harness
 
@@ -1351,12 +1351,12 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `harness.request_roundtrip` | studio (agent-run) | Agent runs `test_run` → `test_result` on `harness.selftest`: id echoed, states `queued → running → done`, paging by 40; evidence is the snippet JSON | §7.3.6 | P7 | M0 |
 | `harness.client_driver` | studio | Solo `TestRun`: driver reports `ready`; step `pressM1` makes the server tap show an M1 state entry for the local rid | §7.3.9 | P7 | M0 |
 | `netcond.profile_applied` | studio (Edit snippet, agent-run) | `net_profile.luau` read-back equals `NetProfiles.M0Gate`; evidence is the snippet JSON | §7.1.5 | P7 | M0 |
-| `netcond.rtt_m0gate` | studio, net | Server-sampled `GetNetworkPing` mean 140–160 ms, P5 ≥ 115, P95 ≤ 185 (td) under `M0Gate` | GDD §18.2, §7.1.5 | P7 | M0 |
+| `netcond.rtt_m0gate` | studio, net | Server-sampled `GetNetworkPing` mean 140–160 ms, P5 ≥ 115, P95 ≤ 185 (td) under `M0Gate` | GDD §18.2; §7.1.5 | P7 | M0 |
 | `boot.*`, `player.*`, `tree.runtime_objects`, `config.*`, `net.rate_limit_drops`, `net.invalid_payload_rejected`, `net.remotes_match_catalog`, `data.*` (except `data.rejoin_persists`, below), `attrs.player_public_set`, `security.*` | studio | Part 2 definitions | §2.12 item 21 | P2 | M0 |
 | `config.not_overridable` | studio | `Dev.Command setConfig` for `Ip`, `Data` and `NetModel` each returns `ok = false` and leaves `Runtime.version()` unchanged; `setConfig Kits {"MomentCooldownFrames":300}` is accepted and bumps the version | §2.6.4, §2.6.6 | P2 | M0 |
-| `player.leave_releases` | studio | Solo run through the Studio seam `PlayerService._leaveTest(player)` (§7.3.10): `[ALG][Data] released user=<id>` within 2 s, then `DataLoaded == true` again within 30 s | §2.3.5 | P2 | M0 |
-| `data.rejoin_persists` | multi (`multi(2, Baseline30, data.rejoin_persists)` only) | Client B is granted 500 Treasure (`Dev.Command grant`) and calls `LeaveTest`; after `[ALG][Data] released user=<idB>` the server asserts `DataService._readStored(idB).currencies.Treasure` includes the grant. A true rejoin of the same user is asserted only after spike T7-S16 records that `AddPlayers` reuses the departed UserId | §2.8.7, §2.14 item 11 | P2 | M0 |
-| `log.*`, `types.*`, `schema.*`, `playerdata.*`, `net.validators_reject_fuzz`, `skin.*`, `assets.*` | lune | Part 2 definitions | §2.12 item 20 | P2 | M0 |
+| `player.leave_releases` | studio | Solo run through the Studio seam `PlayerService._leaveTest(player)` (§7.3.10): `[HB][Data] released user=<id>` within 2 s, then `DataLoaded == true` again within 30 s | §2.3.5 | P2 | M0 |
+| `data.rejoin_persists` | multi (`multi(2, Baseline30, data.rejoin_persists)` only) | Client B is granted 500 Treasure (`Dev.Command grant`) and calls `LeaveTest`; after `[HB][Data] released user=<idB>` the server asserts `DataService._readStored(idB).currencies.Treasure` includes the grant. A true rejoin of the same user is asserted only after spike T7-S16 records that `AddPlayers` reuses the departed UserId | §2.8.7, §2.14 item 11 | P2 | M0 |
+| `log.*`, `types.*`, `schema.*`, `playerdata.*`, `net.validators_reject_fuzz`, `skin.*` (except Part 8's `skin.base_shape` and Part 7's `skin.pack_key_coverage`), `assets.*` | lune | Part 2 definitions | §2.12 item 20 | P2 | M0 |
 
 #### 7.4.3 Combat chassis (Part 3 names unless marked P7)
 
@@ -1389,10 +1389,10 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `combat.dash_distances` | studio | Displacement within ±10 % of the table; cooldown attributes = start + 120/96/120 | GDD §6.5 | P3 | M0 |
 | `combat.side_dash_iframes` | studio | Dummy hits during side-dash frames 1–7 whiff; frame 8+ hits | GDD §6.5 | P3 | M0 |
 | `combat.hop_cancel` | studio | Side dash accepted in M1-2/M1-3 recovery after a hit; refused after a whiff | GDD §6.5 | P3 | M0 |
-| `stun.decay_after_150f`, `stun.shakeoff_210f` | lune | Hitstun ×0.6 after 2.5 s continuous stun; Shake-Off at 3.5 s (18f i-frames, 6 studs) | GDD §6.6 | P3 | M0 |
+| `stun.stun_decay_150f`, `stun.shakeoff_210f` | lune | Hitstun ×0.6 after 2.5 s continuous stun; Shake-Off at 3.5 s (18f i-frames, 6 studs) | GDD §6.6 | P3 | M0 |
 | `stun.otg_once` | lune | Max 1 OTG hit per combo | GDD §6.6 | P3 | M0 |
 | `stun.combo_scale_tiers`, `stun.scale_floor` | lune | ×1.0 hits 1–8, ×0.85 hits 9–14, ×0.70 hits 15+, floor ×0.5 | GDD §6.6 | P3 | M0 |
-| `stun.stretch_ragdoll_minus10` | lune | `stretch` passive −10f ragdoll (reads the kit's `ragdollFramesAdd`; IP-neutral name per TASKS §16.1 C12) | GDD §7.3.2 | P3 | M0 |
+| `stun.ragdoll_frames_add` | lune | A fixture kit with `ragdollFramesAdd = -10` ends Ender and Downslam ragdolls 10f earlier; the default 0 leaves them unchanged (no slice kit uses the key; it stays a recognized Part 3 key for later styles) | §3.4.1 | P3 | M0 |
 | `combat.stun_decay` | studio | Hitstun applied at continuous stun ≥ 150f is 16 not 27; Shake-Off at 210 | GDD §6.6 | P3 | M0 |
 | `combat.otg_once` | studio | Second OTG hit → event `otg_denied` | GDD §6.6 | P3 | M0 |
 | `damage.design_target_no_meter` | lune | Clean no-meter, no-wall string totals 28–36 | GDD §6.6 | P3 | M0 |
@@ -1407,6 +1407,7 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `combat.awakening` | studio | `Dev.Command setMeter 100` → `AwkRdy`; precondition `Dev.Command combatPatch {"HP":60,"BkP":0}` (so the clamps at 100 HP / 2 pips cannot hide the effects); G → `Awakening` 72f, invulnerable, HP 70 (60 + 10, against HP sampled 1f before activation), `BkP` 1, `AwkEndF − AwkF0 = 3672` | GDD §6.9 | P3 | M0 |
 | `combat.awaken_ko_extend` | studio | 3 KOs → +900 frames, capped at `AwkF0 + 5472` | GDD §6.9 | P3 | M0 |
 | `realm.interrupt_window_45f`, `realm.contains`, `realm.max2`, `realm.stubborn_heart_once` | lune | Interruptible only in the first 45f of the 90f cast; 40-stud radius; ≤ 2 per server; one ward per Realm per player | GDD §6.10 | P3 | M1-G |
+| `realm.member_pos_quadrant` | lune | Engine item E1: `Realm.quadrant(center, pos)` returns 1 for (+X, −Z), 2 for (+X, +Z), 3 for (−X, +Z), 4 for (−X, −Z) (clockwise from above, starting at −Z); offsets on an axis follow the `>=` / `<` rule | §3.9.3 | P3 | M1-G |
 | `combat.realm_cast_interrupt` | studio | Parryable hit at cast e = 30 cancels; at e = 60 does not | GDD §6.10 | P3 | M1-G |
 | `combat.realm_open_members`, `combat.realm_cap_queue` | studio | Bots at 10/35/45 studs → **3** members (`RlmId` set on the caster and the 2 bots inside 40 studs; the bot at 45 keeps `RlmId = 0`); a third cast is queued until one ends | GDD §6.10 | P3 | M1-G |
 | `combat.stubborn_heart` | studio | Hold Block 1 s inside → `RlmWardF` set, `BkP` −1; a second attempt in the same Realm does nothing | GDD §6.10 | P3 | M1-G |
@@ -1416,10 +1417,10 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `combat.streak_bounty` | studio | Setup `Dev.Command setConfig Combat {"Streak":{"CountBots":true}}`, respawn P (pinned config applies at respawn); P KOs 3 brawl bots → `streak` tier-3 event; a bot KOs P → `ended`, bounty 25; teardown restores `CountBots = false` | GDD §6.11 | P3 | M0 |
 | `combat.feed_fired`, `combat.regen` | studio | One feed per KO; 2 HP/s after 8 s | GDD §6.11, §6.2 | P3 | M0 |
 | `combat.env_ko_credit` | studio | Needs Part 6's void kill: an `m1_spam` dummy hits the player once; 3 s later the player drops below the map's `KillY` → `killAsync(…, "environment")` credits the dummy (`killerBot`); with 6 s → no killer (`Combat.Streak.EnvKoCreditWindowSec = 5`, GDD §11.1) | GDD §11.1 | P3 | M0 |
-| `combat.disabled_move_kill_switch` | studio | `setConfig Features {"DisabledMoves":["hero.1"]}`, respawn → Move1 leaves the player in `Idle`; Move2 still works; teardown restores `DisabledMoves = {}` | §3.4.2 | P3 | M0 |
+| `combat.disabled_move_kill_switch` | studio | `setConfig Features {"DisabledMoves":["attendant.1"]}`, respawn → Move1 leaves the player in `Idle`; Move2 still works; teardown restores `DisabledMoves = {}` | §3.4.2 | P3 | M0 |
 | `moves.status_codec_roundtrip`, `moves.status_capacity_evicts`, `moves.status_codec_long_uptime`, `moves.validate_bands`, `moves.validate_tell_8f` | lune | Status codec round-trips and capacity eviction; long uptime: four statuses with `untilF` ≈ 6e7 (above 62^5) → kept entries round-trip, the result is ≤ 50 chars, the smallest-`untilF` entry is evicted, no error; MoveDef band and 8f-tell validation | §3.4.4 | P3 | M0 |
 | `moves.disabled_move_blocked` | lune | A `StyleRuntime` with `disabled["1"] = true`: `Moves.canUse` false for slot 1, true for slot 2 | §3.4.2 | P3 | M0 |
-| `world.travel_streams_destination` | studio | Travel from the battle map (`arena_duel_m0` at M0, `candy_kingdom` once TASKS T211 builds it) to `training`: no `stream_around_failed` log; the client's root never goes below the destination's `KillY + 5`; `GetPredictionStatus(root)` back to `Predicted` within 2 s of the new character | §3.13.4 | P3 | M0 |
+| `world.travel_streams_destination` | studio | Travel from the battle map (`arena_duel_m0` at M0, `hub` once TASKS T211 builds it) to `training`: no `stream_around_failed` log; the client's root never goes below the destination's `KillY + 5`; `GetPredictionStatus(root)` back to `Predicted` within 2 s of the new character | §3.13.4 | P3 | M0 |
 | `config.combat_gdd_values` | lune | `Defaults.Combat` equals a literal table of GDD numbers | §3.17 | P3 | M0 |
 | `sim.hz60_clock`, `sim.attr_budget` | studio | Δf = 1 per call at Hz60; 49/52 attributes with correct types | §3.1.3, §3.3 | P3 | M0 |
 | `input.attach_contexts`, `input.scriptable_aim_replicates` | studio | 15 actions under `Player.Combat`; Script `Aim` reaches the server | §3.10 | P3 | M0 |
@@ -1428,34 +1429,38 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `rewind.ring_wraps`, `rewind.frames_for_rtt`, `query.sweep_excludes`, `classic.*` | lune | Rewind indexing; query sweep (fake `workspace` via `Loader.new`) | §3.12 | P3 | M0 |
 | `spike.SA-01` … `spike.SA-16` | studio/multi | Part 3 §3.16.4 | §3.16 | P3 | M0 |
 | `spike.S-P4-2` | multi; tags `m0`, `spike` | `Spike_SP4_2`: misprediction count per grab hold at 150 ms; run as `multi(2, M0Gate, spike.S-P4-2)` with `allowFail = {"^spike%."}` (recorded, not gated) | Part 4 §4.11 | P4 | M0 |
-| `spike.S-P4-3` | multi; tags `m1g`, `spike` | `Spike_SP4_3`: status write and pull cost — rollbacks per second on a victim in a zone, inside `stretch.a4` (B-class zone pull) and on `kit.pull` victims; `multi(2, M0Gate, spike.S-P4-3)`, `allowFail` as above | Part 4 §4.11 | P4 | M1-G |
+| `spike.S-P4-3` | multi; tags `m1g`, `spike` | `Spike_SP4_3`: status write and pull cost — rollbacks per second on a victim standing in a zone (`busker.a4`, `scoop.4`) and on a victim inside `lifeguard.a4` (B-class zone pull); `multi(2, M0Gate, spike.S-P4-3)`, `allowFail` as above | Part 4 §4.11 | P4 | M1-G |
 | `spike.S-P6-2` | multi; tags `m0`, `spike` | `Spike_SP6_2`: client-local massless parts welded to the local predicted character cause no attributable mispredictions (5 min run, misprediction log); `multi(2, Baseline30, spike.S-P6-2)`, `allowFail` as above | Part 6 §6.15 | P6 | M0 |
 
 #### 7.4.4 Style kits and the kit validator
 
 | ID | Level | Asserts | Ref | Owner | M |
 |---|---|---|---|---|---|
-| `styles.registry_18`, `styles.ids_match_types`, `styles.rarities_match_gdd`, `styles.implemented_set` | lune | 18 defs in `STYLE_IDS` order with GDD rarities; exactly 6 implemented | GDD §7.2, §0.10 | P4 | M0 |
+| `styles.registry_18`, `styles.ids_match_types`, `styles.rarities_match_gdd`, `styles.implemented_set` | lune | 18 defs in `STYLE_IDS` order with GDD rarities; exactly 6 implemented | GDD §7.2; §0.4 | P4 | M0 |
 | `styles.validate_all_clean` | lune | Kit validator `Styles.validate(Defaults)` returns `true, {}` | §4.1.4 | P4 | M0 |
 | `styles.rule_<ID>_detects` ×31 (S01–S06, K01–K25) | lune | Each rule fires on a one-field mutation of a valid kit | §4.1.4 | P4 | M0 |
 | `styles.overrides_apply`, `styles.overrides_invalid_rejected`, `styles.move_ids_unique`, `styles.frozen`, `styles.behavior_strike_nil` | lune | Overrides layer, immutability | §4.1.6 | P4 | M0 |
-| `kits.<id>.gdd_numbers` ×6 | lune | Kit numbers equal the GDD §7.3 tables | §4.5.9 | P4 | M0 (hero, stretch) / M1-G |
+| `kits.<id>.gdd_numbers` ×6 | lune | Kit numbers equal the GDD §7.3 tables | §4.5.9 | P4 | M0 (`attendant`, `lifeguard`) / M1-G |
+| `kits.signature_slot`, `kits.extenders_resolve`, `kits.peak_one_modifier`, `kits.kitprops_cover_summons`, `kits.getaway_rules`, `kits.getaway_schedule_matches`, the per-kit passive tests | lune | Part 4 definitions (`kits.peak_one_modifier`: each slice Peak has exactly one modifier key and `hurtboxScale == 1`; `kits.getaway_schedule_matches`: `dustsheet.a4` `params.getaway` equals the `Realm.rules["dustsheet.a4"]` timing) | §4.5.9, §4.4.3 | P4 | M0 / M1-G |
 | `kits.anim_specs_complete` | lune | Rule K24 on every implemented kit: `anim` specs for `m1` (12-entry `alt`), `q`, `1..4`, `a1..a4`, `awaken`, and every pose name in the pose library | §4.6 | P4 | M0 |
 | `behaviors.*`, `kit_status.*` | lune | Behavior purity and statuses | §4.2.11, §4.3.7 | P4 | M0 |
-| `style.registry_boot` | studio | `[ALG][Style] registry ok … problems=0` within 5 s of play start | §4.1.5 | P4 | M0 |
-| `kit.<id>.smoke` ×6 | studio | Every slot used on a dummy; before each slot the dummy's `Debuffs` and the attacker's `Buffs`/`Kit` are cleared with `CombatService._queuePatch` (or a fresh dummy slot is used), so flat adds from earlier slots (decay stacks, rocker's next-hit buff) cannot carry over; HP delta = `maxDamage` ± 0.1 (or `maxDamage` + the active flat adds, clamped to the band cap, when a slot is deliberately chained); cooldown attribute = f + toFrames(cooldown) | §4.8 | P4 | M0 / M1-G |
-| `kit.awaken.swap`, `kit.awaken.hurtbox` | studio | Move swap; hurtbox only scales up | GDD §6.2, §6.9 | P4 | M0 |
+| `style.registry_boot` | studio | `[HB][Style] registry ok … problems=0` within 5 s of play start | §4.1.5 | P4 | M0 |
+| `kit.<id>.smoke` ×6 | studio | Every slot used on a dummy; before each slot the dummy's `Debuffs` and the attacker's `Buffs`/`Kit` are cleared with `CombatService._queuePatch` (or a fresh dummy slot is used), so flat adds from earlier slots (`dustsheet` Dust stacks, the next-hit buffs of `attendant.a3` and `sandcastle.q`) cannot carry over; HP delta = `maxDamage` ± 0.1 (or `maxDamage` + the active flat adds, clamped to the band cap, when a slot is deliberately chained); cooldown attribute = f + toFrames(cooldown) | §4.8 | P4 | M0 / M1-G |
+| `kit.awaken.swap` | studio | Peak (Awakening) move swap | GDD §6.2, §6.9 | P4 | M0 |
 | `config.kits_override_next_life` | studio | Override applies after respawn only (created and run in TASKS T172, before the M0 gate) | §4.1.6 | P4 | M0 |
-| `kit.stretch.shield_reflect`, `kit.rocker.batshift_iframes`, `kit.frost.hover`, `kit.grab_vs_jump`, `kit.grab_breakaway`, `kit.moment_meter` | studio | Part 4 definitions | §4.9 item 21 | P4 | M0 / M1-G |
-| `kit.decay.well_heal` | studio | `decay` at 80 HP (`Dev.Command combatPatch {"HP":80}`) first lands one M1 on an `idle` dummy, then casts `decay.3` with the dummy inside the pool (the pool ticks on the dummy keep `CombatF` fresh, so out-of-combat regen cannot add); HP sampled 1f before the cast and at k = 179 → +3 HP exactly (owner ticks at k = 0, 60, 120) | §4.2.6 | P4 | M1-G |
-| `kit.decay.realm` | studio | Realm opens with **3** members (caster + the 2 targets inside 40 studs), as `combat.realm_open_members` | §4.9 item 21, §3.9.3 | P4 | M1-G |
+| `kit.attendant.trap` | studio | `attendant.q` plants a speed-0 `chase` summon (the chair: 20 HP, 6 s, `once`, a 4-stud trigger; engine item E2, Part 4 §4.9 item 24). A dummy walked to 6 studs from the chair, outside the 4-stud trigger, gets no snap; walked to 3.5 studs, inside it, the snap lands within `attack.startupF + 2` frames: dummy HP −3 and `Hitstun` Sub 6 (flinch) for 18f, exactly once, and the chair is then `Dead`. With a second dummy nearer the caster but outside the trigger, only the dummy at 3.5 studs from the chair is hit. The Lune `behaviors.summon_chase_nearest_carrier` pins the same nearest-carrier rule on the host | GDD §7.3.1; Part 4 §4.2.7, §4.9 item 21 | P4 | M0 |
+| `kit.scoop.meltaway_iframes` | studio | A dummy M1 timed to land on frames 1–8 of `scoop.3` (Melt Away) whiffs; one landing on frame 9 or later connects; the slide covers 18 studs ± 10 % | GDD §7.3.10; Part 4 §4.9 item 21 | P4 | M1-G |
+| `kit.grab_vs_jump`, `kit.grab_breakaway`, `kit.moment_meter` | studio | Part 4 definitions (`kit.grab_vs_jump` uses `attendant.4`) | §4.9 item 21 | P4 | M0 / M1-G |
+| `kit.dustsheet.getaway` | studio | The Getaway (`dustsheet.a4`, a Realm) opens with **3** members (caster + the 2 targets inside 40 studs), as `combat.realm_open_members`. Under `Realm.rules["dustsheet.a4"]` the two `tick` rules alternate, one pulse every 2 s: Dust Sheets slows each enemy member 30 % for 1 s; Quiet Hours rings a bell 0.5 s ahead, then each enemy member cannot use moves for 0.5 s. Lights Out (engine item E1) deals 3 only to members inside the dark quarter, which steps clockwise every 3 s; if E1 has not landed, the quarter goes dark with no damage | GDD §7.3.15; Part 4 §4.9 item 21; Part 3 §3.9.3 | P4 | M1-G |
+
+**Deferred (no M1-G user; Part 4 §4.9).** These keep their types and enum values, and their tests return with the first style that needs them: `look.stealth_ranges` (stealth status `iv` render), the Counter reflect path, hover `passiveStep`, Rush `echo`, Mobility `grapple`/`flight`/`slide`, Summon `marked`, Buff `toggleMode`, and the hitstun flavours `freeze`, `float`, `possess` and Grabbed subs 3–6. No Peak scales the hurtbox (`hurtboxScale = 1` in every kit).
 
 #### 7.4.5 Wish system (Part 5 names unless marked P7)
 
 | ID | Level | Asserts | Ref | Owner | M |
 |---|---|---|---|---|---|
 | `wish.gdd_tier_odds` | lune | `Wish.TierOdds` ppm = 500000, 280000, 140000, 60000, 16000, 3900, 100 | GDD §8.3 | P7 | M1-G |
-| `wish.gdd_flair_odds` | lune | `Wish.Flair` ppm shiny 20000, golden 4000, crystal 1000, rainbow 200, nightosphere 40, glitched 10; standard remainder 974,750 | GDD §8.7 | P7 | M1-G |
+| `wish.gdd_flair_odds` | lune | `Wish.Flair` (Finish) ppm glossy 20000, gilt 4000, seaglass 1000, pearl 200, glowtide 40, misprint 10; plain remainder 974,750 | GDD §8.7 | P7 | M1-G |
 | `wish.tier_tables_sum_1e6`, `wish.flair_tables` | lune | Every tier table sums to 1,000,000; normal and lucky flair tables each sum to 1,000,000 | GDD §8.8 | P5 | M1-G |
 | `wish.view_sums_100` | lune | Odds view: tier rows sum to 100 %; per-style rows sum to 100 %; flair rows sum to 100 % (separately) | GDD §8.8 | P5 | M1-G |
 | `wish.per_style_division` | lune | Per-style odds shown to 3 decimals = 16.667 / 9.333 / 4.667 / 2.000 / 0.800 / 0.390 / 0.010 % | GDD §8.3 | P7 | M1-G |
@@ -1464,14 +1469,15 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `wish.roll_vectors` | lune | R1–R16, incl. new-style priority (R4, R5) and Mythic duplicate → Spark (R16) | GDD §8.4 | P5 | M1-G |
 | `wish.view_priority_rows`, `wish.cosmic_fixed`, `wish.hash_stable`, `wish.hash_changes`, `wish.pool_matches_styles` | lune | Priority rows; Cosmic 0.01 % in every state | GDD §8.3–§8.4 | P5 | M1-G |
 | `wish.cosmic_path_bound_4400` | lune (slow) | Worst-case schedule: the 11th Mythic+ arrives at Wish 4,400, so 10 Sparks are guaranteed by then | GDD §8.4 | P7 | M1-G |
-| `wish.lucky_flair_only` | lune | Lucky Jar leaves tier tables identical | GDD §8.7 | P5 | M1-G |
+| `wish.lucky_flair_only` | lune | The luck pass (`lucky_jar`; player-facing Lucky Stamp) leaves tier tables identical | GDD §8.7 | P5 | M1-G |
 | `wish.mc_spine_tolerance`, `wish.mc_hard_pity_bounds`, `wish.mc_reference_exact` | lune (slow) | 2,000-run Monte Carlo means within ±10 % of §0.11; hard-pity worst cases; bit-exact reference | §0.11 | P5 | M1-G |
 | `wish.tier_frequencies_fresh`, `wish.flair_frequencies_fresh` | lune (slow) | 200,000 rolls within ±4σ | GDD §8.3, §8.7 | P5 | M1-G |
 | `wish.mul32_vectors`, `wish.fmix32_vectors`, `wish.stream_vectors`, `wish.batch10_vector`, `wish.ftue_styles_match_rarity`, `ledger.*` | lune | Part 5 vectors | §5.2.15 | P5 | M1-G |
-| `wish.ftue_first_rare` | studio | 20 fresh profiles: first roll is Rare `monarch` or `flame`, both occur | GDD §15.5 | P5 | M1-G |
+| `wish.ftue_first_rare` | studio | 20 fresh profiles: every first roll is Rare and one of the two `Wish.FirstWishGuarantee.Styles` (`sandcastle` or `scoop`, weights 1:1); both occur | GDD §15.5 | P5 | M1-G |
 | `wish.tutorial_grant_once` | studio | 3 Wishes once; not again on rejoin | GDD §15.5 | P5 | M1-G |
 | `wish.pity_epic_hard`, `wish.pity_mythic_hard` | studio | Server honours hard pity | GDD §8.4 | P5 | M1-G |
-| `wish.cosmic_craft` | studio | 10 Sparks → `chaos` owned; second craft denied | GDD §8.4 | P5 | M1-G |
+| `wish.cosmic_craft` | studio | 10 Sparks (player-facing Messages in a Bottle) → `ferry` owned; second craft denied | GDD §8.4 | P5 | M1-G |
+| `wish.cosmic_arrival_once` | studio | After a Cosmic craft every client receives `ui.notify.cosmic_arrival`, and the `ReplicatedStorage.Runtime` attribute `CosmicArrivalUntil` = server time + 60 (± 1); a second `WishService.cosmicArrival` call returns false and logs `arrival skip reason=already_fired` (the Cosmic Arrival fires once per server in M1-G; Part 6 renders it, `cam.arrival_fog`) | GDD §8.6; Part 5 §5.2.18 | P5 | M1-G |
 | `wish.batch10_server`, `wish.insufficient`, `wish.busy`, `wish.odds_view_matches_server`, `wish.lucky_odds_live`, `wish.escrow_release`, `wish.config_change_rehash`, `wish.anomaly_signal` | studio | Part 5 §5.2.17 (`wish.batch10_server` is the Studio run of the Lune vector `wish.batch10_vector`; IDs are unique across levels, §7.1.4) | §5.2.17 | P5 | M1-G |
 | `data.overflow_converts`, `progress.overflow_to_treasure` | studio | Earned Wishes over 1,000 → 10 Treasure each | GDD §17.2 | P2/P5 | M1-G |
 | `store.cap_blocked` | studio | Wish purchases that would exceed 1,000 are blocked | GDD §17.2 | P5 | M1-G |
@@ -1482,7 +1488,7 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 |---|---|---|---|---|---|
 | `security.pri_server_rejects` | studio | Restricted player: `Store.Prompt{wishes_10}` → `restricted` | GDD §8.8 | P2 | M1-G |
 | `store.pri_hidden_restricted` | studio | Restricted: `wishes_*` and `lucky_jar` hidden, `vip` visible | GDD §8.8 | P5 | M1-G |
-| `wish.restricted_paid_locked`, `wish.restricted_no_luck` | studio | Paid Wishes unusable and Lucky Jar ignored when restricted | GDD §8.8 | P5 | M1-G |
+| `wish.restricted_paid_locked`, `wish.restricted_no_luck` | studio | Paid Wishes unusable and the luck pass ignored when restricted | GDD §8.8 | P5 | M1-G |
 | `policy.failsafe_restricted`, `policy.dev_override` | studio | Policy fetch failure → restricted | GDD §8.8 | P5 | M1-G |
 | `store.receipt_idempotent` | studio | Same `PurchaseId` twice → granted once | GDD §18.5 | P5 | M1-G |
 | `store.mock_grant_wishes`, `store.mock_ignored_live`, `security.mock_ignored_live` | studio | Mock purchases only in Studio | §2.11.4 | P2/P5 | M1-G |
@@ -1492,31 +1498,34 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `shop.rotation_stable`, `shop.buy_style`, `shop.buy_insufficient`, `shop.buy_stale`, `shop.unimplemented_purchasable` | studio | Same window → same `rotationId`; +43,200 s → new rotation | GDD §8.5 | P5 | M1-G |
 | `progression.*` (lune), `progress.*` (studio) | lune/studio | Part 5 §5.5.12 | GDD §9 | P5 | M1-G |
 | `style.equip_*`, `style.totem_swap`, `style.training_trial`, `style.disabled_kill_switch`, `style.free_rotation_equip` | studio | Part 5 §5.1.8 (incl. "In development" styles not equippable) | §0.10 | P5 | M1-G |
-| `tel.ftue_monotonic`, `tel.echo_wish`, `tel.echo_economy`, `tel.fields_stringified`, `tel.budget_drop`, `tel.no_analytics_in_studio` | studio | Studio `[ALG][TEL]` echo of the KPI source events (§7.6.8) | GDD §20.4 | P5 | M1-G |
+| `tel.ftue_monotonic`, `tel.echo_wish`, `tel.echo_economy`, `tel.fields_stringified`, `tel.budget_drop`, `tel.no_analytics_in_studio` | studio | Studio `[HB][TEL]` echo of the KPI source events (§7.6.8) | GDD §20.4 | P5 | M1-G |
 | `tel.perf_sample_sent` | studio | `setConfig Telemetry {"PerfWindowSec":5,"PerfSendEverySec":10}`, seam `Telemetry._setPerfSampled(P, true)` → within 15 s the ring has a `perf_sample` record from P's VfxController sender; unsampled sender → dropped | §5.8.3, Part 6 §6.6.3 | P5 | M1-G |
 | `mod.report_logged`, `mod.report_self_rejected`, `mod.ban_dry_run` | studio | Part 5 §5.9 | GDD §18.10 | P5 | M1-G |
 
-#### 7.4.7 Appearance, skin packs, assets and lints
+#### 7.4.7 Appearance, Skin, assets and lints
 
 | ID | Level | Asserts | Ref | Owner | M |
 |---|---|---|---|---|---|
-| `appearance.effective_look` | lune | Pure truth table of `CharacterLook` per style | §0.4 | P5 | M1-G |
-| `appearance.per_style_override`, `appearance.ownlook_on_respawn`, `appearance.attrs_replicated`, `appearance.r15_only`, `appearance.trial_override_allowed` | studio | Part 5 §5.7.7 | §0.4 | P5 | M1-G |
-| `appearance.hurtbox_invariant` | studio | Hurtbox size and offset identical across Character, Oosona and Avatar lives | GDD §6.2, §0.4 | P5 | M1-G |
+| `appearance.effective_look` | lune | Pure truth table of `CharacterLook` per style: the global setting defaults to false (Full Uniform Off) and a per-style override wins | §0.4 | P5 | M1-G |
+| `appearance.per_style_override`, `appearance.ownlook_on_respawn`, `appearance.attrs_replicated`, `appearance.r15_only`, `appearance.trial_override_allowed` | studio | Part 5 §5.7.7 (`appearance.attrs_replicated`: after join the client reads `CharacterLook = false`, `OwnLook = "Postcard"`, `ShowStyleGear = true`; `appearance.per_style_override` sets the override value `"on"`) | §0.4 | P5 | M1-G |
+| `appearance.hurtbox_invariant` | studio | Hurtbox size and offset identical across Character, Postcard and Avatar lives | GDD §6.2; §0.4 | P5 | M1-G |
 | `multi.appearance_per_viewer` | multi | Viewer B with `OthersAppearance = AlwaysOwn` renders A in A's own look while A's server hurtbox is unchanged | §0.4 | P7 | M1-G |
-| `skin.fallback_order`, `skin.canon_locked`, `skin.interpolate_ids`, `skin.missing_logged_once` | lune | Part 2 §2.9.2 | §0.4 | P2 | M0 |
-| `skin.on_changed` | lune | A `Skin.onChanged` callback fires once when `setPack` switches Codename → Original, not when the pack is unchanged; the returned disconnect stops further calls | §2.9.2 | P2 | M0 |
-| `skin.pack_key_coverage` | lune | Every key referenced in `src/` (literal `Skin.text` keys plus generated `style.*`, `move.*`, `map.*`, `flair.*`, `rarity.*`, `ui.error.*`, `product.*`, `pass.*` keys) exists in `Codename` and `Original` with Part 8 §8.2.3 coverage semantics (every key in Original; in Codename a non-identity key may be inherited from Original, identity-namespace keys must be in Codename itself), skipping strip-stub packs (Part 8 §8.4.3: second line starts `-- STRIPPED for public build`, `strings` empty) | §0.4 | P7 | M0 |
-| `lint.strings_clean` | lune | `lint_strings.luau` (dev mode) exits 0 on the repo | §7.5.1 | P7 | M0 |
-| `lint.strings_detects_fixture` | lune | Fixture tree with a banned term in `Original` and a literal `Text = "Fight!"` → exit 1 with rules L04 and L01 | §7.5.1 | P7 | M0 |
+| `skin.fallback_order`, `skin.interpolate_ids`, `skin.missing_logged_once` | lune | Part 2 §2.9.2 | §0.4 | P2 | M0 |
+| `skin.on_changed` | lune | A `Skin.onChanged` callback fires once per `Skin._notify()` call, with `"Base"`; the returned disconnect stops further calls | §2.9.2 | P2 | M0 |
+| `skin.pack_key_coverage` | lune | Every key referenced in `src/` (literal `Skin.text` keys plus every family of Part 8's key-family registry, §8.4.3: `style.*`, `move.*`, `map.*` incl. `map.hub.zone.*`, `flair.*`, `rarity.*`, `variant.*`, `title.*`, `product.*`, `pass.*`, `ui.error.*`, `ui.wish.zone_<rarity>`, `ui.postcard.body.<id>` and the rest) exists in the `Base` pack (`src/Shared/Skin/Packs/Base.luau`) | §0.4; Part 8 §8.4.3 | P7 | M0 |
+| `lint.strings_clean` | lune | `lint_strings.luau` (dev mode) exits 0 on the repo; with no local denylist it prints one `W-NO-DENYLIST` warning (L05) and still exits 0 | §7.5.1 | P7 | M0 |
+| `lint.strings_detects_fixture` | lune | Fixture tree plus the fixture denylist `tests/core/fixtures/lint_strings/denylist.txt` (made-up terms only, passed with `--denylist`): a `Base` value holding a camel-cased, pluralised form of a fixture term and a literal `Text = "Fight!"` → exit 1 with rules L04 and L01; the L04 line names the denylist entry number and never prints the term | §7.5.1 | P7 | M0 |
+| `lint.denylist_public_required` | lune | `--public` with `--denylist` pointing at a missing file → exit 1 with an L05 finding; the same run in dev mode → exit 0 with one `W-NO-DENYLIST` warning | §7.5.1 | P7 | M0 |
+| `lint.denylist_stays_local` | lune; tag `release` | In a temporary git repository fixture under `build/`: a tracked `tools/denylist.local.txt` → L06 error; an untracked file listed in `.gitignore` → clean; an untracked file that `.gitignore` does not list → L06 error | §7.5.1 | P7 | M0 |
+| `lint.retired_keys_clean` | lune; tag `release` | `lint_retired_keys.luau` exits 0 on the repo; with no local key list it prints `SKIP no retired_keys list` and still exits 0 | §7.5.6 | P7 | M0 |
+| `lint.retired_keys_detects_fixture` | lune; tag `release` | The lint runs with `--list tests/core/fixtures/lint_retired_keys/retired_keys.txt` (made-up keys only, one entry per section, so no retired key is ever copied into `tests/`) and `--root tests/core/fixtures/lint_retired_keys/tree`: exactly one `retired-key` finding on each of the five marked fixture lines (one per rule R01–R05) and none elsewhere, so none for the `[style]` entry used as a word in a comment and none for the `[style-moveid]` entry in a dotted key outside move-ID position; no output line contains a fixture key | §7.5.6 | P7 | M0 |
 | `lint.manifest_clean` | lune | `check_manifest.luau` exits 0 on the repo | §7.5.2 | P7 | M0 |
 | `lint.manifest_release_detects_placeholder` | lune | Fixture manifest with a referenced `placeholder` key + `--release` → exit 1, rule M08 | §0.5 | P7 | M0 |
 | `lint.manifest_raw_id_detected` | lune | Fixture source with `rbxassetid://123` outside `Assets.luau` → rule M04 | §0.4 | P7 | M0 |
 | `framedata.export_up_to_date` | lune | `export_framedata.luau --check` finds no stale file | §7.5.3 | P7 | M0 |
 | `framedata.m1_on_block_gdd` | lune | Computed on-block advantage of M1-1..4 = −2, −2, −3, −10 | GDD §6.3 | P7 | M0 |
 | `anim.placeholders_built`, `anim.timing_lock` | studio | Part 4 definitions; a final clip that is neither `KeyframeSequence` nor `CurveAnimation` FAILs with `unsupported clip class <ClassName>` (§4.6.4) | §4.6 | P4 | M0 |
-| `look.stealth_ranges` | multi (2 clients; `multi(2, Baseline30, look.stealth_ranges)` only) | An enemy client at 20 studs sees the shimmer only; at 8 studs it sees the look | §4.7.6 | P4 | M1-G |
-| `look.modes_matrix` | multi (2 clients; `multi(2, Baseline30, look.modes_matrix)` only) | Part 6 §6.8.6: owner Character/Oosona/Avatar × gear on/off against each viewer `OthersAppearance` | Part 6 §6.8.6 | P6 | M1-G |
+| `look.modes_matrix` | multi (2 clients; `multi(2, Baseline30, look.modes_matrix)` only) | Part 6 §6.8.6: owner Character/Postcard/Avatar × gear on/off against each viewer `OthersAppearance` | Part 6 §6.8.6 | P6 | M1-G |
 
 #### 7.4.8 Network conditions and multi-client (Part 7 unless marked)
 
@@ -1525,16 +1534,16 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `combat.rewind_hit_150ms` | studio, net | Under `M0Gate`, ≥ 9/10 timed M1s hit a strafing bot; ≤ 4/10 with rewind disabled | GDD §18.2 | P3 | M0 |
 | `combat.rewind_cap`, `combat.trade_same_frame` | studio | Rewind clamp at 200 ms; same-frame trades | GDD §18.2 | P3 | M0 |
 | `render.undo_spark` | studio, net | Mispredicted spark removed within 15f | §3.11.8 | P3 | M0 |
-| `render.remote_telegraph_full` | studio, net (solo, under `M0Gate`) | A bot uses `hero.2`; the observer client draws the Arc telegraph for 8 ± 1 render frames before the move's VFX | Part 6 §6.6.1 | P6 | M0 |
+| `render.remote_telegraph_full` | studio, net (solo, under `M0Gate`) | A bot uses `attendant.4`, which has an Arc telegraph; the observer client draws the telegraph for `leadFrames` ± 1 render frames (at least 8, GDD §6.14) before the move's VFX | Part 6 §6.6.1 | P6 | M0 |
 | `sim.client_writes_local_only`, `sim.carrier_stitch` | multi | Part 3 §3.11 | §3.11 | P3 | M0 |
-| `multi.join_leave_rejoin` | multi | Client B `LeaveTest` → `[ALG][Data] released user=<id>` within 2 s; `AddPlayers(1)` → new player `DataLoaded` and spawned within 30 s | §2.3.5 | P7 | M0 |
+| `multi.join_leave_rejoin` | multi | Client B `LeaveTest` → `[HB][Data] released user=<id>` within 2 s; `AddPlayers(1)` → new player `DataLoaded` and spawned within 30 s | §2.3.5 | P7 | M0 |
 | `multi.ko_feed_both` | multi | `killAsync(B)` → both clients receive exactly one `Combat.Feed`; B respawns after 4 ± 0.1 s | GDD §6.11 | P7 | M0 |
 | `multi.pb_rhythm` | multi, net | Bot M1-1 every 120f at client A; A presses Block at hit − 4f (own sim frame), holds 12f; 20 attempts; metric `pbRatePct`; pass ≥ 90 % (td) | GDD §18.2 | P7 | M0 |
 | `multi.pb_reactive` | multi, net | Same attack; A blocks when it first sees the bot enter the M1 state; metric only (latency penalty) | GDD §18.2 | P7 | M0 |
 | `multi.prediction` | multi, net | 2 clients brawl each other near 4 bots for 120 s; each client `predSuccessPct` (rollback proxy, §7.6.4) ≥ 97 % | GDD §18.2 | P7 | M0 |
-| `multi.dash_no_rubberband` | multi, net | 10 dashes by client A; at dash end + 10f, client-reported position vs server trace position differ ≤ 1.0 stud | GDD §18.2, §3.16.4 SA-08 | P7 | M0 |
+| `multi.dash_no_rubberband` | multi, net | 10 dashes by client A; at dash end + 10f, client-reported position vs server trace position differ ≤ 1.0 stud | GDD §18.2; Part 3 §3.16.4 SA-08 | P7 | M0 |
 | `multi.wish_under_loss` | multi, net | Under `M0Gate`, 10 sequential `Wish.Make{1}` from client A: all `ok`, ledger +10, Wishes −10 exactly | GDD §18.5 | P7 | M1-G |
-| `multi.realm_two_clients` | multi | A (decay) casts the Realm with B 10 studs away: server membership and B's client sees `Realm_<id>` and its own `RlmId` within 30f of opening | GDD §6.10 | P7 | M1-G |
+| `multi.realm_two_clients` | multi | A (`dustsheet`) casts its Getaway (`dustsheet.a4`, a Realm) with B 10 studs away: server membership and B's client sees `Realm_<id>` and its own `RlmId` within 30f of opening | GDD §6.10 | P7 | M1-G |
 | `multi.wish_announce` | multi | A's forced Legendary pull → B receives the server-wide notify (`ui.notify.wish_legendary`) within 2 s | GDD §8.6 | P7 | M1-G |
 | `ui.report_submit` | multi (`multi(2, Baseline30, ui.report_submit)` only) | Part 6 §6.9.12: A reports B from Settings ▸ Safety with reason `teaming` → `ModerationService.reports(1)` holds `{reporter = A, target = B, reason = "teaming"}` and A gets the `ui.notify.report_thanks` toast; with `Features.Reports = false` the Safety list shows no report buttons | Part 6 §6.9.12 | P6 | M1-G |
 
@@ -1549,7 +1558,7 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `perf.leak_after_clear` | perf | 20 bots brawl 120 s, `clearBots`, +10 s: instances ≤ baseline × 1.02, Lua heap ≤ baseline × 1.10, unparented instances ≤ 200 (td) | GDD §18.7 | P7 | M1-G |
 | `perf.m0_gate_load` | perf (multi 4) | 4 scripted clients + 20 brawl bots, `M0Gate`, 300 s: ≥ 95 % of seconds at ≥ 55 Hz server heartbeat; every client `predSuccessPct` ≥ 97 %; 0 errors | GDD §18.2, §18.7 | P7 | M0 |
 | `perf.m0_clients8` | perf (multi 8) | 8 clients + 12 bots, `M0Gate`, 180 s: same server and client criteria | §0.0 | P7 | M0 |
-| `perf.m1g_soak` | perf (multi 8) | 8 clients + 12 bots on `candy_kingdom`, 2 decay Realms, 5 forced awakenings, `Baseline30`, 600 s: heartbeat criterion; heap growth (t = 120 → 600 s) ≤ 10 %; client draw calls ≤ 900, triangles ≤ 600k, emitters ≤ 400, particles ≤ 6,000, beams/trails ≤ 150; 0 errors | GDD §18.7, §13.5 | P7 | M1-G |
+| `perf.m1g_soak` | perf (multi 8) | 8 clients + 12 bots on `hub`, 2 `dustsheet` Getaways (Realms), 5 forced Peaks (awakenings), `Baseline30`, 600 s: heartbeat criterion; heap growth (t = 120 → 600 s) ≤ 10 %; client draw calls ≤ 900, triangles ≤ 600k, emitters ≤ 400, particles ≤ 6,000, beams/trails ≤ 150; 0 errors | GDD §18.7, §13.5 | P7 | M1-G |
 
 #### 7.4.10 MCP input-driven
 
@@ -1560,13 +1569,14 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `mcp.block_hold_f` | mcp | key down F, wait 0.5, key up F | `Block` state entered; no `BlkLockF` (hold, not a tap) | GDD §15.2, §6.4 | P7 | M0 |
 | `mcp.dash_q_side` | mcp | key down D, key press Q, key up D | Side dash `Sub`; `CdDS` set | GDD §15.2, §6.5 | P7 | M0 |
 | `mcp.awaken_g` | mcp | (setup sets Meter 100) key press G | `Awakening` state entered | GDD §6.9 | P7 | M0 |
-| `mcp.move_keys` | mcp | One, wait 1.5, Two, wait 1.5, Three, wait 1.5, Four | Move states for slots 1–4 entered (hero) | GDD §15.2 | P7 | M0 |
+| `mcp.move_keys` | mcp | One, wait 1.5, Two, wait 1.5, Three, wait 1.5, Four | Move states for slots 1–4 entered (attendant) | GDD §15.2 | P7 | M0 |
 | `mcp.touch_layout_phone` | mcp | snippet `device_sim.luau` `androidLow` (Client), capture, snippet `device_sim.luau` `phone1334` (Client), capture, snippet `device_sim.luau` `stop` | Client `layoutCheck` at each preset: every touch button exists, is visible, inside the screen, no overlaps, ≥ 44 px (td); HUD text ≥ 14 px at `phone1334` | GDD §15.2, §16.3 | P7 | M0 |
 | `mcp.ui_wish_click` | mcp | mouse click on Part 6's Wish ×1 button path | `Wish.Make` handled once (ledger +1) | GDD §15.4 | P7 | M1-G |
-| `mcp.wheel_totem` | mcp | navigate to a Style Totem, key press (Part 6 interaction key) | Style Wheel open in the client store | GDD §15.4 | P7 | M1-G |
+| `mcp.wheel_totem` | mcp | navigate to a Style Totem (player-facing Charm Rack), key press (Part 6 interaction key) | Style Wheel (Charm Ring) open in the client store | GDD §15.4 | P7 | M1-G |
 | `mcp.tab_no_playerlist` | mcp | key press Tab | Client `StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.PlayerList) == false` and `(Enum.CoreGuiType.Backpack) == false`, `GuiService.AutoSelectGuiEnabled == false` (Part 3 §3.10.1 CoreGui calls), reported by the client driver (`dctx.report`) after the key press; once the Style Wheel exists (M1-G, T215) the Style Wheel screen is also open in the client store | GDD §15.2, Part 3 §3.10.1 | P7 | M0 |
 | `mcp.gamepad_menu_nav` | mcp | gamepad `DPadDown`, then `ButtonB` (if the MCP snapshot cannot send gamepad buttons, run with `useFallback`: the client driver fires the same `UI` bindings) | `DPadDown` sets `GuiService.SelectedObject` to the menu strip's Style button; `ButtonB` clears it (Part 6 §6.9.5) | GDD §15.2 | P6 | M1-G |
-| `look.gear_silhouette` | mcp | (setup: `BuildTemplates {lookSet}`; args `lookSet`, `silhouette = true`) one `screen_capture` per implemented style, ≤ 3 per run | Captures attached to a human review request (GDD §12.3 64 px silhouette; Part 8 §8.5.3 T1 rows recorded `pending`); the run itself must end `fail=0` | §4.7, Part 8 §8.5.3 | P4 | M1-G |
+| `look.gear_silhouette` | mcp | (before Play the agent rebuilds the templates in Edit with the `BuildTemplates` option `silhouette = true`, Part 6 §6.8.6, and rebuilds the default templates afterwards) one `screen_capture` per implemented style, ≤ 3 per run | Stills for the human blind tests (GDD §12.3: each style reads from its Charm Gear prop in pure black at 48 px; T8 blind art comparison): the agent appends one `pending` row per still to `docs/agent/RECOGNIZABILITY.md` (each still is one style, so this is Part 8 §8.5.3's one row per subject `style:<id>` and run) and never fills a result; the run itself must end `fail=0` | §4.7, Part 8 §8.5.3 | P4 | M1-G |
+| `look.clip_stage` | mcp; tags `m0`, `spike` | (setup: the agent has rebuilt the templates with `silhouette = true` in Edit before Play; arg `styleId`, default `attendant`; a bot of that style, with its meter set to 100, runs a `Fixtures.timeline` brain that uses every slot once within 30 s against a second bot on the TestPad) wait 10, capture, wait 10, capture, wait 10, capture | The demo lasts 30 s ± 1 s and every slot of the style (`m1`, `q`, `1`–`4`, Peak, `a1`–`a4`) appears in the tap log; at a gate run (§7.7.2 A14, §7.7.3 A12) the three stills go with one `pending` T11 row in `docs/agent/RECOGNIZABILITY.md`, and other runs append no row; the producer records the 30 s masked-silhouette clip from a rerun the agent stages on request (§7.7.2 A14). The `spike` tag keeps it out of every other gate selector | GDD §5.5, Part 8 §8.5.3 | P7 | M0 / M1-G |
 
 #### 7.4.11 Human
 
@@ -1576,6 +1586,8 @@ New Dev command (added to Part 2's `DevCmd` enum): `testReport(run: string, key:
 | `human.m1g_feel` | human | HF-01 … HF-19 | GDD §6–§8, §15 | M1-G |
 | `human.device_low_android` | human | HD-01 … HD-09 (§7.7.5) at M0; HD-01 … HD-10 at M1-G (HD-10 menus on touch) | GDD §18.7, §20.2, §15.1 | M0, M1-G |
 | `human.sa_visualizer_reading` | human | SA visualizer (Ctrl+Shift+F6) prediction success ≥ 97 % during `perf.m0_gate_load` with the human in client A | GDD §18.2 | M0 |
+| `human.t11_clip_test` | human | T11 gameplay-clip test, run by the producer: masked-silhouette clips, 30 s per style, staged by `look.clip_stage`; results signed in `docs/agent/RECOGNIZABILITY.md`. The Starter pair goes first | GDD §5.5, Part 8 §8.5.3 | After M0 for `attendant` and `lifeguard`, before any public footage; again for each slice style as it lands (M1-G) |
+| `human.t7_t10_static` | human | T7 full-lineup recognition test, T8 blind art comparison, T9 neighbour check against well-known IP, T10 Lineage Index check (every reference labelled public domain, generic or ours); run by the producer on concept art and on the agent's stills; results signed in `RECOGNIZABILITY.md` | GDD §5.5, Appendix D, Part 8 §8.5.3 | Before art lock; required by the publish gate |
 
 #### 7.4.12 World, presentation and UI (Part 6 names)
 
@@ -1583,39 +1595,48 @@ Part 6 §6.12 is the full list; rows group its names by level and milestone (fro
 
 | ID | Level | Asserts | Ref | Owner | M |
 |---|---|---|---|---|---|
-| `movement.volume_*` (4), `theme.contrast`, `theme.reveal_durations`, `theme.cooldown_frac`, `theme.touch_no_overlap`, `perf.defaults_gdd`, `perf.json_safe`, `perf.tiers_ordered`, `perf.audio_map_complete`, `perf.lighting_presets_complete` | lune | Part 6 definitions (`movement_volumes.spec.luau`, `theme.spec.luau`, `perf.spec.luau`) | §6.12 | P6 | M0 |
-| `theme.style_palette_variants` | lune | Part 6 definition (`Theme.stylePalette` variants) | §6.9.4 | P6 | M1-G |
+| `movement.volume_*` (5, incl. `movement.volume_tide_gating`), `movement.tide_phase`, `theme.contrast`, `theme.reveal_durations`, `theme.cooldown_frac`, `theme.touch_no_overlap`, `perf.defaults_gdd`, `perf.json_safe`, `perf.tiers_ordered`, `perf.audio_map_complete`, `perf.lighting_presets_complete` | lune | Part 6 definitions (`movement_volumes.spec.luau`, `theme.spec.luau`, `perf.spec.luau`) | §6.12 | P6 | M0 |
+| `theme.style_palette_variants`, `theme.rarity_tokens`, `perf.body_scale_keys` | lune | Part 6 definitions (`Theme.stylePalette` variants; the rarity tokens; `Perf.Looks.BodyScale` holds exactly the four body-style ids of `Appearance.PostcardStyles`) | §6.9.4, §6.12 | P6 | M1-G |
 | `render.no_attr_signal`, `anim.no_track_cache` | lune (source lints) | Part 6 definitions (source-text checks a Studio scenario cannot make) | §6.6.1, §6.6.2 | P6 | M0 |
 | `anims.base64_roundtrip`, `anims.upload_refuses_without_approve` | lune | `tests/core/upload_anims.spec.luau` (loads `tools/base64.luau` through `@tools/`): 3-byte, 4-byte and 1 KB seeded buffers round-trip; a dry pass with a fake key prints the pending count and makes no request | §6.6.9 | P6 | M0 (only when conditional card T143 runs) |
 | `world.spring_launch`, `world.void_kill`, `map.arena_spawn_8`, `map.arena_no_escape`, `training.dummy_mode_ui`, `training.framedata_m1`, `training.damage_numbers_toggle`, `training.reset_travel` | studio | Part 6 definitions | §6.12 | P6 | M0 |
-| `world.river_slow`, `world.house_break_rebuild`, `world.hatch_fall_and_spring`, `world.rebuild_postponed_when_occupied`, `map.ck_zone_label`, `map.ck_boundary_soft`, `map.ck_totem_prompt`, `training.trial_equip` | studio | Part 6 definitions | §6.12 | P6 | M1-G |
+| `world.shallows_slow`, `world.tide_swap`, `world.hut_break_rebuild`, `world.trapdoor_fall_and_trampoline`, `world.rebuild_postponed_when_occupied`, `map.hub_zone_label`, `map.hub_boundary_soft`, `map.hub_totem_prompt`, `training.trial_equip` | studio | Part 6 definitions (on the `hub` map, Elsewhere-on-Sea: the shallows, the tide, beach huts, the trapdoors to Under the Pier and the trampolines; `world.tide_swap` also runs under `M0Gate` for spike S-P6-15, Part 6 §6.15) | §6.12 | P6 | M1-G |
 | `render.hitstop_not_reentry`, `render.no_double_move_vfx`, `render.focus_target`, `render.haptic_gate`, `anim.cosmetic_budget`, `vfx.*` (incl. `vfx.attach_unanchored`), `sfx.voice_cap`, `sfx.bark_throttle`, `sfx.bus_volumes`, `cam.shift_lock_default`, `cam.reduced_motion`, `cam.flash_rate`, `ragdoll.*`, `look.style_tell_always`, `look.face_expressions` | studio | Part 6 definitions (`look.face_expressions`: programmatic frame checks plus one 3×3 `screen_capture` for human review) | §6.12 | P6 | M0 |
-| `sfx.map_complete`, `cam.lighting_follows_map`, `look.oosona_three_colour`, `look.variant_render` | studio | Part 6 definitions | §6.12 | P6 | M1-G |
+| `sfx.map_complete`, `cam.lighting_follows_map`, `cam.arrival_fog`, `look.postcard_three_colour`, `look.body_styles`, `look.peak_uniform`, `look.variant_render` | studio | Part 6 definitions (`cam.arrival_fog` renders the Cosmic Arrival that `wish.cosmic_arrival_once` fires; `look.peak_uniform`: at Peak the uniform shows for its duration with Full Uniform Off, and the root and hurtbox never change size) | §6.12 | P6 | M1-G |
 | `hud.hp_drain`, `hud.cooldown_wipe`, `hud.meter_ring`, `hud.breakaway_swap`, `hud.touch_binding`, `hud.combo_counter`, `hud.simple_preset`, `hud.edge_indicators` | studio | Part 6 definitions | §6.9.5 | P6 | M0 |
-| `hud.wallet_level`, `hud.quests_progress`, `hud.move_lock_glyph`, `ui.*` (Style Wheel, Wish, Shop, Store, Settings, Results, Notify, FTUE; incl. `ui.no_offer_after_loss`; `ui.report_submit` is level `multi`, §7.4.8), `input.block_toggle`, `input.run_toggle` | studio | Part 6 definitions | §6.12 | P6 | M1-G |
+| `hud.wallet_level`, `hud.quests_progress`, `hud.move_lock_glyph`, `hud.tide_chip`, `ui.*` (Style Wheel, Wish, Shop, Store, Settings, Results, Notify, FTUE; incl. `ui.no_offer_after_loss`, `ui.skin_refresh`, `ui.wheel_titles`, `ui.wish_stamp_first`, `ui.postcard_preview`; `ui.report_submit` is level `multi`, §7.4.8), `input.block_toggle`, `input.run_toggle` | studio | Part 6 definitions | §6.12 | P6 | M1-G |
 
 ---
 
 ### 7.5 Lints and tools
 
-All tools are Lune scripts run from the repo root, load `src/` only through `tests/shim/Loader.luau`, print `[ALG][LINT] <path>:<line> <rule> <detail>` (or `[ALG][LINT] <key> <rule> <detail>` for non-file findings) and end with `[ALG][LINT] <tool> SUMMARY errors=<n> warnings=<m>`. Exit codes: `0` clean (warnings allowed), `1` errors, `2` usage error.
+All tools are Lune scripts run from the repo root, load `src/` only through `tests/shim/Loader.luau`, print `[HB][LINT] <path>:<line> <rule> <detail>` (or `[HB][LINT] <key> <rule> <detail>` for non-file findings) and end with `[HB][LINT] <tool> SUMMARY errors=<n> warnings=<m>`. Exit codes: `0` clean (warnings allowed), `1` errors, `2` usage error.
 
-File writes: every Lune script under `tools/**` (except the Studio snippets `tools/studio/**` and the plugin source `tools/plugin/AlgebraicTestHarness/**`) writes files only through `tools/lib/SafeWrite.luau` (Part 8 §8.4.5), never with `fs.writeFile`, `fs.copy` or `fs.move`. In this part that covers `tools/export_framedata.luau` (§7.5.3) and `tools/plugin/build.luau` (§7.3.8); Part 8's `lint_strings --strip/--unstrip` and Part 6's `tools/upload_anims.luau` follow the same rule. Part 8's Lune test `ip.no_tool_writes_signed_files` scans for it. `tests/run.luau` (its `--json` report, §7.2.2) is outside `tools/**` and outside that scan.
+File writes: every Lune script under `tools/**` (except the Studio snippets `tools/studio/**` and the plugin source `tools/plugin/HullabrawlTestHarness/**`) writes files only through `tools/lib/SafeWrite.luau` (Part 8 §8.4.5), never with `fs.writeFile`, `fs.copy` or `fs.move`. In this part that covers `tools/export_framedata.luau` (§7.5.3) and `tools/plugin/build.luau` (§7.3.8); Part 6's `tools/upload_anims.luau` follows the same rule. The lints in this part only read files. Part 8's Lune test `ip.no_tool_writes_signed_files` scans for it. `SafeWrite` refuses the three protected files `docs/agent/TITLE_CLEARANCE.md`, `tools/denylist.local.txt` and `tools/retired_keys.txt` (`SafeWrite.isProtected`, by base name), so no tool ever writes them, and no tool writes the human-signed files. `tests/run.luau` (its `--json` report, §7.2.2) is outside `tools/**` and outside that scan.
 
 #### 7.5.1 `tools/lint_strings.luau` (mechanism; rules data from Part 8)
 
-Usage: `lune run tools/lint_strings.luau [--public] [--pack <Codename|Original|Canon>] [--rules <path>]`. Part 8 §8.4.3 adds the publish-gate flags `--tree <json>`, `--strip <P>` / `--unstrip` and `--dry-run` (L11, L17 and L22 report `W-DRYRUN` warnings instead of errors; used only by the agent procedure `ip.gate_dry_run`, §7.7.6).
+Usage: `lune run tools/lint_strings.luau [--public] [--rules <path>] [--denylist <path>]`. There is one shipped pack, `Base` (`src/Shared/Skin/Packs/Base.luau`), so the lint takes no pack argument. `--denylist` defaults to `tools/denylist.local.txt`; tests point it at a fixture. Part 8 §8.4.3 adds rules L07–L15 and the flags `--tree <json>`, `--meta <path>`, `--text "<s>" --scope <prompt|meta|text>` and `--dry-run` (used only by the agent procedure `ip.gate_dry_run`, §7.7.6: findings of L05, L09, L13 and L15 about missing or placeholder human inputs become `W-DRYRUN` warnings instead of errors).
 
 | Rule | Mode | Check |
 |---|---|---|
 | L01 literal UI text | always | In `src/StarterPlayerScripts/**` no `Text`, `PlaceholderText` or `Title` assignment (or `Create` prop) whose literal contains a letter; use `Skin.text` (Part 2 §2.10 item 12) |
-| L02 key coverage | always | Every referenced key (literal `Skin.text("…")`/`Skin.has` keys plus the generated families of `skin.pack_key_coverage`) exists in `Codename` and `Original` with Part 8's coverage semantics (§8.2.3: Original is the complete base; Codename and Canon hold overrides and inherit non-identity keys from Original, while identity namespaces must be complete in every pack; Part 8 §8.4.3 L02a/L02b), skipping strip-stub packs (Part 8 §8.4.3: a pack whose second line starts `-- STRIPPED for public build` and whose `strings` is empty; L14 checks which packs must be stubs) |
-| L03 key format | always | Pack keys match §0.4 key formats; no unknown namespaces |
-| L04 denylist | dev: `Original` pack and `src/**` minus `Skin/Packs/Codename.luau` and `Canon.luau`; `--public`: the pack to be published (`--pack`, default `Defaults.SkinPack`) plus all of `src/**` (code, comments, instance names in builders) | No denylisted term from the rules file (case-insensitive, word boundary), per Part 8's per-pack rules |
-| L05 Canon lock | always | `Defaults.SkinPack ~= "Canon"` unless `Defaults.LicenseConfirmed == true` |
-| L06 public acknowledgement | `--public` | If the published pack is `Codename`, `Defaults.PublicCodenameAcknowledged == true` (§0.9) |
+| L02 key coverage | always | Every referenced key (literal `Skin.text("…")`/`Skin.has` keys plus the generated families of `skin.pack_key_coverage`; the family registry is Part 8 §8.4.3) exists in `Base` |
+| L03 key format | always | Pack keys match §0.4 key formats and the grammar of Part 8 §8.2.2; the namespace is one of exactly those in Part 8 §8.2.2 (`style`, `move`, `map`, `flair`, `rarity`, `variant`, `title`, `product`, `pass`, `badge`, `ui`); no other namespace |
+| L04 denylist terms | dev: every `Base` value and every string literal in `src/**`; `--public`: all of `src/**` text (code, comments, instance names in builders); plus the scopes Part 8 §8.4.2 adds (`prompt` and `text` always; `meta`, the publish metadata, and `tree`, the Studio tree dump, under `--public`) | No term from the local denylist, and no term from the repo rules file whose `scopes`, `mode` and `keyPattern` cover the input, appears (matching below; the rules-file `gambling` list is checked by Part 8's L07 instead). A finding prints `[HB][LINT] <path>:<line> L04 denylist entry <n>` (or `rules term <n>`), never the term itself |
+| L05 denylist present | always | `--public`: the denylist file exists and holds at least one term, otherwise an error. Dev mode: a missing file gives one warning `W-NO-DENYLIST`, and L04 then checks only the repo rules file |
+| L06 denylist stays local | always | `tools/denylist.local.txt` is ignored by git (`git check-ignore -q` succeeds) and not tracked (`git ls-files` lists nothing for it); a tracked file of that name anywhere in the repository is an error |
 
-Under `--public` every file in `src/**` ships, including `Skin/Packs/Canon.luau`; without `LicenseConfirmed` that file is in L04 scope, so Part 8 strips Canon (and Codename for Original targets) to stubs before a public publish (§8.4.3 `--strip`). The rules file is owned by Part 8 (proposed default path `tools/lint_strings.rules.json`; Part 8 may rename it). Schema: `{ "version": 1, "terms": [ { "term": string, "packs": ["Original" | "Codename" | "Canon"], "scopes": ["pack" | "src"], "mode": "always" | "public", "note": string? } ] }`. The file is never under `src/`, so denylisted names never ship.
+**Local denylist (`tools/denylist.local.txt`).** Third-party names that player-visible strings and metadata must never contain live only here, never in the repository.
+- The owner or counsel supplies the file. It is gitignored and never committed, never copied into `src/`, and never quoted in a commit message, evidence line, blocker, prompt or chat. The agent never creates or edits it (Edit/Write are denied on it, Part 1 §1.2.4); the lint only reads it.
+- Required for a public publish (§7.7.6 R1). Optional in dev, and absent in CI, where L05 only warns.
+- Format: UTF-8 text, one term per line (a term may have several words); blank lines and lines starting with `#` are ignored.
+- Matching (L04, also used for repo rules terms): the scanned text and each term are normalized the same way: split camelCase and letter–digit boundaries, lower-case, and treat every run of spaces, `_`, `-`, `.`, `/` and `'` as one space. A term hits when its words appear as consecutive whole words; the last word may carry a plural `s` or `es`.
+- Output names the entry by its line number in the file, so lint logs, CI logs and `PROGRESS.md` evidence never contain a denylisted name.
+
+**Repo rules file** `tools/lint_strings.rules.json` (Part 8 data, committed; `--rules` overrides the path). It holds only generic terms (for example gambling words, Part 8 §8.4.2) and never a third-party name. Schema: `{ "version": 2, "terms": [ { "term": string, "scopes": [string], "mode": "always" | "public", "list": string?, "keyPattern": string?, "note": string? } ] }`, where `scopes` are `pack`, `src` and the scopes Part 8 §8.4.2 adds (`meta`, `prompt`, `tree`, `text`), and the optional `list` (a label used in findings and by L07) and `keyPattern` (restricts a `pack` term to matching keys) are Part 8's fields. The file is never under `src/`.
+
+Under `--public` every file in `src/**` ships, so all of it is in L04 scope.
 
 #### 7.5.2 `tools/check_manifest.luau` (placeholder-asset lint)
 
@@ -1632,32 +1653,34 @@ Usage: `lune run tools/check_manifest.luau [--release] [--game <universeId>] [--
 | M07 products | error | `Assets.products[0]` has every `ProductKey` and `PassKey` (Studio mock); other universes have numeric ids > 0; `--release --game <id>` requires the full set for that universe |
 | M08 release placeholders | error (`--release` only) | No referenced key has `status = "placeholder"` or `id = ""` |
 
+Part 8 §8.5.1 adds the provenance rules M09–M13 to this tool; Part 7 runs them with M01–M08.
+
 In M0/M1-G (graybox) `--release` is expected to fail; that is the §0.5 rule blocking public releases.
 
 #### 7.5.3 `tools/export_framedata.luau`
 
-Usage: `lune run tools/export_framedata.luau [--check] [--golden] [--pack Original]`.
+Usage: `lune run tools/export_framedata.luau [--check] [--golden]`.
 - Builds rows with the pure `Moves.frameRows(style: Fsm.StyleRuntime?, cfg): { FrameRow }` (new export of `Core/Moves.luau`; `nil` style = chassis rows: M1-1..4, the three Ender variants, air M1, Dash M1, the four dashes, block/Perfect Block/Guard Break, Breakaway, Awakening activation). The same function feeds Part 6's Training Grounds frame-data panel, so docs and game cannot drift.
 
 ```lua
 export type FrameRow = {
-	id: string,                     -- "chassis.m1_1", "hero.3", "chassis.dash_side"
-	labelKey: string,               -- Skin key, e.g. "move.hero.3.name"
+	id: string,                     -- "chassis.m1_1", "attendant.3", "chassis.dash_side"
+	labelKey: string,               -- Skin key, e.g. "move.attendant.3.name"
 	startup: number, active: number, recovery: number, total: number,  -- frames @ 60 Hz
 	onHit: number?, onBlock: number?,   -- advantage = stun − (active − 1) − recovery (Part 4 K04 formula)
 	damage: number?, guardDamage: number?, chip: number?, hitstun: number?,
 	cooldownSec: number?, iFrames: { number }?, telegraphLead: number?, tags: { string },
 }
 ```
-- Writes (through `tools/lib/SafeWrite.luau`, §7.5) `docs/reference/framedata.json` (Part 4 contract) and `docs/reference/framedata.md` (one table per style plus the chassis table, labels from the `--pack` pack, default `Original`). Output is byte-deterministic: sorted rows, no timestamps, header line `generatedFrom: config v<Version> hash <fnv32 of Defaults JSON>`.
+- Writes (through `tools/lib/SafeWrite.luau`, §7.5) `docs/reference/framedata.json` (Part 4 contract) and `docs/reference/framedata.md` (one table per style plus the chassis table, labels from the `Base` pack). Output is byte-deterministic: sorted rows, no timestamps, header line `generatedFrom: config v<Version> hash <fnv32 of Defaults JSON>`.
 - `--golden` regenerates Part 3's `tests/core/golden/*.json`.
-- `--check` regenerates in memory, compares byte-for-byte, prints `[ALG][LINT] <file> stale` for each difference, exits 1 if any. CI runs it.
+- `--check` regenerates in memory, compares byte-for-byte, prints `[HB][LINT] <file> stale` for each difference, exits 1 if any. CI runs it.
 
 #### 7.5.4 Kit validator invocation
 
 - Host: `styles.validate_all_clean` and the 31 `styles.rule_<ID>_detects` tests (Part 4 §4.1.4) run in every host gate.
 - Studio: `StyleService.init()` calls `Styles.validate(Runtime.get())`; `style.registry_boot` checks the `registry ok` line.
-- Ad hoc: `lune run tests/run.luau --filter styles.` prints each rule result; failures print Part 4's `[ALG][Style] ERROR rule=<id> …` text in the FAIL detail.
+- Ad hoc: `lune run tests/run.luau --filter styles.` prints each rule result; failures print Part 4's `[HB][Style] ERROR rule=<id> …` text in the FAIL detail.
 
 #### 7.5.5 Lint rule additions (`tools/lint_rules.luau`, Part 1 owner)
 
@@ -1665,6 +1688,36 @@ export type FrameRow = {
 |---|---|---|
 | `devtools-isolation` | `src/**` | The string `DevTools` appears only in `src/DevTools/**` and `Services/TestHarness.luau`; `TestRun` only there and in `Main.client.luau`; `CreateVirtualInput` only in `src/DevTools/Tests/Client/**` and in the P0 probe files `src/DevTools/Tests/Spikes/**` and `src/DevTools/Tests/Spike_*.luau` (decision D-12: Probe_SA03/SA14 keep their `CreateVirtualInput` calls; the same files are exempt from Part 3's one-`BindToSimulation(` rule) |
 | `test-loader` | `tests/**`, `tools/**` | `require("@shared/` appears only inside `typeof(require("@shared/…"))` |
+
+#### 7.5.6 `tools/lint_retired_keys.luau` (retired-key guard)
+
+Usage: `lune run tools/lint_retired_keys.luau [--list <path>] [--root <dir>] [--tree <json>] [--verbose]`. It runs in every host gate (`tools/check.luau`, Part 1 §1.4.2), in CI, and in R1 before a public publish (§7.7.6). `--list` defaults to `tools/retired_keys.txt` and `--root` points the scan at a fixture tree; tests use both with fixtures.
+
+Purpose: keys retired before any code or player data existed never come back, in code, tests, tools, saved data or anything that replicates to clients.
+
+**Key list (`tools/retired_keys.txt`).** Plain keys only, one per line, under section headers. No descriptions, no comments, and no current key beside a retired one. The owner supplies it from the counsel archive. Like `tools/denylist.local.txt`, it is gitignored and never committed, and the agent never creates, edits, prints or quotes it (the owner adds new keys to their own copy). This spec never prints a retired key.
+- **No list:** when the file is absent the lint prints `[HB][LINT] lint_retired_keys SKIP no retired_keys list` and exits 0, so development and CI proceed.
+- **Public publish:** the list must be present and the lint must pass (§7.7.6 R1).
+
+| Section | Holds | Rules |
+|---|---|---|
+| `[style]` | Retired style IDs | R01, R02 |
+| `[style-moveid]` | A retired style ID that is also a live system word | R02 only, so the live system is never a finding |
+| `[key]` | Retired map, finish, status and archetype keys | R03 |
+| `[word]` | The retired project word | R04 |
+| `[prefix]` | Retired log, instance, config and attribute prefixes | R05 |
+
+**Scope.** All text under `src/`, `tests/` and `tools/` (or `--root`), except `tools/lint_retired_keys.luau` and the key list in use. With `--tree <json>`, also every instance name, attribute name and string value in the Studio tree dump that Part 8's publish procedure writes (Part 8 §8.4.6), which covers instance names, attributes and strings that replicate to clients.
+
+| Rule | Finding |
+|---|---|
+| R01 style literal | A string literal (any quote form, including interpolated strings) equal to a `[style]` entry, or holding it as a whole dotted segment after the first (`model.<entry>.gear_x`, `style.<entry>.name`) |
+| R02 move-ID prefix | A string literal that starts with `<entry>.` for a `[style]` entry; for a `[style-moveid]` entry, only when a move slot follows (`m1`, `q`, `1`–`4`, `a1`–`a4`, `passive`, `awaken`) |
+| R03 retired key | A string literal equal to a `[key]` entry or holding it as a whole segment (split on `.`, `/`, `:`); for entries of 4 or more characters, also a file or folder name, or an identifier, whose words (split on `_` and camelCase) contain the entry's words |
+| R04 project word | The `[word]` entry anywhere in the text, comments included (case-insensitive, whole word) |
+| R05 prefix | A `[prefix]` entry at the start of a string literal, identifier, attribute name or bracketed log tag (case-sensitive) |
+
+Plain English words in comments and prose are never R01–R03 findings. Output follows §7.5, but a finding prints only its place: `[HB][LINT] <path>:<line> retired-key` (a file or folder name finding uses line `0`; for the `--tree` dump, `<path>` is the dump file and `<line>` the entry's index). It never names the rule, the list section, the entry or the matched text. The run ends with `[HB][LINT] lint_retired_keys SUMMARY errors=<n> warnings=0`. Exit codes as §7.5. **Verify:** `lint.retired_keys_clean`, `lint.retired_keys_detects_fixture` (§7.4.7).
 
 ---
 
@@ -1705,7 +1758,7 @@ export type ServerPerf = {
 -- PerfSampler.start(): { stop: () -> ServerPerf }   percentiles use nearest rank: sorted[clamp(ceil(p·n), 1, n)]
 ```
 
-Heartbeat criterion (GDD "≥ 55 Hz P95"): `pctSecAtOrAbove55 ≥ 95`. Log on stop: `[ALG][Perf] server scn=<name> hzP5=<n> pct55=<n> hbMsP95=<n> heapMb=<a>-><b> inst=<a>-><b>`.
+Heartbeat criterion (GDD "≥ 55 Hz P95"): `pctSecAtOrAbove55 ≥ 95`. Log on stop: `[HB][Perf] server scn=<name> hzP5=<n> pct55=<n> hbMsP95=<n> heapMb=<a>-><b> inst=<a>-><b>`.
 
 Leak checks use `SceneAnalysisService:GetUnparentedInstancesAsync()` (`Size` field; security None [Docs `SceneAnalysisService.yaml`]; availability in Play DataModels: verify in spike T7-S10).
 
@@ -1719,10 +1772,10 @@ Studio-machine fps and total memory are recorded but never gated (Studio shares 
 
 - **Prediction success proxy** (automated): `predSuccessPct = 100 × (1 − rollbacks / (60 × windowSec))`, where `rollbacks` counts `RunService.Rollback` on the client (Basic capability). Gate: ≥ 97 % (GDD §18.2), i.e. ≤ 1.8 rollbacks per second in sustained combat. Solo sessions use `tools/studio/mispred_probe.luau` (Client); multi sessions use the client driver.
 - **Authoritative reading** (human): the SA visualizer (Ctrl+Shift+F6) shows prediction success % over 8 s and RCC heartbeat [Docs `projects/server-authority`]. It is recorded in `human.sa_visualizer_reading`. If proxy and visualizer differ by > 2 points, the visualizer wins and the difference goes to *Spike results* (T7-S6).
-- **Attribution and misprediction rate:** `RunService.Misprediction` has capability `PluginOrOpenCloud` [Docs], so only the plugin (client DMs) or `execute_luau` may connect. The plugin publishes `AlgMpN` and the top three mispredicted names (`AlgMpTop`); the driver reports them. When `AlgMpN` is available the same threshold applies to it: `AlgMpN / (60 × windowSec) ≤ 0.03` (≤ 108 events per minute). Any name outside Part 3 §3.16.2's expected list accounting for > 10 % of events is logged `[ALG][Perf] WARN mispredict name=<n> share=<p>` (warning, not a gate).
+- **Attribution and misprediction rate:** `RunService.Misprediction` has capability `PluginOrOpenCloud` [Docs], so only the plugin (client DMs) or `execute_luau` may connect. The plugin publishes `HbMpN` and the top three mispredicted names (`HbMpTop`); the driver reports them. When `HbMpN` is available the same threshold applies to it: `HbMpN / (60 × windowSec) ≤ 0.03` (≤ 108 events per minute). Any name outside Part 3 §3.16.2's expected list accounting for > 10 % of events is logged `[HB][Perf] WARN mispredict name=<n> share=<p>` (warning, not a gate).
 - **Local prediction status:** `client_status.luau` (Part 1) must report `Predicted` for the local root.
 
-`tools/studio/mispred_probe.luau` (Client; 1,096 bytes):
+`tools/studio/mispred_probe.luau` (Client; 1,088 bytes):
 
 ```lua
 --!strict
@@ -1735,26 +1788,26 @@ local function bump(k: string)
 	lp:SetAttribute(k, ((lp:GetAttribute(k) or 0) :: number) + 1)
 end
 if A.op == "start" then
-	lp:SetAttribute("AlgProbeT0", os.clock())
-	lp:SetAttribute("AlgProbeRb", 0)
-	lp:SetAttribute("AlgProbeMp", 0)
+	lp:SetAttribute("HbProbeT0", os.clock())
+	lp:SetAttribute("HbProbeRb", 0)
+	lp:SetAttribute("HbProbeMp", 0)
 	RS.Rollback:Connect(function()
-		bump("AlgProbeRb")
+		bump("HbProbeRb")
 	end)
 	local ok, err = pcall(function()
 		RS.Misprediction:Connect(function()
-			bump("AlgProbeMp")
+			bump("HbProbeMp")
 		end)
 	end)
 	return HS:JSONEncode({ ok = true, misprediction = ok, err = if ok then nil else tostring(err) })
 end
-local sec = os.clock() - ((lp:GetAttribute("AlgProbeT0") or os.clock()) :: number)
-local rb = (lp:GetAttribute("AlgProbeRb") or 0) :: number
+local sec = os.clock() - ((lp:GetAttribute("HbProbeT0") or os.clock()) :: number)
+local rb = (lp:GetAttribute("HbProbeRb") or 0) :: number
 return HS:JSONEncode({
 	ok = true,
 	sec = sec,
 	rollbacks = rb,
-	mispredictions = lp:GetAttribute("AlgProbeMp"),
+	mispredictions = lp:GetAttribute("HbProbeMp"),
 	predSuccessPct = 100 * (1 - rb / math.max(1, sec * 60)),
 })
 ```
@@ -1767,12 +1820,12 @@ Whether connections made by an `execute_luau` call keep firing after the call re
 
 | Preset key | Name | Resolution | DPI | Form | Use |
 |---|---|---|---|---|---|
-| `phone1334` | ALG Phone 1334x750 | 1334 × 750 | 326 | Phone | GDD §16.3 text-size reference |
-| `androidLow` | ALG Android Low 1600x720 | 1600 × 720 | 270 | Phone | Low-end layout |
-| `tablet` | ALG Tablet 2048x1536 | 2048 × 1536 | 264 | Tablet | Tablet layout |
-| `console` | ALG Console 1920x1080 | 1920 × 1080 | 96 | Console | Gamepad UI |
+| `phone1334` | HB Phone 1334x750 | 1334 × 750 | 326 | Phone | GDD §16.3 text-size reference |
+| `androidLow` | HB Android Low 1600x720 | 1600 × 720 | 270 | Phone | Low-end layout |
+| `tablet` | HB Tablet 2048x1536 | 2048 × 1536 | 264 | Tablet | Tablet layout |
+| `tv1080` | HB Console 1920x1080 | 1920 × 1080 | 96 | Console | Gamepad UI |
 
-`tools/studio/device_sim.luau` (Edit or Client; 1,507 bytes):
+`tools/studio/device_sim.luau` (Edit or Client; 1,502 bytes):
 
 ```lua
 --!strict
@@ -1782,10 +1835,10 @@ local DS = game:GetService("StudioDeviceSimulatorService")
 local A = HS:JSONDecode([==[__ARGS__]==])
 local F = Enum.DeviceForm
 local PRESETS: { [string]: { [string]: any } } = {
-	phone1334 = { Name = "ALG Phone 1334x750", Width = 1334, Height = 750, PixelDensity = 326, DeviceForm = F.Phone },
-	androidLow = { Name = "ALG Android Low 1600x720", Width = 1600, Height = 720, PixelDensity = 270, DeviceForm = F.Phone },
-	tablet = { Name = "ALG Tablet 2048x1536", Width = 2048, Height = 1536, PixelDensity = 264, DeviceForm = F.Tablet },
-	console = { Name = "ALG Console 1920x1080", Width = 1920, Height = 1080, PixelDensity = 96, DeviceForm = F.Console },
+	phone1334 = { Name = "HB Phone 1334x750", Width = 1334, Height = 750, PixelDensity = 326, DeviceForm = F.Phone },
+	androidLow = { Name = "HB Android Low 1600x720", Width = 1600, Height = 720, PixelDensity = 270, DeviceForm = F.Phone },
+	tablet = { Name = "HB Tablet 2048x1536", Width = 2048, Height = 1536, PixelDensity = 264, DeviceForm = F.Tablet },
+	tv1080 = { Name = "HB Console 1920x1080", Width = 1920, Height = 1080, PixelDensity = 96, DeviceForm = F.Console },
 }
 local ok, res = pcall(function(): any
 	if A.op == "stop" then
@@ -1840,9 +1893,9 @@ BotService (Part 3 §3.15.1) spawns `LoadTestBots` brawl bots only when
 not RunService:IsStudio() and table.find(cfg.Features.LoadTestGameIds, game.GameId) ~= nil and cfg.Features.Bots ~= false
 ```
 
-at `start()` and on `Runtime.changed`, and logs `[ALG][Bot] loadtest bots=<n> map=<id>`. The Studio guard matters because Studio play sessions of the dev place run with the dev universe's `game.GameId` and receive its ConfigService values (staged ones included), so without it every later Studio playtest, including gate runs, would spawn the load-test bots. Scenario `bot.loadtest_off_in_studio` (§7.4.3) pins the guard.
+at `start()` and on `Runtime.changed`, and logs `[HB][Bot] loadtest bots=<n> map=<id>`. The Studio guard matters because Studio play sessions of the dev place run with the dev universe's `game.GameId` and receive its ConfigService values (staged ones included), so without it every later Studio playtest, including gate runs, would spawn the load-test bots. Scenario `bot.loadtest_off_in_studio` (§7.4.3) pins the guard.
 
-The human sets `ALG_Features` in the **dev** universe's ConfigService only (H-12 preparation). Staging and prod never list their ids. Order (decision D-20): the gate card posts the H-12 preparation (`LoadTestBots`, `LoadTestMapId`, `LoadTestGameIds`) only **after** every automated item has run, just before the device item (M0 H3, M1-G H2); after each H-12 run is recorded, the human sets `LoadTestBots = 0` again.
+The human sets `HB_Features` in the **dev** universe's ConfigService only (H-12 preparation). Staging and prod never list their ids. Order (decision D-20): the gate card posts the H-12 preparation (`LoadTestBots`, `LoadTestMapId`, `LoadTestGameIds`) only **after** every automated item has run, just before the device item (M0 H3, M1-G H2); after each H-12 run is recorded, the human sets `LoadTestBots = 0` again.
 
 #### 7.6.8 KPI instrumentation (GDD §20)
 
@@ -1870,24 +1923,24 @@ The agent appends to `docs/agent/PROGRESS.md`:
 ## Gate M0 — 2027-01-04 — commit 3f2a9c1
 | Item | Result | Evidence |
 |---|---|---|
-| A1 Host gate | PASS | [ALG][CHECK] SUMMARY pass=9 fail=0 |
+| A1 Host gate | PASS | [HB][CHECK] SUMMARY pass=10 fail=0 |
 | H1 Feel (H-10) | PASS | HF-01..HF-14 PASS; notes: … |
-Verdict: [ALG][GATE] M0 PASS automated=13/13 human=5/5
+Verdict: [HB][GATE] M0 PASS automated=14/14 human=5/5
 ```
 
-The verdict line also goes into the PR body. `PASS` needs every automated item PASS and every human item PASS or "accepted by owner" with a note. The human creates the `m0-gate` / `m1g-gate` tag (Part 1 §1.9).
+The M1-G record ends the same way with `[HB][GATE] M1-G PASS automated=12/12 human=4/4` (§7.7.3). A full host gate has ten steps (Part 1 §1.4.2), so A1 reads `pass=10` at both gates. The verdict line also goes into the PR body. `PASS` needs every automated item PASS and every human item PASS or "accepted by owner" with a note. The human creates the `m0-gate` / `m1g-gate` tag (Part 1 §1.9).
 
-#### 7.7.2 M0 gate (after P5 `hero`/`stretch` and P6 arena tasks)
+#### 7.7.2 M0 gate (after P5 `attendant`/`lifeguard` and the P6 arena tasks: The Bandstand, `arena_duel_m0`)
 
-Preconditions: H-01 … H-05 and H-08 done; `AlgebraicTestHarness` installed; spike results recorded.
+Preconditions: H-01 … H-05 and H-08 done; `HullabrawlTestHarness` installed; spike results recorded.
 
 | # | Item | Command / call | Pass |
 |---|---|---|---|
-| A1 | Host gate | `lune run tools/check.luau` | `[ALG][CHECK] SUMMARY … fail=0`; tests `fail=0` |
+| A1 | Host gate | `lune run tools/check.luau` | `[HB][CHECK] SUMMARY … fail=0`; tests `fail=0` |
 | A2 | CI | GitHub Actions `ci` on the phase branch head | success |
 | A3 | World | `run_builder` `{"builder":"Verify","fn":"verify"}` | `res.ok == true` |
-| A4 | Studio scenarios | `test_run` once per batch with selector `<batch>,-@m1g,-@slow,-@net,-@spike` (there is no intersection operator, so the M0 filter is the `-@m1g` removal; `-@spike` drops spike scenarios such as `store.receipt_live_spike`, decision D-47). Batches: (1) `boot.*,config.*,net.*,data.*,player.*,security.*,tree.*,attrs.*`; (2) `sim.*,input.*,bot.*,render.*,harness.*`; (3) `combat.*`; (4) `style.*,kit.*,anim.*`; (5) `world.*,map.*,training.*,vfx.*,sfx.*,cam.*,ragdoll.*,look.*,hud.*,ip.*`. After each batch, Server and Client `log_scan` with `allowErrors = {"ERROR rollback", "ERROR out_of_band_mutation", "ERROR pack_downgraded", "ERROR dev_universe_non_member"}`: the `data.*` and `ip.*` scenarios provoke these lines on purpose (Part 1 §1.4.6 `algErrors`, D-11; TASKS T039) | every batch `state = "done"`, `fail=0` (an `empty_selection` error fails the item); `log_scan` `ok == true` |
-| A5 | MCP tests | `@m0` `mcp` scenarios via §7.3.7 | PASS (fallbacks noted) |
+| A4 | Studio scenarios | `test_run` once per batch with selector `<batch>,-@m1g,-@slow,-@net,-@spike` (there is no intersection operator, so the M0 filter is the `-@m1g` removal; `-@spike` drops spike scenarios such as `store.receipt_live_spike`, decision D-47). Batches: (1) `boot.*,config.*,net.*,data.*,player.*,security.*,tree.*,attrs.*`; (2) `sim.*,input.*,bot.*,render.*,harness.*`; (3) `combat.*`; (4) `style.*,kit.*,anim.*`; (5) `world.*,map.*,training.*,vfx.*,sfx.*,cam.*,ragdoll.*,look.*,hud.*,ip.*`. After each batch, Server and Client `log_scan` with `allowErrors = {"ERROR rollback", "ERROR out_of_band_mutation", "ERROR dev_universe_non_member"}`: the `data.*` and `ip.*` scenarios provoke these lines on purpose (Part 1 §1.4.6 `allowErrors`, D-11; TASKS T039) | every batch `state = "done"`, `fail=0` (an `empty_selection` error fails the item); `log_scan` `ok == true` |
+| A5 | MCP tests | `@m0,-@spike` `mcp` scenarios via §7.3.7 | PASS (fallbacks noted) |
 | A6 | SA spikes | `spike.SA-01`, `-03`, `-08`, `-13` | PASS, or the Part 3 in-SA fallback recorded |
 | A7 | Network solo | `netcond.profile_applied`, then `test_run` `@net,-@m1g` (`netcond.rtt_m0gate`, `combat.rewind_hit_150ms`, `render.undo_spark`, `render.remote_telegraph_full` and every other `net`-tagged M0 solo scenario) under `M0Gate`, twice | PASS both runs |
 | A8 | Multi baseline | `multi_run` `{"n":2,"sel":"multi.*,-@m1g","net":"Baseline30"}` | `fail=0`; record `pbRatePct` = B |
@@ -1896,11 +1949,12 @@ Preconditions: H-01 … H-05 and H-08 done; `AlgebraicTestHarness` installed; sp
 | A11 | Load (§0.0) | `perf.m0_clients8` (n = 8, `M0Gate`) | §7.4.9 criteria |
 | A12 | Static perf and boot | `perf.static_vfx_caps`, `perf.boot_time_to_fight` | PASS |
 | A13 | Frame data | `lune run tools/export_framedata.luau --check` | exit 0 |
+| A14 | T11 capture prep | For `attendant`, then `lifeguard`: rebuild the templates with `silhouette = true` (Edit), run `look.clip_stage` `{"styleId":"<id>"}` via §7.3.7, then rebuild the default templates. Create `docs/agent/RECOGNIZABILITY.md` from its template if it is missing, append one `pending` T11 row per style (Part 8 §8.5.3), and post an `awaiting-human` request for the producer to record the two clips from reruns the agent stages | both runs `fail=0`; two `pending` rows. The producer runs T11 itself (`human.t11_clip_test`) after M0 and before any public footage, so its result is not an M0 pass condition |
 | H1 | Feel (H-10) | §7.7.4 HF-01 … HF-14 on KB+M and gamepad | PASS or accepted |
 | H2 | SA visualizer | Human plays client A during an A10 rerun | `human.sa_visualizer_reading` ≥ 97 % |
-| H3 | Device (H-12) | §7.7.5 HD-01 … HD-09; published dev place (H-11) with `LoadTestBots = 12` on the M0 map **plus ≥ 7 additional live clients** (team members or alt accounts) in the same server, so the phone renders 8 replicating clients as §0.0 states. If 7 extra clients are not available, the owner explicitly accepts bots as stand-ins and the gate note records it. The agent posts the H-12 preparation only after A1–A13 have run (§7.6.7); the human resets `LoadTestBots = 0` after recording H3 | fps P50 ≥ 30, memory ≤ 1,100 MB |
+| H3 | Device (H-12) | §7.7.5 HD-01 … HD-09; published dev place (H-11) with `LoadTestBots = 12` on the M0 map **plus ≥ 7 additional live clients** (team members or alt accounts) in the same server, so the phone renders 8 replicating clients as §0.0 states. If 7 extra clients are not available, the owner explicitly accepts bots as stand-ins and the gate note records it. The agent posts the H-12 preparation only after A1–A14 have run (§7.6.7); the human resets `LoadTestBots = 0` after recording H3 | fps P50 ≥ 30, memory ≤ 1,100 MB |
 | H4 | NetModel decision | Part 3 §3.16.4 rule (SA stays if SA-01/03/08/13 pass) | Human confirms in `PROGRESS.md` |
-| H5 | Non-technical GDD §21.2 items (IP path, pillars) | Owner | Recorded as owner sign-off (outside the agent's scope) |
+| H5 | Non-technical GDD §21.2 M0 items (pillars signed; the originality plan of GDD §5: counsel engaged, title and name knockout run, concept art made under written assignment, art locked after counsel review and the static blind tests T7–T10, T11 scheduled for the Starters) | Owner | Recorded as owner sign-off (outside the agent's scope) |
 
 #### 7.7.3 M1-G gate (end of P8)
 
@@ -1909,15 +1963,17 @@ Preconditions: H-01 … H-05 and H-08 done; `AlgebraicTestHarness` installed; sp
 | A1–A3 | As M0 on the release branch | | |
 | A4 | All Studio scenarios | `test_run` once per batch with selector `<batch>,-@slow,-@net,-@spike` (both milestones; `-@spike` per D-47). Batches: the five M0 batches of §7.7.2 A4 (they already contain `look.*`, `combat.realm_*`, `combat.stubborn_heart`), plus (6) `wish.*,policy.*,shop.*,progress.*,store.*`; (7) `appearance.*,tel.*,mod.*,ui.*`; `log_scan` with the same `allowErrors` as §7.7.2 A4 | every batch `state = "done"`, `fail=0`; `log_scan` `ok == true` |
 | A5 | Slow host tests | `lune run tests/run.luau --tag slow` (Monte Carlo, frequencies, cosmic bound) | `fail=0` |
-| A6 | MCP tests | All `mcp` scenarios incl. `mcp.ui_wish_click`, `mcp.wheel_totem`, `mcp.touch_layout_phone` | PASS |
-| A7 | Multi | `multi.*,look.modes_matrix,look.stealth_ranges` (n = 2) under `Baseline30` and `M0Gate` (the two `look.*` scenarios are level `multi` and run only here, D-48); also `multi(2, Baseline30, ui.report_submit)` (level `multi`, Part 6 §6.9.12) | `fail=0` |
+| A6 | MCP tests | All `mcp` scenarios except `@spike` ones, incl. `mcp.ui_wish_click`, `mcp.wheel_totem`, `mcp.touch_layout_phone`, `look.gear_silhouette` (its stills feed A12) | PASS |
+| A7 | Multi | `multi.*,look.modes_matrix` (n = 2) under `Baseline30` and `M0Gate` (`look.modes_matrix` is level `multi` and runs only here, D-48); also `multi(2, Baseline30, ui.report_submit)` (level `multi`, Part 6 §6.9.12) | `fail=0` |
 | A8 | Soak | `perf.m1g_soak`, `perf.leak_after_clear`, `perf.vfx_budget_worst` | §7.4.9 criteria |
 | A9 | M0 regression | A7–A11 of §7.7.2 | PASS |
-| A10 | Lints | `check_manifest.luau` (dev), `lint_strings.luau` (dev), `export_framedata --check` | exit 0 |
+| A10 | Lints | `check_manifest.luau` (dev), `lint_strings.luau` (dev), `lint_retired_keys.luau`, `export_framedata --check` | exit 0 |
 | A11 | Docs | `ARCHITECTURE.md` matches the tree (`lint_rules` `architecture`) | PASS |
-| H1 | Feel (H-10) | HF-01 … HF-19 incl. all 6 kits, Realm, Wish flow, Style Wheel, Shop/Store/Settings | PASS or accepted |
-| H2 | Device (H-12) | HD-01 … HD-10 on `candy_kingdom` with `LoadTestBots = 19` (20 fighters); HD-10 (menus on touch) is M1-G only. H-12 preparation is posted after A1–A11 (§7.6.7); the human resets `LoadTestBots = 0` afterwards | fps P50 ≥ 30, memory ≤ 1,100 MB; HD-10 PASS |
-| H3 | Design sign-offs | Part 3 §3.20, Part 4 §4.11, Part 5 DES-1 … DES-7 (DES-6 free-rotation ratio, DES-7 M1-G earn rate) | Owner decisions recorded |
+| A12 | Blind-test capture prep | As M0 A14 for `sandcastle`, `scoop`, `busker` and `dustsheet` (T11), plus one `pending` T8 row per `look.gear_silhouette` still (one per style, subject `style:<id>`). Part 6's hub card appends one `map:hub` T8 row whose Material cell lists its three `hub` captures when it takes them (Part 6 §6.3 Verify; Part 8 §8.5.3: one row per subject and preparation run); A12 only checks that this row exists and appends it if it is missing | every run `fail=0`; rows appended, none filled in by the agent |
+| H1 | Feel (H-10) | HF-01 … HF-19 incl. all 6 kits, the Getaway, Wish flow, Charm Ring, Sundry's Rack, Store and Settings | PASS or accepted |
+| H2 | Device (H-12) | HD-01 … HD-10 on `hub` (Elsewhere-on-Sea) with `LoadTestBots = 19` (20 fighters); HD-10 (menus on touch) is M1-G only. H-12 preparation is posted after A1–A12 (§7.6.7); the human resets `LoadTestBots = 0` afterwards | fps P50 ≥ 30, memory ≤ 1,100 MB; HD-10 PASS |
+| H3 | Design sign-offs | Part 3 §3.20, Part 4 §4.11, Part 5 DES-1 … DES-7 (DES-6 free-rotation ratio, DES-7 M1-G earn rate) and ARR-1 (Cosmic Arrival scope) | Owner decisions recorded |
+| H4 | Blind test T11 | The producer's `human.t11_clip_test` results for all six slice styles in `docs/agent/RECOGNIZABILITY.md` (T7–T10 run on concept art before art lock and are recorded in the same file, Part 8 §8.5.3) | every T11 row `pass`, or accepted by the owner with a note; a `fail` row also opens a blocker of type `ip` (Part 8 R-IP-09) and a redesign task for that kit |
 
 #### 7.7.4 Human feel checklist (H-10)
 
@@ -1934,16 +1990,16 @@ Run in Studio (Test → Play, then Server & Clients with 2 clients), at `Baselin
 | HF-07 | Movement tech | Hop Cancel, Dash-Ender, Wall Carry, Tech Roll ×5 each | Possible with practice, never accidental (GDD §6.5) |
 | HF-08 | Breakaway | Get comboed by a bot; press Q | Reliable after the 12f lockout; lockout not felt as a dropped input |
 | HF-09 | Combo limits | Bot juggle | No infinite; Shake-Off by 3.5 s |
-| HF-10 | Awakening | Meter 100 → G | Readable, invulnerable, heal visible, moves swap, camera not disorienting |
-| HF-11 | Style identity | `hero` vs `stretch` | M1 re-skins and moves feel distinct |
-| HF-12 | Accessibility | Reduced Motion, Reduced VFX on | No shake or impact frames; telegraphs still full contrast (GDD §16.3) |
+| HF-10 | Peak (Awakening) | Peak Meter 100 → G ("Go Peak!") | Readable, invulnerable, heal visible, moves swap, the Peak uniform appears and nobody grows, camera not disorienting |
+| HF-11 | Style identity | `attendant` vs `lifeguard` | M1 re-skins and moves feel distinct |
+| HF-12 | Accessibility | Reduced Motion, Reduced VFX on; at M1-G also the Misprint calm toggle (`misprintCalm`) on a Misprint Finish | No shake or impact frames; telegraphs still full contrast; the Misprint Finish renders static (GDD §16.3) |
 | HF-13 | Perfect Block under latency | 20 attempts at `Baseline30`, 20 at `M0Gate` vs a rhythm bot | Success rates within 5 points (GDD §18.2) |
 | HF-14 | Rubber-banding | Watch 10 own dashes and 10 enemy dashes at `M0Gate` | No visible snap-back (GDD §18.2) |
-| HF-15 | M1-G kits | 3 min each with `monarch`, `rocker`, `frost`, `decay` vs bots | Identity readable; nothing feels unpunishable |
-| HF-16 | Realm | `decay` Realm near 2 bots | 90f telegraph readable; escape possible; Stubborn Heart works |
-| HF-17 | Wish flow | 1× and 10× Wishes | Reveal durations per rarity; odds button and pity counters visible (GDD §8.6, §8.8) |
-| HF-18 | Style Wheel, Totem, Character Look | Respawn swap, Totem swap, toggle look | Discoverable; respawn swap works |
-| HF-19 | Shop, Store and Settings flows | Buy a style and a Variant in Choose Goose's Shop; open the Store (mock) and read the weekly spend line; change a Settings value in every tab (incl. the Ooo-sona editor) and see it applied | Every flow completes without confusion; prices, balances and confirmations readable (GDD §8.5, §8.8, §15.4) |
+| HF-15 | M1-G kits | 3 min each with `sandcastle`, `busker`, `scoop`, `dustsheet` vs bots | Identity readable; nothing feels unpunishable; summons (castles, gulls, luggage) and sticky puddles read clearly |
+| HF-16 | Getaway (Realm) | `dustsheet` Getaway near 2 bots | 90f telegraph readable; the 2 s pulses (slow, then hush after the bell) and the Lights Out quarter readable; escape possible; Do Not Disturb (Stubborn Heart) works |
+| HF-17 | Wish flow | 1× Wish and a Mailbag (10×) | The stamp lands first and its colour shows the rarity before the card flips; reveal durations per rarity; odds button and Guaranteed Delivery (pity) counters visible (GDD §8.6, §8.8) |
+| HF-18 | Charm Ring, Charm Rack, Full Uniform | Respawn swap from the Charm Ring, swap at a Charm Rack, toggle Full Uniform | Discoverable; respawn swap works; Full Uniform starts Off and the Charm Gear prop always shows |
+| HF-19 | Sundry's Rack, Store and Settings flows | Buy a Charm and an Off-Duty Look at Sundry's Rack; open the Store (mock) and read the weekly spend line; change a Settings value in every tab (incl. the Postcard Look editor) and see it applied | Every flow completes without confusion; prices, balances and confirmations readable (GDD §8.5, §8.8, §15.4) |
 
 #### 7.7.5 Device checklist (H-12)
 
@@ -1958,9 +2014,9 @@ Low-end Android reference (3 GB RAM, GDD §18.7), published private dev place (H
 | HD-05 | Text | Read HUD and menus | Legible; nothing below the GDD §16.3 minimum |
 | HD-06 | Stability | 15-minute session | No crash or disconnect |
 | HD-07 | Reduced VFX | Toggle during the fight | Fewer particles; telegraphs unchanged |
-| HD-08 | Feel on touch | M1 chain, block, dash, Breakaway, awakening | Executable and responsive (GDD §21.2 M0 "good feel on mobile") |
+| HD-08 | Feel on touch | M1 chain, block, dash, Breakaway, Peak | Executable and responsive (GDD §21.2 M0 "good feel on mobile") |
 | HD-09 | Thermal / battery | Observe over 15 min | Recorded only |
-| HD-10 | Menus on touch (M1-G only) | Open each of: Style Wheel (incl. the detail pane), Wish with the odds view and a 10× reveal, Shop (both tabs), Store, Settings (all tabs incl. the Ooo-sona editor), the Totem prompt | All targets tappable (≥ 44 px), no text below 14 px, nothing under the notch or system UI (GDD §15.1 mobile-first at 1334×750, §16.3) |
+| HD-10 | Menus on touch (M1-G only) | Open each of: Charm Ring (incl. the detail pane), Wish with the odds view and a Mailbag (10×) reveal, Sundry's Rack (both tabs), Store, Settings (all tabs incl. the Postcard Look editor), the Charm Rack prompt | All targets tappable (≥ 44 px), no text below 14 px, nothing under the notch or system UI (GDD §15.1 mobile-first at 1334×750, §16.3) |
 
 #### 7.7.6 Publish checklist hook (Part 8 gate)
 
@@ -1968,14 +2024,14 @@ Part 8 owns the publish gate; Part 7 provides these automated items, run before 
 
 | # | Item | Command | Pass |
 |---|---|---|---|
-| R1 | Strings (public) | `lune run tools/lint_strings.luau --public --pack <pack>` | exit 0 |
+| R1 | Strings and retired keys (public) | `lune run tools/lint_strings.luau --public` and `lune run tools/lint_retired_keys.luau` on the publishing machine, which holds the owner's local denylist (L05) and the owner's key list `tools/retired_keys.txt`; each also with `--tree <dump>` once Part 8's procedure has written the Studio tree dump | both exit 0, and `lint_retired_keys` prints no `SKIP no retired_keys list` line (the list must be present) |
 | R2 | Assets (release) | `lune run tools/check_manifest.luau --release --game <prod universeId>` | exit 0 (no referenced placeholder, all products present) |
-| R3 | Release-tagged tests | `lune run tests/run.luau --tag release` (the six Lune tests of §7.1.4: `lint.manifest_release_detects_placeholder`, `lint.manifest_raw_id_detected`, `net.validators_reject_fuzz`, `skin.canon_locked`, `ip.leak_detect`, `ip.product_keys_original_only`) and Studio `@release` (`security.dev_hooks_studio_only`, `harness.studio_only_guard`, `security.mock_ignored_live`, `store.mock_ignored_live`, `tel.no_analytics_in_studio`) | Lune ≥ 6 tests and Studio ≥ 5 scenarios, `fail=0` |
+| R3 | Release-tagged tests | `lune run tests/run.luau --tag release` (the six Lune tests of §7.1.4: `lint.manifest_release_detects_placeholder`, `lint.manifest_raw_id_detected`, `net.validators_reject_fuzz`, `lint.retired_keys_clean`, `lint.retired_keys_detects_fixture`, `lint.denylist_stays_local`) and Studio `@release` (`security.dev_hooks_studio_only`, `harness.studio_only_guard`, `security.mock_ignored_live`, `store.mock_ignored_live`, `tel.no_analytics_in_studio`) | Lune ≥ 6 tests and Studio ≥ 5 scenarios, `fail=0` |
 | R4 | Full M1-G gate on the publish commit | §7.7.3 automated items | PASS |
 
-The agent prints `[ALG][GATE] publish-hook PASS|FAIL items=<n>/4`; Part 8 combines it with its IP checklist into the final verdict. A private dev-place publish follows Part 8's dev rule (R2 is expected to fail on graybox placeholders there).
+The agent prints `[HB][GATE] publish-hook PASS|FAIL items=<n>/4`; Part 8 combines it with its human-signed checklist (T7–T11 signed off in `docs/agent/RECOGNIZABILITY.md`, `docs/agent/TITLE_CLEARANCE.md` signed, asset provenance complete, metadata rules) into the final verdict. A private dev-place publish follows Part 8's dev rule (R2 is expected to fail on graybox placeholders there).
 
-**Dry run (`ip.gate_dry_run`, decision D-23).** `ip.gate_dry_run` is an **agent procedure**, not a Studio scenario: it needs host commands (`lint_strings`, the sync gate), Edit-mode builders and git, none of which a play-session scenario can run, so it never appears in a `studio(…)` selector. Part 8 §8.4.7/§8.4.9 define its steps (throwaway branch `release/<YYYY-MM-DD>-original-dryrun`, target Original, placeholder metadata). When it evaluates this hook: R1 runs as `lint_strings --public --pack Original --dry-run` (L11/L17/L22 become `W-DRYRUN` warnings); R2 is expected to FAIL (graybox placeholders); R3 runs as written; R4 is taken from the enclosing gate card's own automated results (§7.7.3 A1–A11 of that run), not from a second full gate run, so it is not circular. The agent records `[ALG][GATE] publish-hook FAIL items=3/4` as the expected result only when R1, R3 and R4 pass; any other failure is a real failure.
+**Dry run (`ip.gate_dry_run`, decision D-23).** `ip.gate_dry_run` is an **agent procedure**, not a Studio scenario: it needs host commands (`lint_strings`, `lint_retired_keys`, the sync gate), Edit-mode builders and git, none of which a play-session scenario can run, so it never appears in a `studio(…)` selector. Part 8 §8.4.7 defines its steps: a throwaway branch `release/<YYYY-MM-DD>-dryrun`, never pushed, that holds only a draft `PUBLISH_METADATA.md` with placeholder values (nothing under `src/` changes). When it evaluates this hook: R1 runs as `lint_strings --public --dry-run` (L05, L09, L13 and L15 findings about missing or placeholder human inputs become `W-DRYRUN` warnings) plus `lint_retired_keys`, each with and without `--tree`; a `SKIP no retired_keys list` line counts like a `W-DRYRUN` warning here; R2 is expected to FAIL (graybox placeholders); R3 runs as written; R4 is taken from the enclosing gate card's own automated results (§7.7.3 A1–A12 of that run), not from a second full gate run, so it is not circular. The agent records `[HB][GATE] publish-hook FAIL items=3/4` as the expected result only when R1, R3 and R4 pass; any other failure is a real failure.
 
 ---
 
@@ -2028,7 +2084,7 @@ jobs:
           rokit trust rojo-rbx/rojo lune-org/lune JohnnyMorganz/StyLua Kampfkarren/selene JohnnyMorganz/luau-lsp
           rokit install
           rojo --version && lune --version && stylua --version && selene --version && luau-lsp --version
-      - name: Host gate (stylua, selene, sourcemap, luau-lsp, lint_rules, lint_strings, check_manifest, Lune tests)
+      - name: Host gate (stylua, selene, sourcemap, luau-lsp, lint_rules, lint_strings, lint_retired_keys, check_manifest, Lune tests)
         run: |
           set -o pipefail
           mkdir -p build
@@ -2036,11 +2092,13 @@ jobs:
       - name: Frame data is current
         run: lune run tools/export_framedata.luau --check
       - name: Rojo build
-        run: rojo build default.project.json --output build/Algebraic.rbxl
+        run: rojo build default.project.json --output build/Hullabrawl.rbxl
       - name: Release host checks (manual)
         if: ${{ inputs.release }}
+        # lint_strings --public needs the owner's local denylist, so it runs only on the publishing machine (§7.7.6 R1).
+        # The retired-key list is local too: without it lint_retired_keys prints SKIP and exits 0 here.
         run: |
-          lune run tools/lint_strings.luau --public
+          lune run tools/lint_retired_keys.luau
           lune run tools/check_manifest.luau --release
           lune run tests/run.luau --tag release
       - name: Upload logs
@@ -2079,36 +2137,38 @@ A future self-hosted Windows/macOS runner with Studio could run L2 via the Studi
 ### 7.9 New contracts introduced
 
 1. **Lune test infrastructure:** `tests/run.luau` CLI and exit codes (§7.2.2); spec files return `function(T: TestApi)`; `tests/shim/T.luau` API; `tests/shim/Loader.luau` (`L.require`, `Loader.new(extraEnv)`, Roblox require semantics, `Vector3`/`CFrame`/`Color3` from `@lune/roblox`, the Lune 0.10.5 `CFrame.lookAt` patch); folders `tests/core/fixtures/` and `tests/core/golden/` are not scanned.
-2. **Test ID pattern** `^[%w_]+%.[%w_%.%-]+$`; tags `m0`, `m1g`, `net`, `slow`, `spike`, `release`, `selftest`; info lines `[ALG][Test] slow|pending|skip …`.
+2. **Test ID pattern** `^[%w_]+%.[%w_%.%-]+$`; tags `m0`, `m1g`, `net`, `slow`, `spike`, `release`, `selftest`; info lines `[HB][Test] slow|pending|skip …`.
 3. **DevTools test layout:** `src/DevTools/Tests/Lib/{Types, Registry, Runner, Ctx, Fixtures, Tap, DevCommands, Multi, PerfSampler, Budgets, NetProfiles}.luau`, `Client/{Driver, Steps, PerfProbe}.luau`, `Suites/<Name>.luau` (names in §7.3.1), `Spike_<ID>.luau` with scenario id `spike.<ID>` (`Spike_SAxx` Part 3; `Spike_SP4_2`, `Spike_SP4_3` Part 4; `Spike_SP6_2` Part 6; TASKS C4).
 4. **Scenario, Ctx, Fighter, Pad, TapRecord, Recorder, RunReport, McpStep types** (§7.3.2) and the authoring rules.
 5. **Request/result protocol:** `ServerStorage.AgentTestRequest` / `AgentTestResult` StringValues, request JSON fields, ops `run|setup|assert`, states `queued|running|ready|done|error`, multi requests and `EndTest` values as JSON strings.
-6. **Verify leftovers** (Part 1 §1.6.7 item 5 and §1.3 step 8): in Edit, `ServerStorage.AgentTestRequest`, `ServerStorage.AgentTestResult`, `ServerStorage.AgentTestMultiArgs`, `Workspace.TestPad` and `ReplicatedStorage.TestRun` are `[leftover]` problems the agent may remove (only between runs, never while a multi test is running). Part 1's list also holds `Workspace.ALG_Local` (Part 6) and `ReplicatedStorage.__AlgSpike` (TASKS C4); §1.3 step 8 removes only listed names.
+6. **Verify leftovers** (Part 1 §1.6.7 item 5 and §1.3 step 8): in Edit, `ServerStorage.AgentTestRequest`, `ServerStorage.AgentTestResult`, `ServerStorage.AgentTestMultiArgs`, `Workspace.TestPad` and `ReplicatedStorage.TestRun` are `[leftover]` problems the agent may remove (only between runs, never while a multi test is running). Part 1's list also holds `Workspace.HB_Local` (Part 6) and `ReplicatedStorage.__HbSpike` (TASKS C4); §1.3 step 8 removes only listed names.
 7. **Studio snippets** (Part 1 catalog): `test_run.luau` (Server), `test_result.luau` (Server/Edit), `multi_run.luau` (Edit), `net_profile.luau` (Edit), `device_sim.luau` (Edit/Client), `mispred_probe.luau` (Client).
-8. **Plugin:** `tools/plugin/AlgebraicTestHarness/{Main, Top}.luau`, `tools/plugin/build.luau [--install]` (writes only through `tools/lib/SafeWrite.luau`, Part 8 §8.4.5; so does `export_framedata.luau`, §7.5), output `build/AlgebraicTestHarness.rbxm`; client-local Player attributes `AlgMpN`, `AlgMpTop` (and `AlgProbe*` from the probe snippet).
+8. **Plugin:** `tools/plugin/HullabrawlTestHarness/{Main, Top}.luau`, `tools/plugin/build.luau [--install]` (writes only through `tools/lib/SafeWrite.luau`, Part 8 §8.4.5; so does `export_framedata.luau`, §7.5), output `build/HullabrawlTestHarness.rbxm`; client-local Player attributes `HbMpN`, `HbMpTop` (and `HbProbe*` from the probe snippet).
 9. **Runtime-only instances:** `Workspace.TestPad`, `ReplicatedStorage.TestRun` (Folder: `Spec` StringValue + cloned `Client` folder).
-10. **Seams** (§7.3.10): `CombatService._tap`, `BotService._setBrain`, `Net.server._dispatch`, the `Main.client.luau` Studio hook, DevCmd `testReport`; used from other parts: `CombatService._getMeter` (Part 3 §3.13.7), `Telemetry._setPerfSampled` (Part 5 §5.8.3), `PlayerService._leaveTest` (Part 2 §2.3.5), `DataService._readStored` (Part 2 §2.8.5), `PlayerService._devAccessCheck` and `ConfigReplicator._devContextOverride` (Part 2 §2.3.5, §2.6.4; Part 8 §8.2.6).
-11. **`Moves.frameRows` and `FrameRow`** in `Core/Moves.luau` (Part 3 owner), shared with Part 6's Training panel; outputs `docs/reference/framedata.json` and `framedata.md`; `export_framedata --check/--golden/--pack`.
+10. **Seams** (§7.3.10): `CombatService._tap`, `BotService._setBrain`, `Net.server._dispatch`, the `Main.client.luau` Studio hook, DevCmd `testReport`; used from other parts: `CombatService._getMeter` (Part 3 §3.13.7), `Telemetry._setPerfSampled` (Part 5 §5.8.3), `PlayerService._leaveTest` (Part 2 §2.3.5), `DataService._readStored` (Part 2 §2.8.5), `PlayerService._devAccessCheck` (Part 2 §2.3.5; Part 8 §8.2.6).
+11. **`Moves.frameRows` and `FrameRow`** in `Core/Moves.luau` (Part 3 owner), shared with Part 6's Training panel; outputs `docs/reference/framedata.json` and `framedata.md` (labels from the `Base` pack); `export_framedata --check/--golden`.
 12. **`VfxController.stats()`** (Part 6) return shape (§7.3.10).
-13. **Config keys** `Features.LoadTestBots`, `Features.LoadTestMapId`, `Features.LoadTestGameIds` (Part 2 section, BotService behaviour; spawn guard `not RunService:IsStudio() and table.find(LoadTestGameIds, game.GameId) ~= nil and Features.Bots ~= false`, §7.6.7) and log line `[ALG][Bot] loadtest bots=<n> map=<id>`.
+13. **Config keys** `Features.LoadTestBots`, `Features.LoadTestMapId`, `Features.LoadTestGameIds` (Part 2 section, BotService behaviour; spawn guard `not RunService:IsStudio() and table.find(LoadTestGameIds, game.GameId) ~= nil and Features.Bots ~= false`, §7.6.7) and log line `[HB][Bot] loadtest bots=<n> map=<id>`.
 14. **Network profiles** `Off`, `Baseline30`, `M0Gate`, `Wifi`, `Mobile4G`, `Bad3G` (§7.1.5), with the calibration test `netcond.rtt_m0gate`.
-15. **Device presets** `phone1334`, `androidLow`, `tablet`, `console` (§7.6.5).
-16. **Tool contracts:** `lint_strings.luau` rules L01–L06 and flags (rules data path/schema proposed for Part 8; Part 8 adds `--tree`, `--strip`/`--unstrip`, `--dry-run`; L02 skips strip-stub packs); `check_manifest.luau` rules M01–M08 and flags; tool output format `[ALG][LINT] … SUMMARY errors=<n> warnings=<m>`.
+15. **Device presets** `phone1334`, `androidLow`, `tablet`, `tv1080` (§7.6.5).
+16. **Tool contracts:** `lint_strings.luau` rules L01–L06 and flags `--public`, `--rules`, `--denylist` (L02 checks the single `Base` pack; L04–L06 read the local denylist `tools/denylist.local.txt`: owner-supplied, gitignored, required for a public publish, optional in dev; findings name entry numbers, never terms; warning `W-NO-DENYLIST`; rules-file schema version 2 with Part 8's optional `list` and `keyPattern` fields, generic terms only; L03 accepts exactly Part 8 §8.2.2's namespaces; Part 8 adds rules L07–L15 and the flags `--tree`, `--meta`, `--text`/`--scope` and `--dry-run`); `lint_retired_keys.luau` rules R01–R05 and flags `--list`, `--root`, `--tree`, `--verbose`, with the key list `tools/retired_keys.txt` (owner-supplied from the counsel archive, gitignored, never written, printed or quoted by the agent; plain keys under `[style]`, `[style-moveid]`, `[key]`, `[word]`, `[prefix]`; a missing list prints `SKIP no retired_keys list` and exits 0, while a public publish needs it present; findings print only `<path>:<line> retired-key`; test fixtures use a made-up list); `check_manifest.luau` rules M01–M08 and flags; tool output format `[HB][LINT] … SUMMARY errors=<n> warnings=<m>`.
 17. **Lint rules** `devtools-isolation` and `test-loader` added to Part 1's `tools/lint_rules.luau`.
-18. **Log tags** `Perf` (`[ALG][Perf] …`), `Harness` (plugin lines) and the chat/PR verdict line `[ALG][GATE] <gate> PASS|FAIL …`.
-19. **Human checklists** HF-01 … HF-19 and HD-01 … HD-10 (HD-10 M1-G only); gate record format (§7.7.1).
+18. **Log tags** `Perf` (`[HB][Perf] …`), `Harness` (plugin lines) and the chat/PR verdict line `[HB][GATE] <gate> PASS|FAIL …`.
+19. **Human checklists** HF-01 … HF-19 and HD-01 … HD-10 (HD-10 M1-G only); human gates `human.t11_clip_test` and `human.t7_t10_static` (the blind tests T7–T11, run by the producer; the agent only stages captures and appends `pending` rows to `docs/agent/RECOGNIZABILITY.md`); gate items M0 A14, M1-G A12 and H4; gate record format (§7.7.1).
 20. **CI workflow** `.github/workflows/ci.yml` (job `host`), required check `ci / host` on `main` (human).
-21. **Test names** introduced here: `shim.*`, `runner.cli_contract`, `standards.devtools_isolation`, `standards.test_loader_only`, `harness.*`, `netcond.profile_applied`, `netcond.rtt_m0gate`, `combat.side_ender_angle`, `wish.gdd_tier_odds`, `wish.gdd_flair_odds`, `wish.per_style_division`, `wish.per_style_redivide`, `wish.cosmic_path_bound_4400`, `skin.pack_key_coverage`, `lint.*`, `framedata.*`, `multi.*`, `perf.*` (except Part 6's Lune `perf.defaults_gdd`, `perf.json_safe`, `perf.tiers_ordered`, `perf.audio_map_complete`, `perf.lighting_presets_complete`), `mcp.*` (incl. `mcp.tab_no_playerlist`; `mcp.gamepad_menu_nav` is Part 6's), `human.*`. Catalogued from other parts after the review: `config.not_overridable`, `player.leave_releases`, `data.rejoin_persists` (redefined: stored-profile check, level `multi`), `skin.on_changed` (Part 2); `core.require_graph_acyclic`, `moves.status_codec_long_uptime`, `moves.disabled_move_blocked`, `combat.disabled_move_kill_switch`, `combat.env_ko_credit`, `world.travel_streams_destination`, `bot.loadtest_off_in_studio`, `stun.stretch_ragdoll_minus10` (renamed, TASKS C12) (Part 3); `spike.S-P4-2`, `spike.S-P4-3` (Part 4); `wish.batch10_server` (Studio; renamed from the duplicate `wish.batch10_vector`), `tel.perf_sample_sent`, `progress.daily_quest_claim`, `progression.rookie_rule_per_earner` (Part 5); `look.modes_matrix`, `look.stealth_ranges`, `ui.report_submit` (level `multi`); the Part 6 §6.12 set in §7.4.12, `render.remote_telegraph_full` (net, `M0Gate`) and `spike.S-P6-2` (Part 6).
+21. **Test names** introduced here: `shim.*`, `runner.cli_contract`, `standards.devtools_isolation`, `standards.test_loader_only`, `harness.*`, `netcond.profile_applied`, `netcond.rtt_m0gate`, `combat.side_ender_angle`, `wish.gdd_tier_odds`, `wish.gdd_flair_odds`, `wish.per_style_division`, `wish.per_style_redivide`, `wish.cosmic_path_bound_4400`, `skin.pack_key_coverage`, `lint.*`, `framedata.*`, `multi.*`, `perf.*` (except Part 6's Lune `perf.defaults_gdd`, `perf.json_safe`, `perf.tiers_ordered`, `perf.audio_map_complete`, `perf.lighting_presets_complete`), `mcp.*` (incl. `mcp.tab_no_playerlist`; `mcp.gamepad_menu_nav` is Part 6's), `look.clip_stage`, `human.*`. Catalogued from other parts after the review: `config.not_overridable`, `player.leave_releases`, `data.rejoin_persists` (redefined: stored-profile check, level `multi`), `skin.on_changed` (Part 2); `core.require_graph_acyclic`, `moves.status_codec_long_uptime`, `moves.disabled_move_blocked`, `combat.disabled_move_kill_switch`, `combat.env_ko_credit`, `world.travel_streams_destination`, `bot.loadtest_off_in_studio`, `stun.stun_decay_150f`, `stun.ragdoll_frames_add`, `realm.member_pos_quadrant` (Part 3); `spike.S-P4-2`, `spike.S-P4-3`, `kit.attendant.trap`, `kit.scoop.meltaway_iframes`, `kit.dustsheet.getaway`, `kits.getaway_rules`, `kits.getaway_schedule_matches`, `kits.peak_one_modifier`, `kits.kitprops_cover_summons` (Part 4); `wish.batch10_server` (Studio; renamed from the duplicate `wish.batch10_vector`), `wish.cosmic_arrival_once`, `tel.perf_sample_sent`, `progress.daily_quest_claim`, `progression.rookie_rule_per_earner` (Part 5); `look.modes_matrix`, `ui.report_submit` (level `multi`); the Part 6 §6.12 set in §7.4.12 (incl. `movement.tide_phase`, `movement.volume_tide_gating`, `theme.rarity_tokens`, `perf.body_scale_keys`, `world.shallows_slow`, `world.tide_swap`, `world.hut_break_rebuild`, `world.trapdoor_fall_and_trampoline`, `map.hub_zone_label`, `map.hub_boundary_soft`, `map.hub_totem_prompt`, `cam.arrival_fog`, `look.postcard_three_colour`, `look.body_styles`, `look.peak_uniform`, `hud.tide_chip`, `ui.skin_refresh`, `ui.wheel_titles`, `ui.wish_stamp_first`, `ui.postcard_preview`), `render.remote_telegraph_full` (net, `M0Gate`) and `spike.S-P6-2` (Part 6).
 22. **Selector rules:** a bare word is not a prefix; a selection matching zero scenarios ends with `state = "error"`, `err = "empty_selection"` (§7.3.4). Every gate A4 selector appends `-@spike`.
-23. **Release-tagged Lune tests:** `lint.manifest_release_detects_placeholder`, `lint.manifest_raw_id_detected`, `net.validators_reject_fuzz`, `skin.canon_locked`, `ip.leak_detect`, `ip.product_keys_original_only` (§7.1.4, R3).
+23. **Release-tagged Lune tests:** `lint.manifest_release_detects_placeholder`, `lint.manifest_raw_id_detected`, `net.validators_reject_fuzz`, `lint.retired_keys_clean`, `lint.retired_keys_detects_fixture`, `lint.denylist_stays_local` (§7.1.4, R3).
 24. **`ip.gate_dry_run` is an agent procedure** (§7.7.6), never a Studio scenario.
+25. **Blind-test capture staging:** scenario `look.clip_stage` (level `mcp`; tags `m0`, `spike`; arg `styleId`; uses the `silhouette = true` template option). Only the gate runs (M0 A14, M1-G A12) append rows; the kit cards' dry run and early-look runs (TASKS T176, T187) append none. The agent creates `docs/agent/RECOGNIZABILITY.md` from its template and only appends `pending` rows; humans fill in and sign results. Clips are recorded by the producer and kept outside the repository.
+26. **Multi request marker:** multi requests carry `hb = 1` (§7.3.5, §7.3.8); failures raised by `T.fail` are tables `{ hb = "assert", msg = <string> }` (§7.2.3).
 
 ### 7.10 Issues with spine
 
 1. **GDD §18.2 network gate vs the Network Simulator.** `NetworkSettings` loss is capped at 0.50 % per direction [Docs], so "1 % loss" is approximated by 0.5 % inbound + 0.5 % outbound (≈ 1.0 % per round trip). "150 ms ±30 ms jitter" is read as round-trip (Studio's docs: inbound and outbound delay both add to ping), and jitter is assumed additive on top of the minimum, hence 60 + [0, 30] ms per direction. `netcond.rtt_m0gate` calibrates this. No GDD number changes; if the owner meant one-way 150 ms, change only `NetProfiles.M0Gate`.
 2. **Two M0 load definitions.** §0.0 says "≥ 30 fps on the low-end reference with 8 clients plus server bots"; GDD §18.2 says "20 bots + 4 humans". Both are gated in Studio (`perf.m0_clients8`, `perf.m0_gate_load`), but those runs measure server Hz and prediction on the dev PC, not low-end client fps. Studio multi tests cap at 8 clients [Docs], so neither can include 20 *clients*. The low-end fps with 8 replicating clients is therefore measured on the device: M0 H3 requires ≥ 7 live clients besides the phone, or the owner's recorded acceptance of bots as stand-ins (§7.7.2). §0.0 is not edited.
-3. **§0.4 test-line format** allows only PASS/FAIL. Skips, pending tests and slow tests use `[ALG][Test] …` info lines; no Part 0 change is needed, but the spine could list them.
-4. **Cross-part (not spine): Part 1 vs Part 2 boot tag.** Resolved by decision D-02: the bootstrap logs `[ALG][BOOT] server ready …` / `[ALG][BOOT] client ready …` (tag `BOOT`), and readiness is read from `Runtime.ServerReady` and the client-local `AlgClientReady` attribute. The harness also matches tags case-insensitively.
+3. **§0.4 test-line format** allows only PASS/FAIL. Skips, pending tests and slow tests use `[HB][Test] …` info lines; no Part 0 change is needed, but the spine could list them.
+4. **Cross-part (not spine): Part 1 vs Part 2 boot tag.** Resolved by decision D-02: the bootstrap logs `[HB][BOOT] server ready …` / `[HB][BOOT] client ready …` (tag `BOOT`), and readiness is read from `Runtime.ServerReady` and the client-local `HbClientReady` attribute. The harness also matches tags case-insensitively.
 5. **Cross-part: require convention.** Resolved by decision D-05: Part 1 C1 wins (`require("@game/<Service>/<path>")` across roots; spike T006 may switch every file at once in one `OPS:` commit). Part 7 code follows it.
 6. **Cross-part: Lune pin.** Part 1 pins Lune 0.10.5, whose `CFrame.lookAt` is wrong for pitched rotations (fixed in 0.11.0, released 2026-10-11). The loader patch makes tests correct on either version. Recommend a dedicated upgrade task to 0.11.x after 2026-10-25; the only breaking change (`net.serve` handle `:stop()`) does not affect this repo.
 7. **Cross-part: Part 5's MCP recipe** (`require(TestHarness).run(...)` via `execute_luau`) depends on module-cache sharing (spike T7-S4). The request/result protocol of §7.3.6 is the primary path.
@@ -2120,7 +2180,7 @@ A future self-hosted Windows/macOS runner with Studio could run L2 via the Studi
 | ID | Question | How to test | Fallback |
 |---|---|---|---|
 | T7-S1 | Can `execute_luau` (Edit) call `StudioTestService:ExecuteMultiplayerTestAsync`, and does a `task.spawn`ed thread survive after the call returns? | `multi_run.luau` with `"via":"direct"`, `n = 1`, selector `harness.selftest` | Option B plugin (default) |
-| T7-S2 | Does a Lune-built `.rbxm` written to `roblox.studioPluginPath()` load as a local plugin after a Studio restart? Does Lune serialize `Script.Source` as Studio expects? | `lune run tools/plugin/build.luau --install`; restart; look for `[ALG][Harness]` lines | Human drags the `.rbxm` into the Plugins folder via Studio; or `rojo build --plugin` (verify) |
+| T7-S2 | Does a Lune-built `.rbxm` written to `roblox.studioPluginPath()` load as a local plugin after a Studio restart? Does Lune serialize `Script.Source` as Studio expects? | `lune run tools/plugin/build.luau --install`; restart; look for `[HB][Harness]` lines | Human drags the `.rbxm` into the Plugins folder via Studio; or `rojo build --plugin` (verify) |
 | T7-S3 | `settings():GetService("NetworkSettings")` from `execute_luau`/plugin; do values apply to `ExecuteMultiplayerTestAsync` sessions; jitter distribution | `net_profile.luau` then `netcond.rtt_m0gate` in solo and multi | Human applies the preset in the Network pill; adjust `M0Gate` values |
 | T7-S4 | Does `execute_luau` (Server) share the game's module cache (same `TestHarness` table)? Its timeout for long calls? | Compare a table identity marker set by `TestHarness.start` | Request/result protocol only |
 | T7-S5 | Do client windows of a multi test appear in `list_roblox_studios`, and does `get_console_output` include them? | Run a 2-client test and list | Use only the result JSON |
@@ -2130,7 +2190,7 @@ A future self-hosted Windows/macOS runner with Studio could run L2 via the Studi
 | T7-S9 | `StudioDeviceSimulatorService` from `execute_luau` in Edit and Client; does `NetworkSettings.EmulatedTotalMemoryInMB` change client behaviour? | `device_sim.luau` set/list/stop | Human selects the device in the Device Simulator |
 | T7-S10 | `SceneAnalysisService:GetUnparentedInstancesAsync` in Play server/client DataModels | Call from a scenario | Skip the unparented criterion; keep instance/heap criteria |
 | T7-S11 | Do plugins load inside the server and client DataModels of `ExecuteMultiplayerTestAsync` sessions? | Plugin prints in each DM | Attribution via the probe snippet in solo only |
-| T7-S12 | `LogService:GetLogHistory` keeps 512 entries [Docs]; how fast do long runs evict `[ALG][TEST]` lines? | Run 150 scenarios, then `log_scan` | Rely on `AgentTestResult` JSON (already primary) |
+| T7-S12 | `LogService:GetLogHistory` keeps 512 entries [Docs]; how fast do long runs evict `[HB][TEST]` lines? | Run 150 scenarios, then `log_scan` | Rely on `AgentTestResult` JSON (already primary) |
 | T7-S13 | Rokit on a fresh `ubuntu-24.04` runner (trust, rate limits with `GITHUB_TOKEN`), selene `roblox.yml` generation, `luau-lsp` flags (Part 1 S12) | First CI run | Download pinned release binaries in the workflow |
 | T7-S14 | Is `StudioTestService:GetTestArgs()` populated on the server for `ExecuteMultiplayerTestAsync` sessions (the method docs mention only Play/Run modes)? | `harness.selftest` in multi mode with the plugin's `AgentTestMultiArgs` removed | Already built in: the plugin writes `ServerStorage.AgentTestMultiArgs` before launch and `TestHarness.start` reads it when `GetTestArgs()` is nil |
 | T7-S15 | How to read fps and memory on the reference Android device (performance-stats toggle, Developer Console gesture)? | Human during H-12 | Record via MicroProfiler capture |
@@ -2140,3 +2200,4 @@ Design questions for the owner:
 - **Q1** `multi.pb_rhythm` threshold 90 % and HF-04's "≥ 10/20" are tuning defaults; confirm.
 - **Q2** M0 device test: H3 now asks for ≥ 7 live clients besides the phone (§0.0 wording); the owner may instead accept bots as stand-ins, recorded in the gate note (§7.7.2). Confirm which the owner prefers.
 - **Q3** Memory budget reading: 1.1 GB as 1,100 MB (used here) or 1,126 MiB?
+- **Q4** T11 clips: the agent stages each 30 s masked-silhouette demo (`look.clip_stage`) and the producer records it. Confirm the recorder, where the clips are stored (outside the repository) and whether the producer wants a longer staged loop than one 30 s run.

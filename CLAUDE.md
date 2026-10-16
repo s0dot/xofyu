@@ -10,9 +10,13 @@
   (build spec §1.2.4; never committed); it allowlists the read/test MCP tools and the host commands
   (`stylua`, `selene`, `luau-lsp analyze`, `lune run`, `rojo sourcemap/build`, safe `git` subcommands).
   `multi_edit`, `insert_asset`, `generate_*`, `store_image`, `subagent`, `rokit`, `git push`, `git restore`,
-  `git stash pop` and `lune run tools/upload_anims.luau` ask first; `upload_image`, history-rewriting git commands and Edit/Write on the human-signed files
-  (`docs/agent/PUBLISH_ACK.md`, `LICENSE_CONFIRMATION.md`, `TITLE_CLEARANCE.md`) are denied. Never create or edit
-  `.claude/settings*.json`; to change permissions, propose a diff to the example in a blocker.
+  `git stash pop` and `lune run tools/upload_anims.luau` ask first; `upload_image`, history-rewriting git commands
+  and Edit/Write on the human-signed `docs/agent/TITLE_CLEARANCE.md` and on the local denylist
+  `tools/denylist.local.txt` are denied. The owner's local retired-key list `tools/retired_keys.txt` (gitignored) is
+  not on the deny list, but you never write, print, quote or copy it. `docs/agent/RECOGNIZABILITY.md` is not denied:
+  you create it from its template and only ever append `pending` capture rows; humans fill in and sign the T7–T11
+  results. Never create or edit `.claude/settings*.json`; to change permissions, propose a diff to the example in a
+  blocker.
 - **New sessions after setup:** MCP servers added and Rokit `PATH` changes made after a session started are not
   visible to it. After H-02 / the Rokit install (and after T000 if `CLAUDE.md` was missing at session start), the
   human restarts Claude Code in the repo root and you resume from `docs/agent/PROGRESS.md`.
@@ -20,8 +24,9 @@
   human plays only for feel (H-10) and device (H-12) gates.
 - **Keep `ARCHITECTURE.md` current in the same turn** as any file or instance-folder change, and update the
   task row in `docs/agent/PROGRESS.md` with evidence lines before committing.
-- **Skill:** `.claude/skills/algebraic-studio/SKILL.md` holds the conventions in compact form; load it whenever
-  you edit code, run builders, or touch Studio.
+- **Skill:** `.claude/skills/hullabrawl-studio/SKILL.md` holds the conventions in compact form; load it whenever
+  you edit code, run builders, or touch Studio. It mirrors the Roblox Assistant skill
+  `docs/agent/skills/hullabrawl-conventions.md`; a rule change goes into both (and into `AGENTS.md`).
 - **Subagents:** do not run parallel Claude Code subagents that edit files or call `Roblox_Studio` at the same
   time; one writer per checkout and per Studio window. Read-only research subagents are fine.
 - **Context hygiene:** start a new session at each phase boundary or when context runs long; preflight

@@ -5,7 +5,7 @@
 This part fixes the runtime architecture, the DataModel, the module catalog and boot order, the shared types, where state lives, the config pipeline, the network layer, the persistence layer, the asset/naming APIs, coding standards and the security model. Other parts build *on* these contracts. Part 0 wins over this part; this part wins over Parts 3–8 for every item listed in §2.12.
 
 Conventions used below:
-- "MUST" = acceptance-blocking. Every requirement has a **Verify** line: a Lune test (`tests/...`, run with `lune run tests/run.luau`), an in-Studio scenario test (Part 7 harness, printed as `[ALG][TEST] <name> PASS|FAIL`), an MCP call against the server `Roblox_Studio`, or an expected `[ALG]` log line.
+- "MUST" = acceptance-blocking. Every requirement has a **Verify** line: a Lune test (`tests/...`, run with `lune run tests/run.luau`), an in-Studio scenario test (Part 7 harness, printed as `[HB][TEST] <name> PASS|FAIL`), an MCP call against the server `Roblox_Studio`, or an expected `[HB]` log line.
 - API facts are verified against the offline creator-docs snapshot (2026-10-10) unless marked "(verify in spike)".
 - Frame data is in frames @ 60 Hz; times are seconds (`Sec` suffix); distances are studs.
 
@@ -58,7 +58,7 @@ flowchart TB
     DS["DataService"]
     PST[("ProfileStore PlayerData_v1<br/>(Mock in Studio)")]
     CR["ConfigReplicator"]
-    CFGS[("Roblox ConfigService<br/>keys ALG_*")]
+    CFGS[("Roblox ConfigService<br/>keys HB_*")]
     RTV[("ReplicatedStorage.Runtime.Config<br/>StringValue + Version/Hash")]
     TEL["Telemetry"]
     AN[("AnalyticsService")]
@@ -93,7 +93,7 @@ flowchart TB
 
 **B. One meta request** (e.g. a Wish). `UI/Screens/Wish` → `Net.client.invoke("Wish.Make", {count = 10})` → `Net.server` checks rate bucket and schema → `WishService` handler → one `DataService.update(player, {"currencies","pity","wishStats","ledger","styles"}, "wish", mutator)` → returns `Response<WishBatchResult>` → `DataService` coalesces dirty sections into a `Data.Delta` (≤ 4 Hz) → `UiController` store → screens re-render.
 
-**C. Config change.** Live-ops edits ConfigService key `ALG_Wish` → `ConfigSnapshot.UpdateAvailable` → `ConfigReplicator` refreshes, merges onto `Defaults`, validates, freezes, publishes version *n+1* to `ReplicatedStorage.Runtime.Config` → server `Runtime` applies immediately; clients apply after the hash check. Meta sections take effect on the next request; the `Combat` section takes effect per character at its next spawn (§2.6.6).
+**C. Config change.** Live-ops edits ConfigService key `HB_Wish` → `ConfigSnapshot.UpdateAvailable` → `ConfigReplicator` refreshes, merges onto `Defaults`, validates, freezes, publishes version *n+1* to `ReplicatedStorage.Runtime.Config` → server `Runtime` applies immediately; clients apply after the hash check. Meta sections take effect on the next request; the `Combat` section takes effect per character at its next spawn (§2.6.6).
 
 **D. Player join (server).** Owned by `PlayerService` (§2.3.5):
 1. `Players.PlayerAdded` → `PlayerService` spawns a per-player thread, creates a per-player `Trove` and sets `player.DevEnableMouseLock = false` (Part 6 §6.6.5). Outside Studio, in the dev universe (`game.GameId` ∈ `Ip.DevUniverseIds`), it first runs the dev-group membership check (§2.3.5; rule owned by Part 8 §8.2.6); a non-member is kicked and the flow stops.
@@ -101,14 +101,14 @@ flowchart TB
 3. `DataService.loadAsync(player)`; on `false` the player was kicked; stop.
 4. `PolicyGate.fetchAsync(player)` (fail-safe = restricted).
 5. `MonetizationService.onPlayerReady`, `StyleService.onPlayerReady`, `AppearanceService.onPlayerReady`, `ProgressionService.onPlayerReady`, `WishService.onPlayerReady`, `ShopService.onPlayerReady`, in this order. Each sets its §2.5 attributes and must not yield longer than 5 s.
-6. `player:SetAttribute("DataLoaded", true)`; log `[ALG][Player] ready user=<UserId> ms=<n>`.
+6. `player:SetAttribute("DataLoaded", true)`; log `[HB][Player] ready user=<UserId> ms=<n>`.
 7. `CombatService.spawnAsync(player)` (Part 3): pins combat config (`CombatCfg` attribute), calls `Player:LoadCharacterAsync()`.
 
 Client: when `DataLoaded == true`, `UiController` fires `Data.Ready`; the server answers with `Data.Snapshot`.
 
 **E. Player leave.** `Players.PlayerRemoving` → `CombatService.onPlayerRemoving` (life summary) → `DataService.releaseAsync` (fires `beforeRelease`, then `Profile:EndSession()`) → per-player `Trove:Destroy()` → Net buckets cleared.
 
-**Verify (whole section):** scenario `boot.server_ready` expects `[ALG][BOOT] server ready services=15 ms=<n>` and `ReplicatedStorage.Runtime:GetAttribute("ServerReady") == true`; scenario `boot.client_ready` expects `[ALG][BOOT] client ready controllers=10 ms=<n>` and, on the client, `Players.LocalPlayer:GetAttribute("AlgClientReady") == true`; scenario `player.join_ready` expects `[ALG][Player] ready user=<id>` within 10 s of join in Studio. These are the signals Part 1's `boot_status.luau` / `client_status.luau` poll (Part 1 C2).
+**Verify (whole section):** scenario `boot.server_ready` expects `[HB][BOOT] server ready services=15 ms=<n>` and `ReplicatedStorage.Runtime:GetAttribute("ServerReady") == true`; scenario `boot.client_ready` expects `[HB][BOOT] client ready controllers=10 ms=<n>` and, on the client, `Players.LocalPlayer:GetAttribute("HbClientReady") == true`; scenario `player.join_ready` expects `[HB][Player] ready user=<id>` within 10 s of join in Studio. These are the signals Part 1's `boot_status.luau` / `client_status.luau` poll (Part 1 C2).
 
 ---
 
@@ -127,13 +127,17 @@ Default names marked "(Part N owns)" are placeholders that Part N may rename; it
 game
 ├─ Workspace                                   [human-set H-04: AuthorityMode=Server, StreamingEnabled=true, StreamingIntegrityMode, SLIM/LOD/animator settings — table below]
 │  ├─ Map (Folder)                             [builder:BuildAll containers step]
-│  │  ├─ CandyKingdom (Model) @MapId="candy_kingdom"   [builder:BuildMap_CandyKingdom] (Part 6 owns contents)
+│  │  ├─ Hub (Model) @MapId="hub"   [builder:BuildMap_Hub] (Part 6 owns contents)
+│  │  │                                         @TidePhase:string ("low"|"high") [runtime:CombatService world runtime]
+│  │  │                                         tide mirror, never read by the sim (Part 6 §6.3.8)
 │  │  │  ├─ Geometry (Folder)                  graybox parts / terrain refs
-│  │  │  ├─ Spawns (Folder)                    Parts with @SpawnFor="candy_kingdom"
-│  │  │  ├─ Totems (Folder)                    Style Totem models (Part 6)
-│  │  │  └─ Zones (Folder)                     world-event stub zone, kill planes (Part 6)
-│  │  └─ Training (Model) @MapId="training"    [builder:BuildTraining] (Part 6 owns; offset ≥ 2,000 studs from CandyKingdom)
-│  │     ├─ Geometry, Spawns, Totems (Folders)
+│  │  │  ├─ Spawns (Folder)                    Parts with @SpawnFor="hub"
+│  │  │  ├─ Totems (Folder)                    Charm Rack (Totem) models (Part 6)
+│  │  │  ├─ Breakables (Folder)                breakable Models, e.g. beach huts (Part 6 §6.1.8)
+│  │  │  └─ Zones (Model, ModelStreamingMode=Persistent)  volumes, kill volumes, event zones (Part 6 §6.1.1);
+│  │                                            @TidePeriodSec:number (hub tide schedule, builder-written, Part 6 §6.3.8)
+│  │  └─ Training (Model) @MapId="training"    [builder:BuildTraining] (Part 6 owns; offset ≥ 2,000 studs from Hub)
+│  │     ├─ Geometry, Spawns, Totems, Breakables (Folders); Zones (Model), as in Hub
 │  │     └─ DummyPoints (Folder)               Parts with @DummySlot=<n> (Part 3/6)
 │  ├─ Arena (Folder)                           [builder:BuildArena]
 │  │  └─ DuelArena (Model) @MapId="arena_duel_m0"   (M0 arena; kept in M1-G for duel tests)
@@ -143,14 +147,14 @@ game
 │  └─ Camera                                   [engine]
 ├─ Players                                     CharacterAutoLoads=false [runtime:PlayerService.init]
 │  └─ <Player>                                 [engine]  attributes: §2.5.2 [runtime: writers listed there];
-│     │                                          on the owning client only: @AlgClientReady:boolean (client-local, not replicated; Main.client, §2.3.4)
+│     │                                          on the owning client only: @HbClientReady:boolean (client-local, not replicated; Main.client, §2.3.4)
 │     ├─ <InputContexts>                       [runtime:InputMap.attach via PlayerService] cloned from ReplicatedStorage.Inputs (Part 3 owns names)
 │     ├─ PlayerScripts                         [engine] copies of StarterPlayerScripts (client-only)
 │     └─ PlayerGui                             [engine]
-│        ├─ ALG_Hud (ScreenGui, ResetOnSpawn=false)      [runtime:HudController] (Part 6 owns)
-│        ├─ ALG_Screens (ScreenGui, ResetOnSpawn=false)  [runtime:UiController] (Part 6 owns)
-│        ├─ ALG_Toasts (ScreenGui, ResetOnSpawn=false)   [runtime:UiController] Notify toasts (Part 6 owns)
-│        └─ ALG_Touch (ScreenGui, ResetOnSpawn=false)    [runtime:InputController] touch buttons bound via InputBinding.UIButton (Part 3/6)
+│        ├─ HB_Hud (ScreenGui, ResetOnSpawn=false)      [runtime:HudController] (Part 6 owns)
+│        ├─ HB_Screens (ScreenGui, ResetOnSpawn=false)  [runtime:UiController] (Part 6 owns)
+│        ├─ HB_Toasts (ScreenGui, ResetOnSpawn=false)   [runtime:UiController] Notify toasts (Part 6 owns)
+│        └─ HB_Touch (ScreenGui, ResetOnSpawn=false)    [runtime:InputController] touch buttons bound via InputBinding.UIButton (Part 3/6)
 ├─ Lighting                                    [builder:BuildLighting] Atmosphere, Sky, post-effects (Part 6)
 ├─ ReplicatedFirst                             empty in M1-G (future loading screen)
 ├─ ReplicatedStorage
@@ -158,11 +162,14 @@ game
 │  ├─ Inputs (Folder)                          [builder:BuildInputs] InputContext templates (Part 3)
 │  ├─ VFX (Folder)                             [builder:BuildVfxTemplates] VFX templates (Part 6)
 │  ├─ Anim (Folder)                            [builder:BuildPlaceholderAnims] Animation + KeyframeSequence (@AssetKey) (Part 6/4)
-│  ├─ Looks (Folder)                           [builder:BuildTemplates] client-visible cosmetic templates: Style Gear props,
-│  │                                             Oosona parts, graybox character-look models (Part 6) — NEW, see §2.13
+│  ├─ Looks (Folder)                           [builder:BuildTemplates] client-visible cosmetic templates: Charm Gear props,
+│  │                                             Peak pieces, summon models, Postcard Look parts, graybox Full Uniform rig
+│  │                                             (Part 6 §6.8.6); @Silhouette:boolean set only by the capture-staging
+│  │                                             build `BuildTemplates.build({silhouette = true})` — NEW, see §2.13
 │  ├─ Remotes (Folder)                         [runtime:Net.server] parented by Net.server.open() at end of boot (§2.7)
 │  │  └─ <one RemoteEvent / RemoteFunction per §2.7.4 entry, Name = remote name>
 │  └─ Runtime (Folder) @ServerReady:boolean    [runtime:ConfigReplicator]; `ServerReady = true` set by Main.server after Net.server.open() (§2.3.4)
+│     │                                          @CosmicArrivalUntil:number [runtime:WishService] set at the Cosmic Arrival (§2.5.1, Part 5 §5.2.18)
 │     ├─ Config (StringValue)                  @Version:number @Hash:string @Parts:number  (§2.6.5)
 │     │  └─ Part1..PartN (StringValue)         only when JSON > 190,000 chars
 │     └─ History (Folder)                      StringValues "v<n>" = full config JSON of versions pinned by live characters (§2.6.6)
@@ -173,7 +180,7 @@ game
 ├─ ServerStorage
 │  ├─ DevTools (Folder)                        [synced] Builders/, Tests/
 │  ├─ Templates (Folder)                       [builder:BuildTemplates] DummyRig (Model), BotRig (Model), server-only templates (Part 6)
-│  ├─ AgentTestRequest (StringValue)           [runtime:AlgebraicTestHarness plugin / agent] (Part 7 owns)
+│  ├─ AgentTestRequest (StringValue)           [runtime:HullabrawlTestHarness plugin / agent] (Part 7 owns)
 │  └─ AgentTestResult (StringValue)            [runtime:TestHarness] (Part 7 owns)
 ├─ StarterPlayer                               [human-set H-04: AvatarJointUpgrade=Enabled]
 │  ├─ StarterPlayerScripts                     [synced] src/StarterPlayerScripts: Main (Script, RunContext Client), Controllers/, UI/
@@ -201,7 +208,7 @@ Human-set and non-scriptable properties (never set by scripts). `Verify` reads o
 | Experience Settings → Security → Enable Studio Access to API Services | on (dev universe only) | H-06 | ProfileStore live mode in Studio (opt-in), ConfigService staged values |
 
 Rules:
-1. `BuildAll.build(opts)` MUST first run a **containers step** that creates the empty top-level unsynced containers that no other builder owns (`Workspace.Map`, `Workspace.Sim`, `Workspace.Bots`; Folders stamped `AlgBuilder = "BuildAll"`, never pruned, never destroyed by `reset`) and then run the builders in Part 1 §1.6.6 `ORDER` (TASKS C6). A builder whose container is missing creates it with `Util.ensureContainer` (Part 1 §1.6.4) and warns (`container <Path> missing; run BuildAll`).
+1. `BuildAll.build(opts)` MUST first run a **containers step** that creates the empty top-level unsynced containers that no other builder owns (`Workspace.Map`, `Workspace.Sim`, `Workspace.Bots`; Folders stamped `HbBuilder = "BuildAll"`, never pruned, never destroyed by `reset`) and then run the builders in Part 1 §1.6.6 `ORDER` (TASKS C6). A builder whose container is missing creates it with `Util.ensureContainer` (Part 1 §1.6.4) and warns (`container <Path> missing; run BuildAll`).
 2. `ReplicatedStorage.Remotes` and `ReplicatedStorage.Runtime` MUST NOT exist in the saved place. `Verify.verify()` reports them as problems in Edit mode (stale runtime objects).
 3. No attributes or tags on any Script/ModuleScript (Script Sync drops them).
 4. Characters and bot Models never carry meta attributes written after parenting (§2.5.4).
@@ -225,17 +232,17 @@ Rules:
 | File | Realm | Pure | Sim-safe | Responsibility | Key public API | Depends on | Detailed in |
 |---|---|---|---|---|---|---|---|
 | `Types.luau` | shared | yes | yes | Canonical types + ID constant lists + Combat section (Core state types and constant tables; content owned by Part 3 §3.4.1) | §2.4 | `./Config/Defaults` (type only) | §2.4, Part 3 §3.4.1 |
-| `Log.luau` | shared | yes | no (prints) | `[ALG]` logging, test lines | §2.3.6 | — | §2.3.6 |
+| `Log.luau` | shared | yes | no (prints) | `[HB]` logging, test lines | §2.3.6 | — | §2.3.6 |
 | `Assets.luau` | shared | load | no | Asset manifest + resolver + products | §2.9.1 | `./Log` | §2.9 / Part 8 |
 | `Config/Defaults.luau` | shared | yes | yes (data) | Every GDD tunable, JSON-safe | §2.6.2 | — | §2.6 + section owners |
-| `Config/Schema.luau` | shared | yes | yes | Validator combinators, canonical JSON, hash, merge/freeze, config rules, PlayerData template/normalize/migrate, settings + Oosona validation/codec | §2.6.3, §2.8.3 | `../Types`, `./Defaults` | §2.6, §2.8 |
+| `Config/Schema.luau` | shared | yes | yes | Validator combinators, canonical JSON, hash, merge/freeze, config rules, PlayerData template/normalize/migrate, settings + Postcard validation/codec | §2.6.3, §2.8.3 | `../Types`, `./Defaults` | §2.6, §2.8 |
 | `Config/Runtime.luau` | shared | no | no (call `at()` outside the sim and cache the table; it may decode JSON) | Frozen versioned config on both peers | §2.6.5 | `./Defaults`, `./Schema`, `../Vendor/Signal`, `../Log` | §2.6.5 |
 | `Core/Fsm, Frames, M1, Defense, Movement, Stun, Meter, Breakaway, Moves, Damage, Rng, Realm` | shared | yes | yes | Pure combat rules; `Frames.toSeconds(f) = f / 60` | Part 3 | `../Types` | Part 3 (Realm: Part 4) |
 | `Sim/Simulation, Attr, InputMap, Adapter` | shared | Attr: yes; others no | yes (Simulation) | Sim loop, attribute list, IAS mapping, NetModel adapter | Part 3 | Core, Runtime | Part 3 |
 | `Combat/Query, Rewind, Hurtbox` | shared | no | yes | Spatial queries, hurtbox history, capsule hurtboxes | Part 3 | Core | Part 3 |
-| `Styles/init` + `hero, stretch, monarch, rocker, frost, decay` | shared | load | yes (data) | StyleDef registry incl. 12 stub defs with `implemented=false` | `Styles.get(id)`, `Styles.all()` | `../Types` | Part 4 |
+| `Styles/init` + `attendant, lifeguard, sandcastle, scoop, busker, dustsheet` | shared | load | yes (data) | StyleDef registry incl. 12 stub defs with `implemented=false` | `Styles.get(id)`, `Styles.all()` | `../Types` | Part 4 |
 | `Behaviors/*` (9 files) | shared | no | yes | Per-behavior move hooks | Part 4 | Core, Combat | Part 4 |
-| `Skin/init` + `Packs/Codename, Original, Canon` | shared | yes | no | Player-visible strings | §2.9.2 | `../Log` | §2.9 / Part 8 |
+| `Skin/init` + `Packs/Base` | shared | yes | no | Player-visible strings (one shipped pack, `Base`) | §2.9.2 | `../Log` | §2.9 / Part 8 |
 | `Wish/Odds, Pity` | shared | yes | — | Odds table, pity math, ledger codec | Part 5 (+ §2.8.4 codec) | `../Types` | Part 5 |
 | `Net/init` | shared | no | no | Remote wrapper (server + client) | §2.7.2 | `@self/Schemas`, `./Log`, `./Types`, `./Config/Runtime`, `./Config/Defaults` (`NetModel` only) | §2.7 |
 | `Net/Schemas` | shared | yes | — | Remote catalog + validators | §2.7.3 | `../Config/Schema`, `../Types` | §2.7 |
@@ -253,7 +260,7 @@ Per-file responsibilities for grouped rows (signatures are defined by the owning
 | `Core/Defense.luau` | Block, guard, Perfect Block, guard break (GDD §6.4) | Part 3 |
 | `Core/Movement.luau` | Walk/run parameters, 3 dashes, dash cooldowns (GDD §6.5) | Part 3 |
 | `Core/Stun.luau` | Hitstun, Stun Decay, combo limits, ragdoll state (GDD §6.6) | Part 3 |
-| `Core/Meter.luau` | Algebraic Meter gain/decay, Awakening timer (GDD §6.9) | Part 3 |
+| `Core/Meter.luau` | Meter gain and drain, Awakening timer (the player's Peak Meter and Peak; GDD §6.9) | Part 3 |
 | `Core/Breakaway.luau` | Breakaway pips, refill, lockout (GDD §6.8) | Part 3 |
 | `Core/Moves.luau` | Generic move timeline (startup/active/recovery), cooldowns, cancel rules (GDD §6.7) | Part 3 |
 | `Core/Damage.luau` | Damage, guard damage, chip, knockback resolution, pile-on (GDD §6.2/§6.4/§6.11) | Part 3 |
@@ -267,11 +274,11 @@ Per-file responsibilities for grouped rows (signatures are defined by the owning
 | `Combat/Rewind.luau` | 1 s / 60 Hz hurtbox history, rewind ≤ 200 ms (GDD §18.2) | Part 3 |
 | `Combat/Hurtbox.luau` | Fixed capsule hurtboxes, collision group setup (GDD §6.2) | Part 3 |
 | `Styles/init.luau` | Registry of all 18 `StyleDef`s (6 kits + 12 stubs with `implemented=false`) | Part 4 |
-| `Styles/<id>.luau` ×6 | One kit each: `hero, stretch, monarch, rocker, frost, decay` | Part 4 |
+| `Styles/<id>.luau` ×6 | One kit each: `attendant, lifeguard, sandcastle, scoop, busker, dustsheet` | Part 4 |
 | `Behaviors/<Behavior>.luau` ×9 | `Projectile, Rush, Grab, Counter, Zone, Summon, Buff, Mobility, RealmCast` hooks | Part 4 |
-| `Wish/Odds.luau` | Odds table and effective odds (pity ramp, Lucky Jar) from config | Part 5 |
+| `Wish/Odds.luau` | Odds table and effective odds (pity ramp, Lucky Stamp pass) from config | Part 5 |
 | `Wish/Pity.luau` | Pity counters and rules (GDD §8.4); ledger codec (§2.8.4) | Part 5 |
-| `Skin/Packs/Codename.luau`, `Original.luau`, `Canon.luau` | String packs | Part 8 |
+| `Skin/Packs/Base.luau` | The only string pack (`Base`) | Part 8 |
 | `UI/Create.luau` | Typed Instance factory for UI | Part 6 |
 | `UI/Theme.luau` | Colors, fonts, rarity shapes (GDD §16.3 colorblind) | Part 6 |
 | `UI/Screens/Hud, StyleWheel, Wish, Shop, Settings, Results` | One screen module each | Part 6 |
@@ -293,7 +300,7 @@ Per-file responsibilities for grouped rows (signatures are defined by the owning
 | `Services/BotService.luau` | server | Training dummies, load-test bots, `Training.Dummy` | CombatService, StyleService | Part 3 / Part 7 |
 | `Services/ProgressionService.luau` | server | XP, levels, mastery, Treasure earning, daily login, Rookie | DataService, CombatService (signals), StyleService, Telemetry | Part 5 |
 | `Services/WishService.luau` | server | Wish rolls, ledger, odds view, Cosmic craft, announcements | DataService, PolicyGate, MonetizationService, StyleService, Telemetry | Part 5 |
-| `Services/ShopService.luau` | server | Choose Goose rotation and purchases | DataService, StyleService | Part 5 |
+| `Services/ShopService.luau` | server | Sundry's Rack rotation and purchases | DataService, StyleService | Part 5 |
 | `Services/PlayerService.luau` | server | Join/leave orchestration, CharacterAutoLoads, `World.Travel`, per-player Trove, `MapId`/`DataLoaded` | all services above | §2.3.5 |
 | `Services/TestHarness.luau` | server (Studio only) | `Dev.Command`, scenario runner; inert outside Studio | all | Part 7, §2.11.5 |
 | `Vendor/ProfileStore.luau` | server | Vendored ProfileStore (MadStudio, MIT, upstream HEAD `45c9847`, wally 1.0.3) | — | §2.8 |
@@ -304,7 +311,7 @@ Per-file responsibilities for grouped rows (signatures are defined by the owning
 |---|---|---|
 | `Builders/BuildAll.luau` | Containers step (`Util.ensureContainer`) + runs every builder in Part 1 §1.6.6 `ORDER` (TASKS C6); `verify()` aggregates | §2.2 (orchestration), Part 1 §1.6.6, Part 6 |
 | `Builders/BuildInputs.luau` | InputContext templates | Part 3 |
-| `Builders/BuildArena.luau`, `BuildMap_CandyKingdom.luau`, `BuildTraining.luau`, `BuildLighting.luau` | World | Part 6 |
+| `Builders/BuildArena.luau`, `BuildMap_Hub.luau`, `BuildTraining.luau`, `BuildLighting.luau` | World | Part 6 |
 | `Builders/BuildVfxTemplates.luau`, `BuildPlaceholderAnims.luau`, `BuildTemplates.luau` | Presentation templates (incl. `ReplicatedStorage.Looks`) | Part 6 (anims with Part 4) |
 | `Builders/Verify.luau` | Tree + readable-property checks (Part 1 §1.6.7; of the §2.2 human-set table only `StreamingEnabled`) | Part 1 §1.6.7, Part 7 |
 | `Tests/*` | In-Studio scenario modules | Part 7 |
@@ -330,11 +337,12 @@ Per-file responsibilities for grouped rows (signatures are defined by the owning
 | Path | Realm | Responsibility | Detailed in |
 |---|---|---|---|
 | `tests/run.luau`, `tests/core/*.spec.luau`, `tests/wish/*.spec.luau`, `tests/shim/` | host | Lune unit tests; Part 2 adds the specs listed in §2.12 | Part 7 |
-| `tools/lint_strings.luau` | host | Skin key / literal-string lint | Part 8 |
-| `tools/check_manifest.luau` | host | Asset key and raw-ID lint (§2.9.1) | Part 8 / Part 7 |
+| `tools/lint_strings.luau` | host | Skin key / literal-string lint; checks player-visible strings against the optional local denylist `tools/denylist.local.txt` (gitignored) | Part 8 (rules) / Part 7 §7.5.1 (mechanism) |
+| `tools/lint_retired_keys.luau` | host | Fails on retired keys used as style-ID literals or move-ID prefixes, retired map/finish/status/archetype keys and retired project words or prefixes, in `src/`, `tests/`, `tools/` and in client-replicated instance names, attributes and strings. Reads the owner-supplied, gitignored key list `tools/retired_keys.txt`, which the agent never writes, prints or quotes; findings print only `<path>:<line> retired-key`. When the file is absent it prints `SKIP no retired_keys list` and exits 0 (dev may proceed; a public publish requires the list) | Part 8 §8.4.3 (policy) / Part 7 §7.5.6 (mechanism) |
+| `tools/check_manifest.luau` | host | Asset key and raw-ID lint (§2.9.1) | Part 7 §7.5.2 (M01–M08) / Part 8 (M09–M13) |
 | `tools/export_framedata.luau` | host | Frame-data export | Part 3/4 |
 | `tools/studio/*.luau` | host → `execute_luau` | ≤ 2 KB snippets | Part 1 / Part 7 |
-| `tools/plugin/AlgebraicTestHarness/` | Studio plugin | Multi-client tests | Part 7 |
+| `tools/plugin/HullabrawlTestHarness/` | Studio plugin | Multi-client tests | Part 7 |
 
 #### 2.3.3 Fixed init order
 
@@ -349,7 +357,7 @@ Server order (`Main.server.luau` constant `ORDER`):
 | 3 | `ModerationService` | Sink for Net violations and exploit signals. |
 | 4 | `DataService` | Profiles; every meta service persists through it. |
 | 5 | `PolicyGate` | Policy flags needed by Monetization and Wish. |
-| 6 | `MonetizationService` | Pass ownership and receipts; Wish needs pass state (Lucky Jar). Grants go through DataService, not WishService. |
+| 6 | `MonetizationService` | Pass ownership and receipts; Wish needs pass state (the Lucky Stamp pass). Grants go through DataService, not WishService. |
 | 7 | `StyleService` | Style registry and ownership; needed by Appearance, Combat, Wish, Shop. |
 | 8 | `AppearanceService` | Depends on settings (Data) and the equipped style. |
 | 9 | `CombatService` | Server sim host; needs style per player and config pinning. Owns `ko`, `damage`, `lifeEnded`, `spawned` signals. |
@@ -404,10 +412,10 @@ type Module = { init: () -> (), start: () -> () }
 
 local t0 = os.clock()
 local folder = script.Parent:FindFirstChild("Services")
-assert(folder ~= nil, "[ALG][BOOT] Services folder missing")
+assert(folder ~= nil, "[HB][BOOT] Services folder missing")
 for _, child in folder:GetChildren() do -- every service must be ordered (§2.3.3)
 	if child:IsA("ModuleScript") and table.find(ORDER, child.Name) == nil then
-		error(`[ALG][BOOT] ERROR service {child.Name} missing from ORDER`)
+		error(`[HB][BOOT] ERROR service {child.Name} missing from ORDER`)
 	end
 end
 
@@ -415,7 +423,7 @@ Net.server.init() -- builds remotes UNPARENTED (§2.7.2)
 local mods: { [string]: Module } = {}
 for _, name in ORDER do
 	local ms = folder:FindFirstChild(name)
-	assert(ms ~= nil and ms:IsA("ModuleScript"), `[ALG][BOOT] missing service {name}`)
+	assert(ms ~= nil and ms:IsA("ModuleScript"), `[HB][BOOT] missing service {name}`)
 	mods[name] = require(ms) :: any
 end
 for _, phase in { "init", "start" } do
@@ -429,7 +437,7 @@ for _, phase in { "init", "start" } do
 end
 Net.server.open() -- parents ReplicatedStorage.Remotes
 local rt = ReplicatedStorage:FindFirstChild("Runtime") -- created by ConfigReplicator.init() (§2.6.4)
-assert(rt ~= nil, "[ALG][BOOT] Runtime missing")
+assert(rt ~= nil, "[HB][BOOT] Runtime missing")
 rt:SetAttribute("ServerReady", true) -- polled by Part 1 boot_status.luau (C2)
 Log.info("BOOT", `server ready services={#ORDER} ms={math.floor((os.clock() - t0) * 1000)}`)
 ```
@@ -448,7 +456,6 @@ ReplicatedStorage:WaitForChild("Shared") -- once, before the first `@game/` requ
 local Log = require("@game/ReplicatedStorage/Shared/Log") -- require form per T006 (C1 default `@game/`)
 local Runtime = require("@game/ReplicatedStorage/Shared/Config/Runtime")
 local Net = require("@game/ReplicatedStorage/Shared/Net")
-local Skin = require("@game/ReplicatedStorage/Shared/Skin")
 
 local ORDER = {
 	"UiController", "SettingsController", "InputController", "CameraController", "AnimController",
@@ -460,23 +467,17 @@ if not Runtime.waitReady(30) then
 	return
 end
 local cfg = Runtime.get()
-Skin.setPack(cfg.SkinPack, cfg.LicenseConfirmed)
--- Module-lifetime connection (§2.10 item 9): live pack switching (Part 8 §8.6.3). Skin.setPack fires
--- Skin.onChanged when the active pack changes; screens, HUD and nameplates re-render on it (§2.9.2, Part 6).
-Runtime.changed:Connect(function()
-	local c = Runtime.get()
-	Skin.setPack(c.SkinPack, c.LicenseConfirmed)
-end)
+-- Skin needs no setup: `Base` is the only pack (§2.9.2).
 Net.client.init(cfg.Net.ClientWaitSec)
 -- require, init, start exactly as the server does (same Module contract; on failure Log.error("BOOT", ...)
--- and return without setting AlgClientReady), then:
-Players.LocalPlayer:SetAttribute("AlgClientReady", true) -- client-local (not replicated); polled by Part 1 client_status.luau
+-- and return without setting HbClientReady), then:
+Players.LocalPlayer:SetAttribute("HbClientReady", true) -- client-local (not replicated); polled by Part 1 client_status.luau
 Log.info("BOOT", `client ready controllers={#ORDER} ms={math.floor((os.clock() - t0) * 1000)}`)
 ```
 
-The server also calls `Skin.setPack(cfg.SkinPack, cfg.LicenseConfirmed)` inside `ConfigReplicator.init()` after publishing v1, and again on every `Runtime.changed`. Clients do the same (skeleton above). Until the spine changes, `.local.luau` stays forbidden under `src/` (Part 1 §1.2.5): the guard is the double-run mechanism, `Main.client.luau` is the only client entry, and every other `*.client.luau` (none planned) must start with the same guard line.
+Neither bootstrap selects a string pack: `Skin` always serves `Base` (§2.9.2), and no config key or ConfigService key changes it. Until the spine changes, `.local.luau` stays forbidden under `src/` (Part 1 §1.2.5): the guard is the double-run mechanism, `Main.client.luau` is the only client entry, and every other `*.client.luau` (none planned) must start with the same guard line.
 
-**Verify:** scenario `boot.order_enforced` (TestHarness adds a dummy ModuleScript named `ZzzUnordered` to a *cloned* Services folder, runs the ordering check function, expects the error text `missing from ORDER`). Scenario `boot.client_single_run` counts `[ALG][BOOT] client ready` lines per client and expects exactly 1. Scenario `boot.server_ready` also asserts `ReplicatedStorage.Runtime:GetAttribute("ServerReady") == true`; `boot.client_ready` asserts `LocalPlayer:GetAttribute("AlgClientReady") == true` on the client (§2.1.3).
+**Verify:** scenario `boot.order_enforced` (TestHarness adds a dummy ModuleScript named `ZzzUnordered` to a *cloned* Services folder, runs the ordering check function, expects the error text `missing from ORDER`). Scenario `boot.client_single_run` counts `[HB][BOOT] client ready` lines per client and expects exactly 1. Scenario `boot.server_ready` also asserts `ReplicatedStorage.Runtime:GetAttribute("ServerReady") == true`; `boot.client_ready` asserts `LocalPlayer:GetAttribute("HbClientReady") == true` on the client (§2.1.3).
 
 #### 2.3.5 Server service APIs (cross-part contracts)
 
@@ -493,7 +494,6 @@ export type ConfigReplicatorApi = {                     -- Part 2 (§2.6)
 	pin: (version: number) -> (),                      -- refcount++; keeps History.v<version> published
 	unpin: (version: number) -> (),                    -- refcount--; History entry removed 10 s after reaching 0
 	devOverride: (section: string, patchJson: string) -> (boolean, string?), -- Studio only
-	_devContextOverride: boolean?,                     -- Studio test seam for the pack guard (TestHarness only; Part 8 §8.2.6)
 }
 export type TelemetryApi = {                            -- Part 2 API; Part 5 decides emission points
 	custom: (player: Player, name: Types.TelEventName, value: number?, fields: Fields?) -> (),
@@ -530,7 +530,7 @@ export type StyleServiceApi = {                         -- Part 4/5
 }
 export type AppearanceServiceApi = {                    -- Part 5/6
 	onPlayerReady: (player: Player) -> (),
-	refresh: (player: Player) -> (),                   -- recompute CharacterLook etc. after equip/settings change
+	refresh: (player: Player) -> (),                   -- recompute CharacterLook (Full Uniform) etc. after equip/settings change
 }
 export type CombatServiceApi = {                        -- Part 3 owns; these members are required by Parts 2/5
 	spawnAsync: (player: Player) -> (),                -- pins config, sets CombatCfg, LoadCharacterAsync
@@ -546,7 +546,12 @@ export type ProgressionServiceApi = {                   -- Part 5
 	masteryLevel: (xp: number, cfg: Types.Config) -> number,                    -- pure
 	accountLevelFromXp: (xpTotal: number, cfg: Types.Config) -> (number, number), -- (level, xpIntoLevel), pure
 }
-export type WishServiceApi = { onPlayerReady: (player: Player) -> () } -- grants tutorial Wishes once (Economy.TutorialWishes)
+export type WishServiceApi = {                          -- Part 5
+	onPlayerReady: (player: Player) -> (),             -- grants tutorial Wishes once (Economy.TutorialWishes)
+	cosmicArrival: (player: Player?, styleId: Types.StyleId) -> boolean, -- server only; once per server, idempotent;
+	                                                   -- writes Runtime attribute CosmicArrivalUntil (Part 5 §5.2.18)
+	_resetArrival: () -> (),                           -- Studio seam (no-op elsewhere) for wish.cosmic_arrival_once
+}
 export type ShopServiceApi = { onPlayerReady: (player: Player) -> () }
 export type PlayerServiceApi = {                        -- Part 2
 	trove: (player: Player) -> Trove.Trove,            -- per-player cleanup bag; destroyed on leave
@@ -567,23 +572,23 @@ PlayerService MUST:
 - handle players already present when `start()` runs;
 - write `DataLoaded` and `MapId` (§2.5.2);
 - set `player.DevEnableMouseLock = false` at join (server-only property; Part 6 §6.6.5 shift-lock, §6.13 item 6(a));
-- outside Studio, log once in `init()` `[ALG][Player] max_players=<n>` (`n = Players.MaxPlayers`, ReadOnly to scripts; set by the human at H-01 step 3b) and additionally `[ALG][Player] WARN max_players=<n>` when `n ~= 20` (GDD §4.5);
-- outside Studio, when `table.find(cfg.Ip.DevUniverseIds, game.GameId) ~= nil`, check dev-group membership on join **before** `DataService.loadAsync`: `pcall(player.IsInGroupAsync, player, cfg.Ip.DevGroupId)`; a non-member (or a failed call) is kicked with `Skin.text("ui.error.restricted")` and logged `[ALG][Skin] ERROR dev_universe_non_member userId=<id>` (fail closed). Part 8 §8.2.6 owns the rule, `Ip.DevGroupId` and the scenario `ip.dev_universe_members_only`, which uses the Studio seam `PlayerService._devAccessCheck(player, opts)`: it runs the same rule with the universe test (`forceDevUniverse`) and the group answer (`member`) forced, returns the decision, and with `dryRun = true` logs `[ALG][Skin] ERROR dev_universe_non_member dry_run=true userId=<id>` instead of kicking (`opts` ignored outside Studio);
+- outside Studio, log once in `init()` `[HB][Player] max_players=<n>` (`n = Players.MaxPlayers`, ReadOnly to scripts; set by the human at H-01 step 3b) and additionally `[HB][Player] WARN max_players=<n>` when `n ~= 20` (GDD §4.5);
+- outside Studio, when `table.find(cfg.Ip.DevUniverseIds, game.GameId) ~= nil`, check dev-group membership on join **before** `DataService.loadAsync`: `pcall(player.IsInGroupAsync, player, cfg.Ip.DevGroupId)`; a non-member (or a failed call) is kicked with `Skin.text("ui.error.restricted")` and logged `[HB][Skin] ERROR dev_universe_non_member userId=<id>` (fail closed). Part 8 §8.2.6 owns the rule, `Ip.DevGroupId` and the scenario `ip.dev_universe_members_only`, which uses the Studio seam `PlayerService._devAccessCheck(player, opts)`: it runs the same rule with the universe test (`forceDevUniverse`) and the group answer (`member`) forced, returns the decision, and with `dryRun = true` logs `[HB][Skin] ERROR dev_universe_non_member dry_run=true userId=<id>` instead of kicking (`opts` ignored outside Studio);
 - `travelAsync` relies on `CombatService.spawnAsync` streaming the destination before the character loads (`player:RequestStreamAroundAsync(spawnCf.Position, 5)` in `pcall`, Part 3 §3.13.4 step 5b; H-04 `StreamingIntegrityMode`, §2.2); scenario `world.travel_streams_destination` (Part 3 §3.13 Verify).
 
-**Verify:** scenario `player.join_ready` (attributes `DataLoaded=true`, `MapId` per the §2.5.2 rule — `"candy_kingdom"` if `Workspace.Map.CandyKingdom` exists, else `"arena_duel_m0"` — and `EquippedStyle="hero"` on a fresh mock profile); scenario `player.leave_releases` (solo run; Studio seam `PlayerService._leaveTest(player)`, which runs the leave path of §2.1.3 flow E — `CombatService.onPlayerRemoving`, `DataService.releaseAsync`, trove cleanup — for a player who stays in game, then the flow D join path again (fresh per-player `Trove`; `DataLoaded` false in between), so the run continues) expects `[ALG][Data] released user=<id>` within 2 s and `DataLoaded == true` again within 30 s. The real `StudioTestService:LeaveTest()` path is covered by Part 7 `multi.join_leave_rejoin` and `data.rejoin_persists` (§2.8.7).
+**Verify:** scenario `player.join_ready` (attributes `DataLoaded=true`, `MapId` per the §2.5.2 rule — `"hub"` if `Workspace.Map.Hub` exists, else `"arena_duel_m0"` — and `EquippedStyle="attendant"` on a fresh mock profile); scenario `player.leave_releases` (solo run; Studio seam `PlayerService._leaveTest(player)`, which runs the leave path of §2.1.3 flow E — `CombatService.onPlayerRemoving`, `DataService.releaseAsync`, trove cleanup — for a player who stays in game, then the flow D join path again (fresh per-player `Trove`; `DataLoaded` false in between), so the run continues) expects `[HB][Data] released user=<id>` within 2 s and `DataLoaded == true` again within 30 s. The real `StudioTestService:LeaveTest()` path is covered by Part 7 `multi.join_leave_rejoin` and `data.rejoin_persists` (§2.8.7).
 
 #### 2.3.6 `Shared/Log.luau`
 
 ```lua
 --!strict
--- src/Shared/Log.luau — [ALG] logging (pure: print/warn only). Spec §2.3.6.
+-- src/Shared/Log.luau — [HB] logging (pure: print/warn only). Spec §2.3.6.
 local Log = {}
 local errors = 0
 local MAX_VALUE = 200
 
 local function fmt(tag: string, msg: string, data: { [string]: any }?): string
-	local line = `[ALG][{tag}] {msg}`
+	local line = `[HB][{tag}] {msg}`
 	if data ~= nil then
 		local keys = {}
 		for k in data do
@@ -606,19 +611,19 @@ function Log.error(tag: string, msg: string, data: { [string]: any }?)
 end
 function Log.test(name: string, pass: boolean, detail: string?)
 	if pass then
-		print(`[ALG][TEST] {name} PASS`)
+		print(`[HB][TEST] {name} PASS`)
 	else
-		print(`[ALG][TEST] {name} FAIL {string.gsub(detail or "", "\n", " ")}`)
+		print(`[HB][TEST] {name} FAIL {string.gsub(detail or "", "\n", " ")}`)
 	end
 end
-function Log.summary(pass: number, fail: number) print(`[ALG][TEST] SUMMARY pass={pass} fail={fail}`) end
+function Log.summary(pass: number, fail: number) print(`[HB][TEST] SUMMARY pass={pass} fail={fail}`) end
 function Log.errorCount(): number return errors end
 return Log
 ```
 
-Format rules: one line per call; `data` is rendered as sorted `key=value` pairs with whitespace replaced by `_`. Tags come from two fixed lists (matching is case-sensitive; Part 1's probes match `[ALG][BOOT]` exactly):
+Format rules: one line per call; `data` is rendered as sorted `key=value` pairs with whitespace replaced by `_`. Tags come from two fixed lists (matching is case-sensitive; Part 1's probes match `[HB][BOOT]` exactly):
 - **Operational tags, UPPERCASE:** `BOOT, TEST, BUILD, CHECK, LINT, GATE, TEL`. `BOOT` = bootstrap lines, asserts and errors (§2.3.4); `TEST` = test result lines (`Log.test`/`Log.summary`); `TEL` = telemetry echo lines only.
-- **Domain tags, PascalCase:** `Config, Data, Net, Player, Policy, Store, Style, Appearance, Combat, Sim, Bot, Progress, Wish, Shop, Tel, Mod, Skin, Assets, UI, Input, Render, Vfx, Test, World, Anim, Sfx, Cam, Look, Perf, Harness, Spike`. `Test` = runner info lines (Part 7; e.g. `[ALG][Test] dev cmd=…`, §2.11.5), `Tel` = telemetry operational warnings (Part 5), `Spike` = P0 probe lines (`[ALG][Spike] <id> PASS|FAIL <detail>`).
+- **Domain tags, PascalCase:** `Config, Data, Net, Player, Policy, Store, Style, Appearance, Combat, Sim, Bot, Progress, Wish, Shop, Tel, Mod, Skin, Assets, UI, Input, Render, Vfx, Test, World, Anim, Sfx, Cam, Look, Perf, Harness, Spike`. `Test` = runner info lines (Part 7; e.g. `[HB][Test] dev cmd=…`, §2.11.5), `Tel` = telemetry operational warnings (Part 5), `Spike` = P0 probe lines (`[HB][Spike] <id> PASS|FAIL <detail>`).
 
 There is no `Boot` tag. Parts may add domain tags in their "New contracts".
 
@@ -632,7 +637,7 @@ export type UiControllerApi = {                         -- Part 2 API for the st
 	state: () -> Types.PrivateView?,                   -- nil until the first Data.Snapshot
 	changed: Signal.Signal<{ Types.Section }>,         -- sections replaced by a snapshot or delta
 	waitForData: (timeoutSec: number) -> boolean,
-	open: (screen: Types.ScreenId) -> (),              -- Part 6
+	open: (screen: Types.ScreenId, args: { [string]: any }?) -> (), -- Part 6 router; optional args (Part 6 §6.9.1)
 	toast: (n: Types.NotifyPayload) -> (),             -- local toasts use the same path as server Notify
 }
 export type SettingsControllerApi = {                   -- Part 2 API; Part 6 applies
@@ -651,7 +656,7 @@ Store rules (MUST):
 5. Screens never mutate the store. Optimistic settings changes are applied locally by SettingsController and confirmed by the next delta.
 6. SettingsController is the single owner of key rebinds: on every snapshot/delta of `settings` and on each local `set("binds.<Action>.<Device>", …)` it writes `Player.Combat.<Action>.<Device>.KeyCode` (`""` restores the Part 3 default). InputController and screens never write binding KeyCodes.
 
-**Verify:** scenario `data.delta_seq_monotonic` (server fires 3 deltas, drops the 2nd artificially in Studio via TestHarness; client logs `[ALG][UI] data gap seq=<n> resync` and ends with the same canonical hash as the server, compared through `execute_luau` on Server and Client).
+**Verify:** scenario `data.delta_seq_monotonic` (server fires 3 deltas, drops the 2nd artificially in Studio via TestHarness; client logs `[HB][UI] data gap seq=<n> resync` and ends with the same canonical hash as the server, compared through `execute_luau` on Server and Client).
 
 ---
 
@@ -659,7 +664,7 @@ Store rules (MUST):
 
 `Types.luau` contains types plus frozen ID lists. It requires only `./Config/Defaults` (for `Config`). `KoEvent`/`DamageEvent`/`LifeSummary` below are the cross-part payloads that Part 3 MUST emit.
 
-**Combat section (content owned by Part 3 §3.4.1).** Luau has no type-only imports, so the shared combat types live in a leaf module to keep the Core require graph acyclic: a marked **Combat section** of `Types.luau` holds `CharState, InputFrame, StepCtx, StepOut, HitDef, HitboxReq, HitRequest, SpawnRequest, MotionCmd, FacingCmd, LocoCmd, SimEvent, ChassisMods, StyleRuntime, Status, StatusMods, RosterEntry, ServerData, Movers, RewindRing` and the frozen constant tables `S, SET, IN, CF, FLG` (exported as `Types.CombatS`, `Types.CombatSET`, `Types.CombatIN`, `Types.CombatCF`, `Types.CombatFLG`, exactly as in Part 3 §3.4.1; `CombatSET` entries are membership maps keyed by state id, e.g. `NEUTRAL = { [1] = true, [2] = true }`; `Core/Fsm` re-exports them as `Fsm.S` etc., and `Core/Moves` re-exports `Status`/`StatusMods`). Part 2 hosts the section; Part 3 writes its content verbatim (including the fields other parts rely on, e.g. `StepCtx.status`, `HitDef.kit`, `StyleRuntime.variants`/`disabled`, `RosterEntry.fullCfg`/`kitSet`) and is the only part that changes it. Require order (Part 3 §3.4.2; Lune `core.require_graph_acyclic`): `Types` → `Frames` → `Rng` → leaf modules `Moves`, `Stun`, `Defense`, `Movement`, `Breakaway`, `Meter`, `M1`, `Realm` → `Fsm` → `Damage` → `Combat/*` → `Sim/*`. Leaf modules require only `Types`, `Frames` and `Rng` and never require `Fsm`, `Damage` or one another (status effects reach them through `StepCtx.status`); `Core/Fsm` is the only state-machine module that requires the leaves; `Damage` sits above `Fsm` (the top of Core) and requires `Fsm`, `Defense`, `Stun`, `Breakaway`, `Realm` and `Moves`; `Combat/*` never requires `Sim/Adapter`. `Sim/Attr.luau` still owns HRP attribute names (`AttrName`).
+**Combat section (content owned by Part 3 §3.4.1).** Luau has no type-only imports, so the shared combat types live in a leaf module to keep the Core require graph acyclic: a marked **Combat section** of `Types.luau` holds `CharState, InputFrame, StepCtx, StepOut, HitDef, HitboxReq, HitRequest, SpawnRequest, MotionCmd, FacingCmd, LocoCmd, SimEvent, ChassisMods, StyleRuntime, Status, StatusMods, RosterEntry, ServerData, Movers, RewindRing` and the frozen constant tables `S, SET, IN, CF, FLG` (exported as `Types.CombatS`, `Types.CombatSET`, `Types.CombatIN`, `Types.CombatCF`, `Types.CombatFLG`, exactly as in Part 3 §3.4.1; `CombatSET` entries are membership maps keyed by state id, e.g. `NEUTRAL = { [1] = true, [2] = true }`; `Core/Fsm` re-exports them as `Fsm.S` etc., and `Core/Moves` re-exports `Status`/`StatusMods`). Part 2 hosts the section; Part 3 writes its content verbatim (including the fields other parts rely on, e.g. `StepCtx.status`, `HitDef.kit`, `HitboxReq.coneDeg`/`innerRadius`, `StyleRuntime.variants`/`disabled`, `RosterEntry.fullCfg`/`kitSet` and Part 6's `RosterEntry.vols`/`tidePeriodF`) and is the only part that changes it. Require order (Part 3 §3.4.2; Lune `core.require_graph_acyclic`): `Types` → `Frames` → `Rng` → leaf modules `Moves`, `Stun`, `Defense`, `Movement`, `Breakaway`, `Meter`, `M1`, `Realm` → `Fsm` → `Damage` → `Combat/*` → `Sim/*`. Leaf modules require only `Types`, `Frames` and `Rng` and never require `Fsm`, `Damage` or one another (status effects reach them through `StepCtx.status`); `Core/Fsm` is the only state-machine module that requires the leaves; `Damage` sits above `Fsm` (the top of Core) and requires `Fsm`, `Defense`, `Stun`, `Breakaway`, `Realm` and `Moves`; `Combat/*` never requires `Sim/Adapter`. `Sim/Attr.luau` still owns HRP attribute names (`AttrName`).
 
 Load-purity of the Combat section (MUST): only type declarations (engine types such as `Vector3`, `CFrame`, `Model` appear as annotations only) and frozen tables of numbers (the `CombatSET` membership maps hold `true` values); no engine constructors (`Vector3.new`, `Enum.*`) and no `require` beyond `./Config/Defaults`, so Lune can still require `Types.luau`. A field whose natural type comes from a module that itself requires `Types` (e.g. Part 4's `Styles.KitSet` in `RosterEntry.kitSet`) is declared structurally in the section or as `any` with a comment; `Types.luau` never requires `Styles`, `Core`, `Sim` or `Combat`.
 
@@ -671,12 +676,12 @@ local Defaults = require("./Config/Defaults")
 -- ===== §0.8 (verbatim) =====
 export type Rarity = "starter" | "common" | "uncommon" | "rare" | "epic" | "legendary" | "mythic" | "cosmic"
 export type Tag = "Projectile" | "Rush" | "Grab" | "Counter" | "Zone" | "Summon" | "Buff" | "Debuff" | "Mobility"
-	| "AoE" | "Utility" | "Stealth" | "Ultimate" | "Realm" | "Music" | "Demon" | "Opener" | "Extender"
+	| "AoE" | "Utility" | "Stealth" | "Ultimate" | "Realm" | "Music" | "Opener" | "Extender"
 export type Behavior = "Strike" | "Projectile" | "Rush" | "Grab" | "Counter" | "Zone" | "Summon" | "Buff" | "Mobility" | "RealmCast"
 export type HitboxDef = { shape: "Box" | "Sphere" | "Cast", size: Vector3, offset: CFrame, castDistance: number? }
 export type KnockbackDef = { dist: number, angleDeg: number, ragdoll: boolean, launch: boolean? }
 export type MoveDef = {
-	id: string,                       -- e.g. "hero.3"
+	id: string,                       -- e.g. "attendant.3"
 	slot: "m1" | "1" | "2" | "3" | "4" | "q" | "a1" | "a2" | "a3" | "a4",
 	behavior: Behavior,
 	tags: { Tag },
@@ -695,14 +700,15 @@ export type MoveDef = {
 	anim: string,                     -- logical asset key (Assets.get)
 	vfx: string?, sfx: string?,       -- logical asset keys
 }
-export type AwakeningDef = {
+export type AwakeningDef = {          -- the Peak (player-facing name, §12)
 	id: string, durationSec: number,  -- 60 (GDD §6.9)
-	hurtboxScale: number?,            -- ≥ 1 only (GDD §6.2)
-	modifiers: { [string]: any }?,    -- awakened passive modifiers (only where the kit says so)
+	hurtboxScale: number?,            -- 1 for every kit: no Peak scales the hurtbox (GDD §6.2)
+	modifiers: { [string]: any }?,    -- Peak passive modifiers (only where the kit says so)
 	moves: { MoveDef },               -- a1..a4 (a4 may be behavior "RealmCast" for legendary+)
 }
 export type StyleDef = {
-	id: string, rarity: Rarity, archetype: string, implemented: boolean,
+	id: string, rarity: Rarity, implemented: boolean,
+	archetype: string,                -- §4 archetype string, e.g. "DeckchairAttendant"
 	hp: number,                       -- 100 at launch (GDD §6.2)
 	palette: { primary: Color3, secondary: Color3, accent: Color3 },
 	passive: { id: string, params: { [string]: any } },
@@ -710,16 +716,19 @@ export type StyleDef = {
 	moves: { MoveDef },               -- slots "1".."4"
 	awakening: AwakeningDef,
 	m1: { anim: string, vfx: string?, sfx: string? },  -- M1 frame data is shared (GDD §6.3); only presentation differs
-	kitProps: { string }?,            -- logical template keys for Style Gear props
+	kitProps: { string }?,            -- logical template keys for Charm Gear props and summon models
 }
 
 -- ===== IDs (§0.4) =====
-export type StyleId = "hero" | "stretch" | "sentry" | "granny" | "diva" | "tyrant" | "console" | "grappler" | "monarch"
-	| "flame" | "butler" | "rocker" | "frost" | "huntress" | "decay" | "demon" | "wish" | "chaos"
-export type MapId = "arena_duel_m0" | "candy_kingdom" | "training"
-export type FlairId = "standard" | "shiny" | "golden" | "crystal" | "rainbow" | "nightosphere" | "glitched"
+export type StyleId = "attendant" | "lifeguard" | "skimstone" | "masseur" | "bellhop" | "angler"
+	| "kite" | "boxcamera" | "sandcastle" | "scoop" | "diver" | "busker"
+	| "lamplighter" | "cablecar" | "dustsheet" | "raincloud" | "serpent" | "ferry" -- GDD §7.3.1–§7.3.18 order
+export type MapId = "arena_duel_m0" | "hub" | "training"
+export type FlairId = "plain" | "glossy" | "gilt" | "seaglass" | "pearl" | "glowtide" | "misprint" -- players see Finishes
+-- Internal currency keys; players see Shells, Wishes, Stamps and Messages in a Bottle (§0.12).
 export type CurrencyId = "Treasure" | "Wishes" | "Shards" | "CosmicSparks"
-export type PassKey = "lucky_jar" | "vip" | "quick_wish"                 -- M1-G subset of GDD §17.3
+-- M1-G subset of GDD §17.3; players see the Lucky Stamp, First Class and Quick Post passes.
+export type PassKey = "lucky_jar" | "vip" | "quick_wish"
 export type ProductKey = "wishes_10" | "wishes_55" | "wishes_120" | "wishes_300" -- GDD §17.3
 export type Config = Defaults.Config
 
@@ -768,16 +777,25 @@ export type PurchaseState = {
 	weekIndex: number,                -- Pity.weekIndex of weekRobux (Part 5 §5.12 item 4)
 	weekRobux: number,                -- Robux spent in week weekIndex ("spent this week", GDD §8.8)
 }
-export type OwnLook = "Oosona" | "Avatar"
+export type OwnLook = "Postcard" | "Avatar"         -- Postcard Look (own avatar in the postcard toon style) | plain Roblox avatar
 export type OthersAppearance = "AsChosen" | "AlwaysCharacter" | "AlwaysOwn" | "Simplified"
-export type OosonaSpec = { v: number, species: number, color: string, face: number, hat: number, outfit: number } -- indices 1-based; hat/outfit 0 = none
+export type PostcardSpec = {                         -- Postcard Look; indices 1-based; hat/outfit 0 = none
+	v: number,
+	body: number,                                    -- index into Appearance.PostcardStyles (classic, round, tall, tiny)
+	skin: number,                                    -- index into Appearance.PostcardSkins (skin palette)
+	color: string,                                   -- "#RRGGBB" top colour
+	face: number, hat: number, outfit: number,
+}
 export type Settings = {
 	v: number,
-	characterLook: boolean, characterLookByStyle: { [string]: boolean }, ownLook: OwnLook, showStyleGear: boolean,
-	othersAppearance: OthersAppearance, oosona: OosonaSpec,
+	characterLook: boolean,                          -- Full Uniform (default false = Off)
+	characterLookByStyle: { [string]: boolean },     -- per-style Full Uniform override
+	ownLook: OwnLook,
+	showStyleGear: boolean,                          -- Charm Gear (oversized prop + head piece)
+	othersAppearance: OthersAppearance, postcard: PostcardSpec,
 	graphicsTier: "Auto" | "Low" | "Mid" | "High", reducedMotion: boolean, reducedVfx: boolean, cameraShake: number,
 	colorblind: "None" | "Deuteranopia" | "Protanopia" | "Tritanopia", telegraphColor: string, outlineThickness: number,
-	textScale: number, dyslexiaFont: boolean, simpleHud: boolean, subtitles: boolean, glitchedCalm: boolean,
+	textScale: number, dyslexiaFont: boolean, simpleHud: boolean, subtitles: boolean, misprintCalm: boolean,
 	volMaster: number, volMusic: number, volSfx: number, volVo: number, volUi: number,
 	holdToToggleBlock: boolean, holdToToggleRun: boolean, quietBarks: boolean, damageNumbers: boolean,
 	binds: { [string]: string },      -- keys "<Action>.<Device>" (Device ∈ KBM | Pad) -> Enum.KeyCode item name
@@ -880,7 +898,7 @@ export type StorePromptRes = { status: "prompted" | "needs_confirm" | "mock_gran
 export type SettingKey = string                                -- one of Types.SETTING_KEYS, or "binds.<Action>.<Device>" (pattern-validated, §2.8.6)
 export type SettingsSetReq = { key: string, value: string | number | boolean }
 export type AppearanceSetReq = {
-	characterLook: boolean?, ownLook: string?, showStyleGear: boolean?, oosona: OosonaSpec?,
+	characterLook: boolean?, ownLook: string?, showStyleGear: boolean?, postcard: PostcardSpec?,
 	styleOverride: { styleId: string, value: "on" | "off" | "inherit" }?,
 }
 export type WorldTravelReq = { mapId: string }
@@ -934,19 +952,21 @@ export type SignalKind = "remote_rate" | "remote_invalid" | "sim_input" | "sim_r
 
 -- ===== Frozen ID lists (runtime constants) =====
 local Types = {}
-Types.STYLE_IDS = table.freeze({ "hero", "stretch", "sentry", "granny", "diva", "tyrant", "console", "grappler",
-	"monarch", "flame", "butler", "rocker", "frost", "huntress", "decay", "demon", "wish", "chaos" })
-Types.STARTER_STYLES = table.freeze({ "hero", "stretch" })
-Types.IMPLEMENTED_M1G = table.freeze({ "hero", "stretch", "monarch", "rocker", "frost", "decay" })
+Types.STYLE_IDS = table.freeze({ "attendant", "lifeguard", "skimstone", "masseur", "bellhop", "angler", "kite",
+	"boxcamera", "sandcastle", "scoop", "diver", "busker", "lamplighter", "cablecar", "dustsheet", "raincloud",
+	"serpent", "ferry" }) -- GDD §7.3.1–§7.3.18 order (the ledger stores the index)
+Types.STARTER_STYLES = table.freeze({ "attendant", "lifeguard" })
+Types.IMPLEMENTED_M0 = table.freeze({ "attendant", "lifeguard" })
+Types.IMPLEMENTED_M1G = table.freeze({ "attendant", "lifeguard", "sandcastle", "scoop", "busker", "dustsheet" })
 Types.RARITY_ORDER = table.freeze({ "starter", "common", "uncommon", "rare", "epic", "legendary", "mythic", "cosmic" })
-Types.FLAIR_ORDER = table.freeze({ "standard", "shiny", "golden", "crystal", "rainbow", "nightosphere", "glitched" }) -- ascending rarity
-Types.MAP_IDS = table.freeze({ "arena_duel_m0", "candy_kingdom", "training" })
+Types.FLAIR_ORDER = table.freeze({ "plain", "glossy", "gilt", "seaglass", "pearl", "glowtide", "misprint" }) -- ascending rarity
+Types.MAP_IDS = table.freeze({ "arena_duel_m0", "hub", "training" })
 Types.CURRENCY_IDS = table.freeze({ "Treasure", "Wishes", "Shards", "CosmicSparks" })
 Types.SECTIONS = table.freeze({ "currencies", "styles", "equipped", "pity", "wishStats", "account", "shop",
 	"quests", "settings", "flags", "policy", "passes" })
 Types.SETTING_KEYS = table.freeze({ "othersAppearance", "graphicsTier", "reducedMotion", "reducedVfx", "cameraShake",
 	"colorblind", "telegraphColor", "outlineThickness", "textScale", "dyslexiaFont", "simpleHud", "subtitles",
-	"glitchedCalm", "volMaster", "volMusic", "volSfx", "volVo", "volUi", "holdToToggleBlock", "holdToToggleRun",
+	"misprintCalm", "volMaster", "volMusic", "volSfx", "volVo", "volUi", "holdToToggleBlock", "holdToToggleRun",
 	"quietBarks", "damageNumbers", "skipSeenReveals" })
 -- Combat section constants (Part 3 §3.4.1 content), e.g. Types.CombatS = table.freeze({ ... }), go here.
 Types.VARIANT_IDS = table.freeze({ "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9" }) -- local per-style variant IDs (GDD §9.3: 2–4 per style)
@@ -954,7 +974,8 @@ return table.freeze(Types)
 ```
 
 Rules:
-- `IMPLEMENTED_M1G` is a test aid only. The authority on `implemented` is each `StyleDef.implemented` in `Shared/Styles` (Part 4). Lune test `types.implemented_matches_styles` asserts that they agree.
+- `IMPLEMENTED_M0` (the two Starters) and `IMPLEMENTED_M1G` (the six vertical-slice kits) are test aids only. The authority on `implemented` is each `StyleDef.implemented` in `Shared/Styles` (Part 4). Lune test `types.implemented_matches_styles` asserts that they agree (`IMPLEMENTED_M1G` grows one ID per kit card, §0.4).
+- `STYLE_IDS` order is fixed (§0.4, GDD §7.3.1–§7.3.18): the ledger codec stores a style as its index (§2.8.4), so the list is never reordered, only appended to.
 - Rarity per style comes from `Styles.get(id).rarity` (Part 4), never from a second table.
 - `Flair` rank = index in `FLAIR_ORDER` ("best Flair" = highest index).
 
@@ -976,7 +997,8 @@ Rules:
 | Private meta (currencies, pity, ownership, mastery, settings, ledger, purchases) | `PlayerData` (ProfileStore) + DataService memory | DataService (via `update`) | Owner client via `Data.Snapshot`/`Data.Delta`; server services | Never in attributes or any replicated instance. |
 | Runtime private (policy flags, pass ownership) | DataService runtime sections `policy`, `passes` | PolicyGate, MonetizationService via `DataService.setRuntime` | Owner client, server services | Not persisted. |
 | Config | `ReplicatedStorage.Runtime.Config` (+ `History`) | ConfigReplicator | `Runtime` on both peers | §2.6. |
-| Map identity | Map Model attribute `MapId`; spawn Parts `SpawnFor` | Builders | Server, clients | Part 6 owns map-level attributes. |
+| Map identity | Map Model attribute `MapId`; spawn Parts `SpawnFor` | Builders | Server, clients | Part 6 owns map-level attributes (incl. the hub tide's `TidePeriodSec` and `TidePhase`, Part 6 §6.1.4). |
+| Cosmic Arrival | `ReplicatedStorage.Runtime` attribute `CosmicArrivalUntil` (number: server time from `workspace:GetServerTimeNow()`; absent until the first Arrival) | WishService only, outside the sim (Part 5 §5.2.18) | Clients (Part 6 renders the horn, hub fog and music cut while server time < the value) | Presentation only; once per server in M1-G; never read by the sim. |
 
 The sim MUST NOT read `Player` attributes. `Sim/Adapter` caches `EquippedStyle` and `CombatCfg` into its roster entry at `CharacterAdded` (outside the sim), because `Player.Character`/`Player.UserId` have no simulation access [api-sheet §1 #2].
 
@@ -985,31 +1007,32 @@ The sim MUST NOT read `Player` attributes. `Sim/Adapter` caches `EquippedStyle` 
 | Attribute | Type | Default | Writer | When written | Purpose |
 |---|---|---|---|---|---|
 | `DataLoaded` | boolean | absent → treat as false | PlayerService | Join step 6 (§2.1.3 D) | Client gate for `Data.Ready` |
-| `MapId` | string (`MapId`) | `"candy_kingdom"` if `Workspace.Map.CandyKingdom` exists, else `"arena_duel_m0"` (M0, before Candy Kingdom is built; Part 6 §6.13 item 6) | PlayerService | Join; `World.Travel` | Which map the player is in |
-| `EquippedStyle` | string (`StyleId`) | `"hero"` | StyleService (`resolveForSpawn`) | Before each `LoadCharacterAsync` | Current life's style (Style Tell, nameplate chip) |
-| `NextStyle` | string (`StyleId` or `""`) | `""` | StyleService | `Style.Equip` accepted; cleared at spawn | Style Wheel display |
-| `Flair` | string (`FlairId`) | `"standard"` | StyleService | At spawn; `Style.SetFlair` | VFX tint, nameplate finish |
-| `Variant` | string | `""` | StyleService | At spawn; `Style.SetVariant` | Character-look variant |
+| `MapId` | string (`MapId`) | `"hub"` if `Workspace.Map.Hub` exists, else `"arena_duel_m0"` (M0, before Elsewhere-on-Sea is built; Part 6 §6.13 item 6) | PlayerService | Join; `World.Travel` | Which map the player is in |
+| `EquippedStyle` | string (`StyleId`) | `"attendant"` | StyleService (`resolveForSpawn`) | Before each `LoadCharacterAsync` | Current life's style (Style Tell, nameplate chip) |
+| `NextStyle` | string (`StyleId` or `""`) | `""` | StyleService | `Style.Equip` accepted; cleared at spawn | Charm Ring display |
+| `Flair` | string (`FlairId`) | `"plain"` | StyleService | At spawn; `Style.SetFlair` | VFX tint, nameplate Finish |
+| `Variant` | string | `""` | StyleService | At spawn; `Style.SetVariant` | Off-Duty Look (variant) of the style's uniform |
 | `MasteryLevel` | number (int 1–30) | 1 | ProgressionService | `StyleService.lifeStyleResolved` (before each spawn; Part 5 §5.12 item 6); on level-up | Nameplate |
 | `Level` | number (int 1–100) | 1 | ProgressionService | Ready; level-up | Nameplate |
 | `Prestige` | number (int ≥ 0) | 0 | ProgressionService | Ready; prestige | Nameplate stars |
 | `Title` | string (title ID ≤ 32 or `""`) | `""` | ProgressionService | Ready; when a granted title is auto-equipped (`account.title == ""` at grant, Part 5 §5.5.5; no title picker or `title` setting in M1-G) | Nameplate title via `Skin.text("title.<id>")` |
 | `Rookie` | boolean | true for new accounts | ProgressionService | Ready; when `rookieSecLeft` hits 0 | Rookie nameplate; anti-farm (GDD §15.5) |
-| `CharacterLook` | boolean | true | AppearanceService | Ready; `Appearance.Set`; `StyleService.lifeStyleResolved` | Effective value for the equipped style (per-style override resolved) |
-| `OwnLook` | string (`"Oosona"`/`"Avatar"`) | `"Oosona"` | AppearanceService | Ready; `StyleService.lifeStyleResolved` (before each spawn). **Not** on `Appearance.Set`: the base body changes only at respawn (Part 5 §5.12 item 7, scenario `appearance.ownlook_on_respawn`) | |
-| `ShowStyleGear` | boolean | true | AppearanceService | Ready; `Appearance.Set` | |
-| `OosonaCode` | string ≤ 30 | encoded default | AppearanceService | Ready; `Appearance.Set` | Compact `OosonaSpec` (§2.8.6) so other clients can render it |
-| `Vip` | boolean | false | MonetizationService | Ready; pass change | VIP nameplate frame (GDD §17.3) |
+| `CharacterLook` | boolean | false | AppearanceService | Ready; `Appearance.Set`; `StyleService.lifeStyleResolved` | **Full Uniform** on/off: effective value for the equipped style (per-style override resolved). Default Off (§0.4) |
+| `OwnLook` | string (`"Postcard"`/`"Avatar"`) | `"Postcard"` | AppearanceService | Ready; `StyleService.lifeStyleResolved` (before each spawn). **Not** on `Appearance.Set`: the base body changes only at respawn (Part 5 §5.12 item 7, scenario `appearance.ownlook_on_respawn`) | Base look when the Full Uniform is off: the **Postcard Look** (own avatar in the postcard toon style) or the Roblox avatar as it is |
+| `ShowStyleGear` | boolean | true | AppearanceService | Ready; `Appearance.Set` | **Charm Gear** on/off (the style's oversized prop plus head piece) |
+| `PostcardCode` | string ≤ 30 | encoded default | AppearanceService | Ready; `Appearance.Set` | Compact `PostcardSpec` (§2.8.6) so other clients can render the Postcard Look |
+| `Vip` | boolean | false | MonetizationService | Ready; pass change | First Class nameplate frame (GDD §17.3) |
 | `CombatCfg` | number (int ≥ 1) | current version | CombatService | Before each `LoadCharacterAsync` | Pinned combat config version for this life (§2.6.6) |
 | `PerfSampled` | boolean | false | Telemetry | At join: `Random.new():NextNumber() < Telemetry.PerfSampleRate` (Part 5 §5.8.3; Studio seam `Telemetry._setPerfSampled`) | The client's VfxController sends `Telemetry.Perf` only while true (Part 6 §6.6.3) |
 
-`OthersAppearance` is viewer-local: it is persisted in `settings` but never replicated. `AlgClientReady` (§2.3.4) is a **client-local** attribute the owning client sets on its own `LocalPlayer`; it never replicates, is not in this list and is never read by the server. Part 3 may add combat mirrors (e.g. `Streak`, `Kos`) as Player attributes; it lists them in Part 3's Attr section and keeps the total ≤ 40.
+`OthersAppearance` is viewer-local: it is persisted in `settings` but never replicated. `HbClientReady` (§2.3.4) is a **client-local** attribute the owning client sets on its own `LocalPlayer`; it never replicates, is not in this list and is never read by the server. Part 3 may add combat mirrors (e.g. `Streak`, `Kos`) as Player attributes; it lists them in Part 3's Attr section and keeps the total ≤ 40.
 
 #### 2.5.3 Writing rules
 
 1. Only the listed writer writes each attribute, only on the server, outside BindToSimulation.
 2. Write order at spawn: `EquippedStyle`, `Flair`, `Variant`, `CombatCfg`, then `LoadCharacterAsync`. Clients MUST NOT assume replication order (NextGenerationReplication); the Adapter waits until it has `EquippedStyle` and the `CombatCfg` config version before predicting that character (Part 3).
-3. String values are validated against ID lists before writing; a failed check logs `[ALG][<Tag>] ERROR bad attr ...` and writes the default.
+3. String values are validated against ID lists before writing; a failed check logs `[HB][<Tag>] ERROR bad attr ...` and writes the default.
+4. Attribute names and values use current IDs only. `tools/lint_retired_keys.luau` (Part 7 §7.5.6 mechanism, `--tree` on the Studio tree dump; Part 8 §8.4.3 policy) checks every client-replicated instance name, attribute and string for retired keys.
 
 #### 2.5.4 Bots
 
@@ -1024,7 +1047,7 @@ BotService sets `IsBot=true`, `BotId` (string ≤ 16), `EquippedStyle`, `Flair`,
 #### 2.6.1 Files and responsibilities
 
 - `Config/Defaults.luau`: every GDD tunable as plain JSON-safe data. No requires. Never mutated (consumers get frozen copies via `Runtime`).
-- `Config/Schema.luau`: generic validators, JSON utilities, config validation rules, PlayerData template (§2.8), settings/Oosona validation.
+- `Config/Schema.luau`: generic validators, JSON utilities, config validation rules, PlayerData template (§2.8), settings/Postcard validation.
 - `Config/Runtime.luau`: the frozen, versioned config on both peers.
 - `Services/ConfigReplicator.luau`: the only module that touches `ConfigService` (server-only API [Docs `ConfigService.yaml`]).
 
@@ -1040,9 +1063,6 @@ Top-level keys are fixed by §0.9. Part 2 adds three sections: `Net`, `Data`, `F
 local Defaults = {
 	Version = 1,                                              -- config schema version (bump when keys change)
 	NetModel = "ServerAuthority" :: "ServerAuthority" | "Classic",
-	SkinPack = "Codename" :: "Codename" | "Original" | "Canon",
-	LicenseConfirmed = false,                                 -- Part 8
-	PublicCodenameAcknowledged = false,                       -- Part 8
 	MockPurchases = true,                                     -- Part 5 (honoured only in Studio, §2.11.4)
 
 	-- OWNED BY PART 3 (keys fixed by §0.9; each {} is replaced by Part 3's table)
@@ -1054,7 +1074,8 @@ local Defaults = {
 	Wish = {
 		TierOdds = {}, Pity = {}, Flair = {}, LuckyJarFlairMultiplier = 0, StorageCap = 0, OverflowTreasure = 0,
 		PoolMode = "Full", DuplicateShards = {}, VariantChance = 0, CosmicSparksNeeded = 0, FirstWishGuarantee = {},
-		Announce = { CrossServerEnabled = false, CrossServerTopic = "ALG_Announce_v1" }, -- off in M1-G; ALG_Wish may enable (Part 5 §5.2.13)
+		Announce = { CrossServerEnabled = false, CrossServerTopic = "HB_Announce_v1" }, -- off in M1-G; HB_Wish may enable (Part 5 §5.2.13)
+		CosmicArrival = { Enabled = true, FogSec = 60 },     -- GDD §8.6; once per server in M1-G (Part 5 §5.2.18)
 	},
 
 	Shop = {
@@ -1073,14 +1094,14 @@ local Defaults = {
 			KoTreasure = 25, AssistTreasure = 10, TreasurePer100Damage = 5, -- tuning default calibrated to ≈350/day (GDD §17.5)
 			ActiveWishEverySec = 900,                         -- 1 Wish per 15 min active combat (GDD §17.5)
 		},
-		RepeatVictim = { WindowSec = 600, Multipliers = { 1, 0.5, 0.25, 0 } }, -- GDD §16.2 "reduced Treasure" (tuning default curve)
+		RepeatVictim = { WindowSec = 600, Multipliers = { 1, 0.5, 0.25, 0 } }, -- GDD §16.2 "reduced Shells" (tuning default curve)
 		RookieKill = { WindowSec = 600, MaxTreasureKills = 2 },               -- GDD §15.5
 		DailyLogin = { Wishes = 2, Treasure = 100 },          -- GDD §17.5 (flat average; streak curve is a future hook)
 		WorldEvent = { Treasure = 80, WishEveryParticipations = 6 },          -- ≈500 Treasure + 1 Wish over ≈6 events/day (GDD §17.5), tuning default
 		DailyQuest = { Treasure = 150, Wishes = 1, AllDoneBonusWishes = 1 },  -- 3 quests → 450 T + 4 W (GDD §17.5)
 		WeeklyQuest = { Treasure = 250, Wishes = 2, AllDoneBonusWishes = 4 }, -- 7 quests → 1,750 T + 18 W/week (GDD §17.5)
 		TutorialWishes = 3,                                   -- GDD §15.5
-		VipTreasureMultiplier = 1.10,                         -- Royal VIP +10% (GDD §17.3)
+		VipTreasureMultiplier = 1.10,                         -- First Class pass: +10% Shells (GDD §17.3)
 		VariantCraftShards = 400,                             -- GDD §17.2 (future hook in M1-G)
 		QuestRerollTreasure = 100,                            -- GDD §17.5 sinks
 		VelocityAlertTreasurePerHour = 20000,                 -- exploit signal threshold (tuning default, §2.11)
@@ -1113,19 +1134,21 @@ local Defaults = {
 		Quests = { Enabled = true, DailyCount = 3, WeeklyCount = 7, DailyRerolls = 1 }, -- GDD §9.5; daily quests on in M1-G (Part 5 §5.5.9/§5.10, DES-7)
 	},
 
-	-- OWNED BY PART 5: filled from Part 5 §5.10 (merged with Part 6 keys: OosonaColors, SimplifiedLimbShade,
-	-- FaceExpressions). OosonaSpecies is an array of records { id: string, skin: "#RRGGBB" }. Keys below are the
-	-- minimum Part 2 validation reads (§2.8.6 oosona rules).
-	Appearance = { OosonaSpecies = {}, OosonaFaces = 0, OosonaHats = 0, OosonaOutfits = 0 },
+	-- OWNED BY PART 5: filled from Part 5 §5.10 (merged with Part 6 keys: PostcardColors, SimplifiedLimbShade,
+	-- FaceExpressions). Postcard Look catalog: PostcardStyles is an array of body-style records { id: string }
+	-- (ids "classic", "round", "tall", "tiny"; proportions from Part 6 Perf.Looks.BodyScale[id]); PostcardSkins is
+	-- the skin palette for head and arms (array of "#RRGGBB", at least 6 tones covering a wide range). Keys below
+	-- are the minimum Part 2 validation reads (§2.8.6 postcard rules).
+	Appearance = { PostcardStyles = {}, PostcardSkins = {}, PostcardFaces = 0, PostcardHats = 0, PostcardOutfits = 0 },
 	-- OWNED BY PART 5 (minimum keys Telemetry.luau reads; owner sets values and may add keys)
 	Telemetry = { Enabled = true, PerfSampleRate = 0.01, BudgetFraction = 0.8, RingSize = 200, EchoInStudio = true }, -- PerfSampleRate: 1% (GDD §20.4)
 	-- OWNED BY PART 6 (VFX/perf budgets per device tier, GDD §13.5 / §18.7)
 	Perf = {},
 	-- OWNED BY PART 4 (§4.1.6; JSON-safe kit override layer + carrier caps; pinned with CombatCfg, §2.6.6)
 	Kits = {},
-	-- OWNED BY PART 8 (§8.2.6; code-only, never overridable). The agent copies DevUniverseIds/DevGroupId from
-	-- docs/agent/dev-place.json (universeId, groupId; rule L16); LicenseRef and PublicAckExpiresUnix are human-set (L09/L10).
-	Ip = { DevUniverseIds = {} :: { number }, DevGroupId = 0, LicenseRef = "", PublicAckExpiresUnix = 0 },
+	-- OWNED BY PART 8 (§8.2.6; code-only, never overridable): the dev-universe members-only rule (§2.3.5).
+	-- The agent copies DevUniverseIds/DevGroupId from docs/agent/dev-place.json (universeId, groupId).
+	Ip = { DevUniverseIds = {} :: { number }, DevGroupId = 0 },
 
 	-- PART 2 sections (§2.12)
 	Net = {
@@ -1146,10 +1169,9 @@ local Defaults = {
 		Wish = true, Shop = true, Store = true, Appearance = true, Training = true,
 		Bots = true,                                          -- false: BotService refuses brawl and load-test bots; dummies still allowed (Part 3 §3.15.1)
 		WorldEvent = false, Reports = true,
-		PaidRandomItems = true,                               -- false: Wish packs and Lucky Jar hidden + server-rejected (Part 8 §8.8 item 3, Part 5)
-		CodenameLooks = true,                                 -- false: Codename look set hidden immediately (Part 8 §8.6.3, Part 6 AppearanceController)
+		PaidRandomItems = true,                               -- false: Wish packs and the Lucky Stamp pass hidden + server-rejected (Part 5)
 		DisabledStyles = {} :: { string },                    -- StyleIds: not equippable (applied at next spawn)
-		DisabledMoves = {} :: { string },                     -- move IDs ("hero.1"); pinned per life with CombatCfg → StyleRuntime.disabled;
+		DisabledMoves = {} :: { string },                     -- move IDs ("attendant.1"); pinned per life with CombatCfg → StyleRuntime.disabled;
 		                                                      -- Moves.canUse refuses the slot (Part 3 §3.4.2); HUD lock glyph (Part 6)
 		LoadTestBots = 0,                                     -- 0..20 brawl bots (tuning default); spawn only when not IsStudio(), GameId listed
 		                                                      -- in LoadTestGameIds and Bots ~= false (Part 7 §7.6.7, Part 3 §3.15.1)
@@ -1164,7 +1186,8 @@ return Defaults
 Rules:
 - Every number above carries a GDD cite or `(tuning default)` in code comments.
 - Parts 3/4/5/6/8 replace their `{}`/placeholder values (`Appearance`: Part 5 §5.10, which already includes Part 6's keys). They must not add top-level keys except through their "New contracts".
-- The kill switches are honoured by: `DisabledStyles` → StyleService/`Styles.isPlayable` (Parts 4/5); `DisabledMoves` → Part 3 §3.4.2 (pinned per life, so both peers agree); `Bots`/`LoadTest*` → BotService (Part 3 §3.15.1, Part 7 §7.6.7); `PaidRandomItems` → Part 5; `CodenameLooks` → Part 6 AppearanceController (Part 8 §8.6.3); the meta flags → their §2.7.4 handlers.
+- The kill switches are honoured by: `DisabledStyles` → StyleService/`Styles.isPlayable` (Parts 4/5); `DisabledMoves` → Part 3 §3.4.2 (pinned per life, so both peers agree); `Bots`/`LoadTest*` → BotService (Part 3 §3.15.1, Part 7 §7.6.7); `PaidRandomItems` → Part 5; the meta flags → their §2.7.4 handlers.
+- Config has no string-pack selector and no look switch: `Base` is the only pack (§2.9.2), and the Full Uniform is a per-player setting (`characterLook`, §2.8.6), never a config key (§0.9).
 - `Wish.StorageCap` = 1,000 and `Wish.OverflowTreasure` = 10 (GDD §17.2) are Part 5's values; DataService reads them (§2.8.5).
 
 #### 2.6.3 `Schema.luau` (config parts)
@@ -1208,9 +1231,9 @@ export type SchemaApi = {
 	migrate: (data: any) -> (Types.PlayerData, { string }),
 	validatePlayerData: (data: any) -> (boolean, { string }),
 	validateSetting: (key: string, value: any, cfg: Types.Config) -> (boolean, string?),
-	validateOosona: (spec: any, cfg: Types.Config) -> (boolean, string?),
-	encodeOosona: (spec: Types.OosonaSpec) -> string,
-	decodeOosona: (s: string) -> Types.OosonaSpec?,
+	validatePostcard: (spec: any, cfg: Types.Config) -> (boolean, string?),
+	encodePostcard: (spec: Types.PostcardSpec) -> string,
+	decodePostcard: (s: string) -> Types.PostcardSpec?,
 }
 ```
 
@@ -1249,10 +1272,9 @@ end
 | `Net.*.burst` | int 1–1000 |
 | `Net.*.perSec` | num 0.001–1000 |
 | `Features.DisabledStyles[*]` | `styleId` |
-| `Features.DisabledMoves[*]` | str 32, pattern `^%l+%.[%w]+$` (move ID, e.g. `hero.1`) |
+| `Features.DisabledMoves[*]` | str 32, pattern `^%l+%.[%w]+$` (move ID, e.g. `attendant.1`) |
 | `Features.LoadTestBots` | int 0–20 |
 | `Features.LoadTestGameIds[*]` | int 1–2^53 |
-| `SkinPack` | enum; `"Canon"` requires `LicenseConfirmed == true` (check; the §2.6.4 pack guard resolves it first) |
 
 **Verify:** Lune `schema.canonical_stable` (same table, shuffled insertion order → same string), `schema.hash32_vectors` (`""` → `811c9dc5`, `"a"` → `e40c292c`), `schema.merge_rejects_unknown`, `schema.merge_type_mismatch`, `schema.defaults_valid` (after Parts 3/5/6 fill their sections), `schema.defaults_json_safe`, `schema.config_size` (canonical JSON of Defaults < 190,000 chars, else warn that chunking is active).
 
@@ -1262,36 +1284,34 @@ ConfigService keys (JSON values overlay one section; created by live-ops in Crea
 
 | ConfigService key | Type | Overlays | Takes effect |
 |---|---|---|---|
-| `ALG_Combat` | JSON | `Combat` | per character at next spawn (pinning, §2.6.6) |
-| `ALG_Wish` | JSON | `Wish` | next Wish (ledger records the new `oddsHash`) |
-| `ALG_Shop` | JSON | `Shop` | next `Shop.Get`/`Shop.Buy`; slot composition at the next rotation window |
-| `ALG_Economy` | JSON | `Economy` | next grant |
-| `ALG_Progression` | JSON | `Progression` | next grant/level computation |
-| `ALG_Appearance` | JSON | `Appearance` | next `Appearance.Set` validation / next render |
-| `ALG_Telemetry` | JSON | `Telemetry` | immediately |
-| `ALG_Perf` | JSON | `Perf` | client's next tier evaluation |
-| `ALG_Net` | JSON | `Net` | immediately (bucket params read per message) |
-| `ALG_Kits` | JSON | `Kits` | per character at next spawn (pinned with `CombatCfg`, §2.6.6; Part 4 §4.1.6) |
-| `ALG_Features` | JSON | `Features` | immediately for meta flags (incl. `CodenameLooks`, `PaidRandomItems`; `LoadTest*` on BotService's next `Runtime.changed`); style/move disables at next spawn |
-| `ALG_SkinPack` | string | `SkinPack` | immediately, through the pack guard (step 9): `"Canon"` resolves to `"Original"` unless code-level `LicenseConfirmed = true`; `"Codename"` resolves to `"Original"` outside a dev context unless acknowledged and unexpired |
+| `HB_Combat` | JSON | `Combat` | per character at next spawn (pinning, §2.6.6) |
+| `HB_Wish` | JSON | `Wish` | next Wish (ledger records the new `oddsHash`) |
+| `HB_Shop` | JSON | `Shop` | next `Shop.Get`/`Shop.Buy`; slot composition at the next rotation window |
+| `HB_Economy` | JSON | `Economy` | next grant |
+| `HB_Progression` | JSON | `Progression` | next grant/level computation |
+| `HB_Appearance` | JSON | `Appearance` | next `Appearance.Set` validation / next render |
+| `HB_Telemetry` | JSON | `Telemetry` | immediately |
+| `HB_Perf` | JSON | `Perf` | client's next tier evaluation |
+| `HB_Net` | JSON | `Net` | immediately (bucket params read per message) |
+| `HB_Kits` | JSON | `Kits` | per character at next spawn (pinned with `CombatCfg`, §2.6.6; Part 4 §4.1.6) |
+| `HB_Features` | JSON | `Features` | immediately for meta flags (incl. `PaidRandomItems`; `LoadTest*` on BotService's next `Runtime.changed`); style/move disables at next spawn |
 
-Not overridable (code only): `Version`, `NetModel`, `LicenseConfirmed`, `PublicCodenameAcknowledged`, `MockPurchases`, `Data`, `Ip` (overriding `Ip.DevUniverseIds` would disable Part 8's public-Codename runtime guard). ConfigReplicator never reads an `ALG_` key for these, and `devOverride` refuses them.
+Not overridable (code only): `Version`, `NetModel`, `MockPurchases`, `Data`, `Ip` (overriding `Ip.DevUniverseIds` would switch off the dev-universe members-only check, §2.3.5). ConfigReplicator never reads an `HB_` key for these, and `devOverride` refuses them. There is no ConfigService key for the string pack: `Base` is the only pack (§2.9.2).
 
 Behaviour (MUST):
 1. `init()`: deep-copy `Defaults`, `validateConfig` (failure = boot failure), publish as **version 1** with `src=defaults`, and set the server `Runtime`. Create `ReplicatedStorage.Runtime` (Folder), `Runtime.Config` (StringValue) and `Runtime.History` (Folder).
 2. `start()`: `task.spawn` → `pcall(ConfigService.GetConfigAsync, ConfigService)`.
-   - On error (e.g. unpublished place) → log `[ALG][Config] WARN source=defaults reason=<err>`; `ready()` becomes true.
+   - On error (e.g. unpublished place) → log `[HB][Config] WARN source=defaults reason=<err>`; `ready()` becomes true.
    - If `snapshot.Error == Enum.ConfigSnapshotErrorState.LoadFailed` → same handling.
-3. Build a candidate: for each overridable section, `snapshot:GetValue("ALG_" .. section)`.
+3. Build a candidate: for each overridable section, `snapshot:GetValue("HB_" .. section)`.
    - `nil` → skip.
    - `string` → `HttpService:JSONDecode` in `pcall`; `table` → use as is (verify in spike which type a JSON config returns).
-   - `Schema.merge` into the section. Any problem rejects **that section's patch** and logs `[ALG][Config] ERROR rejected section=<S> problems=<first 5>`.
+   - `Schema.merge` into the section. Any problem rejects **that section's patch** and logs `[HB][Config] ERROR rejected section=<S> problems=<first 5>`.
 4. Validate the whole candidate. Failure → keep the current version; log `ERROR rejected candidate`.
 5. If `hash32(canonical(candidate)) ~= currentHash` → publish version *n+1* (§2.6.5). Set `ready()` true after the first attempt or after 5 s, whichever comes first.
 6. `snapshot.UpdateAvailable:Connect(...)` → debounce 2 s → `snapshot:Refresh()` → repeat steps 3–5.
-7. Studio only: `devOverride(section, patchJson)` merges a patch layer that persists for the server lifetime, then republishes. Prefer `ConfigService:SetTestingValue("ALG_<S>", value)` (fires `UpdateAvailable` [Docs `production/configs.md`]); fall back to `devOverride` when the place is unpublished.
+7. Studio only: `devOverride(section, patchJson)` merges a patch layer that persists for the server lifetime, then republishes. Prefer `ConfigService:SetTestingValue("HB_<S>", value)` (fires `UpdateAvailable` [Docs `production/configs.md`]); fall back to `devOverride` when the place is unpublished.
 8. Never call `GetConfigForPlayerAsync` in M1-G (experiments are a future hook).
-9. **Pack guard** (Part 8 §8.2.6 owns the rule): every candidate (v1 in step 1, overlays in step 3, Studio overrides in step 7, `DevCmd setSkinPack`) passes through `applyPackGuard(cfg)` before `validateConfig`. It calls `Skin.resolvePack(cfg.SkinPack, gate)` with `ackValid = DateTime.now().UnixTimestamp <= cfg.Ip.PublicAckExpiresUnix` and `devContext = RunService:IsStudio() or table.find(cfg.Ip.DevUniverseIds, game.GameId) ~= nil` (or the seam `_devContextOverride`), publishes the **resolved** `SkinPack`, and on a downgrade logs `[ALG][Skin] ERROR pack_downgraded effective=<p> reason=<r> requested=<p>`; outside a dev context a downgrade also sets `cfg.Features.CodenameLooks = false`. ConfigReplicator keeps the last pre-guard candidate; outside Studio, while it requests `Codename` and `devContext` is false, a `task.delay` loop re-runs the guard on a copy every `GUARD_RECHECK_SEC = 3600` s (tuning default, a ConfigReplicator constant) and publishes a new version when the effective pack changes (acknowledgement expiry on long-running servers).
 
 PlayerService waits `ConfigReplicator.waitReady(5)` before the **first** spawn after server boot, so that early players don't pin v1 when an override is about to land.
 
@@ -1302,20 +1322,20 @@ Publish (server):
 2. If `#json ≤ 190000`: `Config.Value = json`, `Parts = 0`.
    Else split into ≤ 190,000-char chunks into children `Part1..PartN` (StringValue limit 200,000 chars [Docs `StringValue.yaml`]), set `Config.Value = ""`, `Parts = N`.
 3. Then `Config:SetAttribute("Hash", hash)`, then `Config:SetAttribute("Version", n)`.
-4. Log `[ALG][Config] published v=<n> hash=<hash> src=<defaults|configservice|dev> bytes=<#json>`.
+4. Log `[HB][Config] published v=<n> hash=<hash> src=<defaults|configservice|dev> bytes=<#json>`.
 
 Client apply:
 1. On `Version` attribute change, `Value` change or `Parts` change: reassemble the string and compute `hash32`.
 2. If it ≠ the `Hash` attribute → wait for the next change (replication order is not guaranteed).
 3. Else `JSONDecode` → `Schema.deepFreeze` → apply → `Runtime.changed:Fire(n)`.
-4. Log `[ALG][Config] applied v=<n> hash=<hash>` (client).
+4. Log `[HB][Config] applied v=<n> hash=<hash>` (client).
 
 ```lua
 --!strict
 -- src/Shared/Config/Runtime.luau — frozen versioned config for both peers. Spec §2.6.5.
 export type Config = Defaults.Config
 export type RuntimeApi = {
-	get: () -> Config,                 -- latest applied; errors "[ALG][Config] not ready" before the first apply
+	get: () -> Config,                 -- latest applied; errors "[HB][Config] not ready" before the first apply
 	version: () -> number,
 	hash: () -> string,
 	at: (version: number) -> Config?,  -- retained versions (latest 8 + every History entry); client decodes History.v<n> on demand
@@ -1343,7 +1363,7 @@ Usage rules (MUST):
 - Scenario `config.dev_override_bumps_version` (`Dev.Command setConfig` on `Shop.RefreshSec` → Version 2; `Shop.Get` reflects the change; the client logs `applied v=2`).
 - Scenario `config.client_hash_match` (`execute_luau` Server and Client both return the same `Runtime.hash()`).
 - Scenario `config.combat_pinned` (change `Combat` mid-life; the living character keeps `CombatCfg=1`; after respawn `CombatCfg=2`; `History.v1` is removed ~10 s later).
-- Per-move kill switch end to end: Lune `moves.disabled_move_blocked` and scenario `combat.disabled_move_kill_switch` (Part 3; `setConfig Features {"DisabledMoves":["hero.1"]}` → after respawn, Move1 does not leave Idle).
+- Per-move kill switch end to end: Lune `moves.disabled_move_blocked` and scenario `combat.disabled_move_kill_switch` (Part 3; `setConfig Features {"DisabledMoves":["attendant.1"]}` → after respawn, Move1 does not leave Idle).
 - Scenario `config.not_overridable` (`Dev.Command setConfig` for `Ip`, `Data` and `NetModel` each returns `ok = false` and leaves `Runtime.version()` unchanged; `setConfig Kits {"MomentCooldownFrames":300}` is accepted and bumps the version).
 
 ---
@@ -1398,8 +1418,8 @@ export type NetApi = {
 Server pipeline per C2S message (MUST, in order):
 1. Unknown or studioOnly-outside-Studio name → the instance does not exist, so nothing to do.
 2. Global bucket (`Net.Global`) then per-remote bucket (spec rate, overridden by `Net.LimitOverrides[name]`).
-   Over limit → drop; invoke returns `{ok=false, err="rate_limited"}`; call the violation sink with `remote_rate`. Log at most once per `ViolationLogEverySec` per (player, remote): `[ALG][Net] WARN rate_limited dropped=<n> remote=<name> user=<id>`.
-3. `spec.validate(payload)`. Fail → drop; invoke returns `{ok=false, err="invalid", detail=<why>}`; sink `remote_invalid`; log `[ALG][Net] WARN invalid remote=<name> user=<id> why=<why>` (same throttle).
+   Over limit → drop; invoke returns `{ok=false, err="rate_limited"}`; call the violation sink with `remote_rate`. Log at most once per `ViolationLogEverySec` per (player, remote): `[HB][Net] WARN rate_limited dropped=<n> remote=<name> user=<id>`.
+3. `spec.validate(payload)`. Fail → drop; invoke returns `{ok=false, err="invalid", detail=<why>}`; sink `remote_invalid`; log `[HB][Net] WARN invalid remote=<name> user=<id> why=<why>` (same throttle).
 4. The ready check (installed by PlayerService via `setReadyCheck`; Net, being Shared, never requires a server service) for every remote except `Data.Ready` and `Report.Submit`; not ready → `{ok=false, err="not_ready"}`.
 5. Handler in `pcall`. A thrown error → `Log.error("Net", "handler error", {remote=..., err=...})`; invoke returns `{ok=false, err="internal"}`.
 
@@ -1474,7 +1494,7 @@ C2S rates are `burst / perSec`. Every C2S remote also passes the shape validator
 |---|---|---|---|---|---|---|---|
 | 1 | `Data.Ready` | C2S · event | `nil` → (server fires `Data.Snapshot`) | 3 / 0.2 | `t.none` | Ignored until `DataLoaded`; each call sends a fresh snapshot | DataService |
 | 2 | `Settings.Set` | C2S · event | `SettingsSetReq` | 10 / 2 | `struct{key = str(48, "^[%w%.]+$"), value = bool\|num\|str(48)}` | `key` ∈ `Types.SETTING_KEYS`, or matches `^binds%.(%w+)%.(%a+)$` with capture 1 ∈ Part 3 action names and capture 2 ∈ {`KBM`, `Pad`}; value passes the per-key validator (§2.8.6) | DataService |
-| 3 | `Appearance.Set` | C2S · event | `AppearanceSetReq` | 5 / 1 | `struct` of optional fields; `oosona` per §2.8.6; `styleOverride.value` ∈ on/off/inherit | `Features.Appearance`; `styleOverride.styleId` owned or trial-eligible | AppearanceService |
+| 3 | `Appearance.Set` | C2S · event | `AppearanceSetReq` | 5 / 1 | `struct` of optional fields; `postcard` per §2.8.6; `styleOverride.value` ∈ on/off/inherit | `Features.Appearance`; `styleOverride.styleId` owned or trial-eligible | AppearanceService |
 | 4 | `Style.Equip` | C2S · invoke | `StyleEquipReq` → `Response<StyleEquipRes>` | 4 / 1 | `struct{styleId = t.styleId}` | Owned, OR free rotation, OR (`MapId == "training"` and `TrainingTrialAllStyles`); `implemented == true`; not in `Features.DisabledStyles` | StyleService |
 | 5 | `Style.SetFlair` | C2S · event | `StyleSetFlairReq` | 4 / 1 | `struct{styleId, flair = t.flairId}` | Style owned; `styles[id].flairs[flair] ~= nil` | StyleService |
 | 6 | `Style.SetVariant` | C2S · event | `StyleSetVariantReq` | 4 / 1 | `struct{styleId, variantId = enum{"", "v1".."v9"}}` | `""` or owned variant | StyleService |
@@ -1485,8 +1505,8 @@ C2S rates are `burst / perSec`. Every C2S remote also passes the shape validator
 | 11 | `Shop.Get` | C2S · invoke | `nil` → `Response<ShopView>` | 3 / 1 | `t.none` | `Features.Shop` | ShopService |
 | 12 | `Shop.Buy` | C2S · invoke | `ShopBuyReq` → `Response<ShopBuyRes>` | 3 / 0.5 | `struct{slot = int(1,14), rotationId = str(32), price = int(0,1e6)}` | Rotation current (else `stale`); slot not bought; `price` equals the current price (else `stale`); not owned; Treasure ≥ price | ShopService |
 | 13 | `Store.Get` | C2S · invoke | `nil` → `Response<StoreView>` | 2 / 0.5 | `t.none` | `Features.Store` | MonetizationService |
-| 14 | `Store.Prompt` | C2S · invoke | `StorePromptReq` → `Response<StorePromptRes>` | 2 / 0.2 | `struct{key = enum(ProductKey ∪ PassKey), entryPoint = str(24), confirmed = opt(bool)}` | Not `restricted` for PRI items (Wish packs, Lucky Jar; also hidden when `Features.PaidRandomItems == false`); Wish cap would not be exceeded (`Wishes + paidEscrow + pack ≤ Wish.StorageCap`, else `cap_reached`; Part 5 §5.6.4); 4th Wish purchase in 24 h requires `confirmed` (GDD §8.8) | MonetizationService |
-| 15 | `World.Travel` | C2S · invoke | `WorldTravelReq` → `Response<{}>` | 2 / 0.2 | `struct{mapId = enum{"candy_kingdom","training","arena_duel_m0"}}` | `Features.Training` for training; the destination map exists (`arena_duel_m0` only when `Workspace.Arena.DuelArena` exists, Part 6 §6.13 item 6); not mid-combat (Part 3 predicate `CombatService.canTravel`) | PlayerService |
+| 14 | `Store.Prompt` | C2S · invoke | `StorePromptReq` → `Response<StorePromptRes>` | 2 / 0.2 | `struct{key = enum(ProductKey ∪ PassKey), entryPoint = str(24), confirmed = opt(bool)}` | Not `restricted` for PRI items (Wish packs, the Lucky Stamp pass `lucky_jar`; also hidden when `Features.PaidRandomItems == false`); Wish cap would not be exceeded (`Wishes + paidEscrow + pack ≤ Wish.StorageCap`, else `cap_reached`; Part 5 §5.6.4); 4th Wish purchase in 24 h requires `confirmed` (GDD §8.8) | MonetizationService |
+| 15 | `World.Travel` | C2S · invoke | `WorldTravelReq` → `Response<{}>` | 2 / 0.2 | `struct{mapId = enum{"hub","training","arena_duel_m0"}}` | `Features.Training` for training; the destination map exists (`arena_duel_m0` only when `Workspace.Arena.DuelArena` exists, Part 6 §6.13 item 6); not mid-combat (Part 3 predicate `CombatService.canTravel`) | PlayerService |
 | 16 | `Training.Dummy` | C2S · event | `TrainingDummyReq` | 4 / 1 | `struct{behavior = enum(Part 3 list)}` | `MapId == "training"` | BotService |
 | 17 | `Report.Submit` | C2S · event | `ReportReq` | 2 / 0.02 | `struct{targetUserId = int(-(2^53), 2^53), reason = enum{"exploit","teaming","harassment","other"}}` (negative IDs are Studio test clients) | `Features.Reports`; `targetUserId ~= 0` and `Players:GetPlayerByUserId(targetUserId) ~= nil` (target is in this server); not self | ModerationService |
 | 18 | `Telemetry.Perf` | C2S · event | `TelPerfSample` | 1 / 0.02 | `struct{deviceTier = enum, fpsP50 = num(0,1000), fpsP5 = num(0,1000), memoryMb = num(0,65536), vfxDegradeLevel = int(0,5)}` | Accepted only when the sender's Player attribute `PerfSampled` is true (Telemetry decides at join from `PerfSampleRate`, §2.5.2); sender: VfxController (Part 6 §6.6.3) | Telemetry |
@@ -1498,14 +1518,14 @@ C2S rates are `burst / perSec`. Every C2S remote also passes the shape validator
 
 Notes:
 - Error-code semantics: `stale` = client view outdated, refetch; `busy` = same-player operation in flight; `disabled` = kill switch; `restricted` = policy gate; `cap_reached` = Wish storage cap; `not_implemented` = collectible style not equippable.
-- Cross-server announcements (Mythic/Cosmic, GDD §8.6) use MessagingService topic `ALG_Announce_v1` with a `NotifyPayload` (≤ 1 kB [api-sheet §13]). They run only when `Wish.Announce.CrossServerEnabled == true` (false in M1-G; `ALG_Wish` can enable it) and never in Studio; the subscribe runs in `task.spawn` with `pcall` (Part 5 §5.2.13).
+- Cross-server announcements (Mythic/Cosmic, GDD §8.6) use MessagingService topic `HB_Announce_v1` with a `NotifyPayload` (≤ 1 kB [api-sheet §13]). They run only when `Wish.Announce.CrossServerEnabled == true` (false in M1-G; `HB_Wish` can enable it) and never in Studio; the subscribe runs in `task.spawn` with `pcall` (Part 5 §5.2.13).
 - Remotes added by other parts through their "New contracts" (e.g. Part 3 `Combat.Feed`, Classic-only `Combat.Input`/`Combat.HitClaim`; Part 5 `Ftue.Step`) follow every rule above; `Combat.Input` uses `rate = {burst = 40, perSec = 30}` and is sent at 30 Hz.
 
 **Verify:**
 - Lune `net.specs_complete` (every C2S spec has `rate` and `validate`; names unique; every name matches `^%u%a+%.%u%a+$` or equals `Notify`; `unreliable` C2S only on `classicOnly` specs; the ServerAuthority remote set excludes `classicOnly` specs).
 - Lune `net.dev_studio_only` (every `Dev.*` spec has `studioOnly = true`).
 - Lune `net.validators_reject_fuzz`: each C2S validator rejects `nil` (unless `t.none`), a number, a string, an array where a struct is expected, a struct with an extra key, NaN, `math.huge`, a 10 kB string, and a 33-key table; and accepts one known-good payload. `Report.Submit` additionally accepts `targetUserId = -2` (Studio test client) and rejects `1.5`; `Settings.Set` accepts the shape `{key = "binds.Move1.KBM", value = "Q"}` (the device check itself is `Schema.validateSetting`, Lune `settings.validators`, which rejects `binds.Move1.Touch`).
-- Scenario `net.rate_limit_drops` (fire `Wish.GetOdds` 20 times in 1 s from a client → ≥ 15 `rate_limited` responses, one `[ALG][Net] WARN rate_limited` line, ModerationService count `remote_rate ≥ 1`).
+- Scenario `net.rate_limit_drops` (fire `Wish.GetOdds` 20 times in 1 s from a client → ≥ 15 `rate_limited` responses, one `[HB][Net] WARN rate_limited` line, ModerationService count `remote_rate ≥ 1`).
 - Scenario `net.invalid_payload_rejected`.
 - Scenario `net.remotes_match_catalog`.
 
@@ -1535,7 +1555,7 @@ end
 -- Mock → sessions use PlayerStore.Mock (in-memory, server lifetime); Live/StudioLive → PlayerStore
 ```
 
-- Log once: `[ALG][Data] store=PlayerData_v1 mode=<Live|Mock|StudioLive> dsState=<state>`. Loads requested before the mode is chosen wait for it.
+- Log once: `[HB][Data] store=PlayerData_v1 mode=<Live|Mock|StudioLive> dsState=<state>`. Loads requested before the mode is chosen wait for it.
 - With API access off, ProfileStore itself falls back to an internal mock store [repo source: `DataStoreState ~= "Access"` branch]; we still select `.Mock` explicitly so the mode is visible and the PlayerData keys (store `PlayerData_v1`) are never touched by default.
 - Note: with H-06 (Studio API access) on, ProfileStore's module-load probe writes key `____PS` in DataStore `____PS` of the dev universe in every Studio session, regardless of `.Mock` and `Data.StudioLiveData` [repo source: `if IsStudio == true then task.spawn(... GetDataStore("____PS"):SetAsync("____PS", os.time()) ...)`]. This is harmless; it is one more reason never to enable H-06 on staging or prod universes.
 - `PlayerStore.Mock:StartSessionAsync` (the store object's `.Mock` view) ignores the `params` argument (Cancel) [repo source `ProfileStore.New`], which is acceptable for Mock.
@@ -1550,12 +1570,12 @@ end
    - `profile:MessageHandler(...)` (§2.8.7).
    - If the player left during the load → `profile:EndSession()`; return false.
    - Update timestamps (`lastLoginAt`, `sessions += 1`); fire `DataService.loaded`.
-   - Log `[ALG][Data] loaded user=<id> mode=<m> schema=<n> ms=<t> bytes=<canonical size>`.
+   - Log `[HB][Data] loaded user=<id> mode=<m> schema=<n> ms=<t> bytes=<canonical size>`.
 2. **Run.** All writes go through `update` (§2.8.5). ProfileStore auto-saves every 300 s (`AUTO_SAVE_PERIOD` default).
 3. **Release** (`releaseAsync`, on PlayerRemoving).
    - Fire `beforeRelease(player, data)`. Handlers are synchronous and non-yielding (ProgressionService flushes pending XP/Treasure here).
    - Set `lastLogoutAt`, `playSec += session length`, `profile:EndSession()`.
-   - Log `[ALG][Data] released user=<id> bytes=<n>`. Warn if bytes > `Data.ProfileSizeWarnBytes`.
+   - Log `[HB][Data] released user=<id> bytes=<n>`. Warn if bytes > `Data.ProfileSizeWarnBytes`.
 4. **Shutdown.** `game:BindToClose`: release every session (same path), then wait until no session is active or 25 s. ProfileStore registers its own BindToClose for final saves.
 
 #### 2.8.3 PlayerData schema v1 (template)
@@ -1568,8 +1588,8 @@ end
 | `createdAt`, `lastLoginAt`, `lastLogoutAt` | `0` (set on first load) | — |
 | `sessions`, `playSec` | `0` | — |
 | `currencies` | `{Treasure = 0, Wishes = 0, Shards = 0, CosmicSparks = 0}` | GDD §17.2 |
-| `styles` | `{hero = StyleRecordDefault("starter"), stretch = StyleRecordDefault("starter")}` | §0.10 (Starters owned by all) |
-| `equipped` | `{styleId = "hero"}` | — |
+| `styles` | `{attendant = StyleRecordDefault("starter"), lifeguard = StyleRecordDefault("starter")}` | §0.10 (Starters owned by all) |
+| `equipped` | `{styleId = "attendant"}` | — |
 | `pity` | `{sinceEpicPlus = 0, sinceLegendaryPlus = 0, sinceMythicPlus = 0}` | GDD §8.4 |
 | `wishStats` | `{total = 0, free = 0, paid = 0, paidUnspent = 0, paidEscrow = 0, tutorialGranted = false, firstGuaranteeUsed = false}` | GDD §15.5; Part 5 §5.12 item 4 |
 | `ledger` | `{head = 1, entries = {}}` | GDD §18.5 |
@@ -1580,7 +1600,7 @@ end
 | `flags` | `{ftueStep = 0, ftueDone = false, rookieSecLeft = 7200, lastLoginDay = 0, loginStreak = 0, seenReveals = {}}` (7200 = `Progression.Rookie.DurationSec` default) | GDD §15.5 |
 | `purchases` | `{ids = {}, wishBuyTimes = {}, robuxSpent = 0, weekIndex = 0, weekRobux = 0}` | GDD §18.5, §8.8; Part 5 §5.12 item 4 |
 
-`StyleRecordDefault(source)` = `{obtainedAt = 0, source = source, masteryXp = 0, masteryClaimed = 0, kos = 0, dupes = 0, bestFlair = "standard", flairs = {standard = 0}, equippedFlair = "standard", variants = {}, equippedVariant = ""}`.
+`StyleRecordDefault(source)` = `{obtainedAt = 0, source = source, masteryXp = 0, masteryClaimed = 0, kos = 0, dupes = 0, bestFlair = "plain", flairs = {plain = 0}, equippedFlair = "plain", variants = {}, equippedVariant = ""}`.
 
 ProfileStore storage constraints (repo header):
 - no arrays with gaps;
@@ -1597,7 +1617,7 @@ Every array above is dense; every map is string-keyed.
 4. Resize `shop.bought` to `StyleSlots + CosmeticSlots`, filling with false.
 5. Clamp currencies to integers ≥ 0.
 6. Set `createdAt = now` if 0.
-7. Ensure `equipped.styleId` is owned and implemented, else `"hero"`.
+7. Ensure `equipped.styleId` is owned and implemented, else `"attendant"`.
 8. Clamp `wishStats.paidUnspent` to integers in `0..currencies.Wishes` and `wishStats.paidEscrow` to an integer ≥ 0 (Part 5 §5.2.10). Existing profiles get `paidEscrow`, `weekIndex` and `weekRobux` from `Reconcile` (template keys); step 8 runs after it.
 
 #### 2.8.4 Migrations and the ledger codec
@@ -1665,7 +1685,7 @@ export type DataServiceApi = {
 1. If no active session → return false.
 2. Deep-copy each declared section (backup).
 3. Run `mutator(data, tx)` in a fresh coroutine (`coroutine.create` / `coroutine.resume`).
-   - If it errored, **or yielded** (`coroutine.status(co) ~= "dead"` → `pcall(task.cancel, co)`; `task.cancel` also stops the engine scheduler from resuming a thread parked in `task.wait` or a yielding API, which `coroutine.close` does not [Docs `task.yaml`]), **or** touched `currencies` via `tx` without declaring it, **or** broke an invariant → restore the backups, log `[ALG][Data] ERROR rollback reason=<reason> user=<id> why=<...>`, signal `data_invariant`, return false.
+   - If it errored, **or yielded** (`coroutine.status(co) ~= "dead"` → `pcall(task.cancel, co)`; `task.cancel` also stops the engine scheduler from resuming a thread parked in `task.wait` or a yielding API, which `coroutine.close` does not [Docs `task.yaml`]), **or** touched `currencies` via `tx` without declaring it, **or** broke an invariant → restore the backups, log `[HB][Data] ERROR rollback reason=<reason> user=<id> why=<...>`, signal `data_invariant`, return false.
 4. Invariants:
    - currencies are integers ≥ 0;
    - an update never raises `Wishes` above `Wish.StorageCap` (a balance already above a lowered cap may only decrease);
@@ -1688,7 +1708,7 @@ Deltas:
 - `ledger` and `purchases` are never sent.
 - `Data.Snapshot` sends the full `PrivateView` with the current `seq`.
 
-Studio integrity check: every `Data.IntegrityCheckSec`, hash the canonical JSON of each profile and compare with the hash stored at the last commit. A mismatch → `[ALG][Data] ERROR out_of_band_mutation user=<id>` (catches code that mutates `get()` results).
+Studio integrity check: every `Data.IntegrityCheckSec`, hash the canonical JSON of each profile and compare with the hash stored at the last commit. A mismatch → `[HB][Data] ERROR out_of_band_mutation user=<id>` (catches code that mutates `get()` results).
 
 How other services persist (MUST):
 1. Only through `update`/`credit`/`setRuntime`.
@@ -1700,12 +1720,12 @@ How other services persist (MUST):
 
 | Key | Type | Default | Validation | Set via | Source |
 |---|---|---|---|---|---|
-| `characterLook` | boolean | `true` | bool | `Appearance.Set` | §0.4, GDD §12.3 |
-| `characterLookByStyle` | `{[StyleId]: boolean}` | `{}` | ≤ 18 entries, owned/trial styles | `Appearance.Set.styleOverride` | GDD §12.3 |
-| `ownLook` | `"Oosona" \| "Avatar"` | `"Oosona"` | enum | `Appearance.Set` | §0.4 |
-| `showStyleGear` | boolean | `true` | bool | `Appearance.Set` | §0.4 |
+| `characterLook` | boolean | `false` | bool | `Appearance.Set` | **Full Uniform** toggle, default Off (§0.4, GDD §12.3) |
+| `characterLookByStyle` | `{[StyleId]: boolean}` | `{}` | ≤ 18 entries, owned/trial styles | `Appearance.Set.styleOverride` | Per-style Full Uniform override (GDD §12.3) |
+| `ownLook` | `"Postcard" \| "Avatar"` | `"Postcard"` | enum | `Appearance.Set` | Postcard Look or the Roblox avatar (§0.4) |
+| `showStyleGear` | boolean | `true` | bool | `Appearance.Set` | **Charm Gear** (§0.4) |
 | `othersAppearance` | enum | `"AsChosen"` | `AsChosen/AlwaysCharacter/AlwaysOwn/Simplified` | `Settings.Set` (viewer-local) | §0.4 |
-| `oosona` | `OosonaSpec` | `{v=1, species=1, color="#F2C14E", face=1, hat=0, outfit=0}` (tuning default) | species 1..#`Appearance.OosonaSpecies` (an index into the `{id, skin}` records); face 1..`OosonaFaces`; hat 0..`OosonaHats` (6); outfit 0..`OosonaOutfits`; hexColor | `Appearance.Set` | GDD §12.3; values: Part 5 §5.10 |
+| `postcard` | `PostcardSpec` | `{v=1, body=1, skin=1, color="#F2C14E", face=1, hat=0, outfit=0}` (tuning default) | `v` = 1; body 1..#`Appearance.PostcardStyles` (an index into the `{id}` body-style records: `classic`, `round`, `tall`, `tiny`); skin 1..#`Appearance.PostcardSkins` (skin palette); face 1..`PostcardFaces`; hat 0..`PostcardHats` (6); outfit 0..`PostcardOutfits`; `color` hexColor | `Appearance.Set` | **Postcard Look**: the player's own avatar drawn in the postcard toon style (GDD §12.3); values: Part 5 §5.10 |
 | `graphicsTier` | enum | `"Auto"` | `Auto/Low/Mid/High` | `Settings.Set` | GDD §15.4 |
 | `reducedMotion`, `reducedVfx` | boolean | `false` | bool | `Settings.Set` | GDD §16.3 |
 | `cameraShake` | number | `1` | num 0–1 | `Settings.Set` | GDD §15.4 |
@@ -1713,7 +1733,7 @@ How other services persist (MUST):
 | `telegraphColor` | string | `"#FF8A1F"` (tuning default "warm orange") | hexColor | `Settings.Set` | GDD §16.3 |
 | `outlineThickness` | number | `1` | num 0–2 | `Settings.Set` | GDD §15.4 |
 | `textScale` | number | `1` | num 0.8–1.5 | `Settings.Set` | GDD §16.3 |
-| `dyslexiaFont`, `simpleHud`, `glitchedCalm`, `holdToToggleBlock` | boolean | `false` | bool | `Settings.Set` | GDD §16.3 |
+| `dyslexiaFont`, `simpleHud`, `misprintCalm`, `holdToToggleBlock` | boolean | `false` | bool | `Settings.Set` | GDD §16.3 (`misprintCalm`: the Misprint Finish renders static, Part 6) |
 | `holdToToggleRun` | boolean | `false` | bool | `Settings.Set` | GDD §16.3 ("hold-to-toggle for block and run"); InputController latches `RunAuto` on a Run press |
 | `quietBarks` | boolean | `false` | bool | `Settings.Set` | GDD §14.5; SfxController |
 | `damageNumbers` | boolean | `false` | bool | `Settings.Set` | GDD §15.3 (off by default; enabled in Training and accessibility settings); RenderController (Part 6 replaces `Perf.Ui.DamageNumbersInTraining` with `Perf.Ui.DamageNumbersDefault = false`) |
@@ -1723,9 +1743,20 @@ How other services persist (MUST):
 | `binds.<Action>.<Device>` | string | absent | key matches `^binds%.(%w+)%.(%a+)$`; `<Action>` ∈ Part 3 action names; `<Device>` ∈ {`KBM`, `Pad`}; value = `Enum.KeyCode` item name ≤ 32 chars or `""` (reset to the Part 3 default) | `Settings.Set` | GDD §16.3; **SettingsController** applies it to `Player.Combat.<Action>.<Device>.KeyCode` (single owner, §2.3.7 rule 6) |
 | `skipSeenReveals` | boolean | `true` | bool | `Settings.Set` | GDD §8.6 |
 
+**How the appearance settings combine.** Part 6 (§6.8.1) resolves one `LookMode` per viewed player from the owner's `CharacterLook` and `OwnLook` attributes and the viewer's `othersAppearance`:
+
+| `LookMode` | Shown when | What players see |
+|---|---|---|
+| `"Character"` | The owner turned the **Full Uniform** on (`characterLook`, default Off), or the viewer chose `AlwaysCharacter` | The style's full uniform, with its Charm Gear |
+| `"Postcard"` | Full Uniform off and `ownLook = "Postcard"` (or the viewer chose `AlwaysOwn`) | The **Postcard Look** (body style, skin, colour, face, hat, outfit from `postcard`), plus **Charm Gear** when `showStyleGear` |
+| `"Avatar"` | Full Uniform off and `ownLook = "Avatar"` (or the viewer chose `AlwaysOwn`) | The player's Roblox avatar as it is, plus Charm Gear when `showStyleGear` |
+| `"Simplified"` | The viewer chose `Simplified` | A plain proxy in the style palette |
+
+At Peak the style's uniform appears for 60 s for every viewer except `Simplified`, whatever the owner's Full Uniform setting (GDD §6.9; render only, Part 6 §6.8.1); nobody grows. The Style Tell is always on, and the hurtbox is the same fixed capsule in every mode (§0.4, GDD §6.2).
+
 There is no `title` settings key in M1-G: ProgressionService auto-equips a newly granted title when `account.title == ""` (Part 5 §5.5.5); a title picker is a future hook (Part 6 §6.15).
 
-`OosonaCode` codec (in `Schema`, pure): `Schema.encodeOosona(spec): string` → `"o1.<species>.<RRGGBB>.<face>.<hat>.<outfit>"` (≤ 30 chars); `Schema.decodeOosona(s): OosonaSpec?` returns `nil` on any malformed input. **Verify:** Lune `oosona.codec_roundtrip`, `settings.validators` (covers every row above, incl. `holdToToggleRun`, `quietBarks`, `damageNumbers` and `binds.<Action>.<Device>` with `KBM`/`Pad` accepted and any other device rejected).
+`PostcardCode` codec (in `Schema`, pure): `Schema.encodePostcard(spec): string` → `"p1.<body>.<skin>.<RRGGBB>.<face>.<hat>.<outfit>"` (decimal integers; ≤ 30 chars); `Schema.decodePostcard(s): PostcardSpec?` returns `nil` on any malformed input. The decoder checks only the format; `Schema.validatePostcard` checks every index against the `Appearance` catalog (rows above). **Verify:** Lune `postcard.codec_roundtrip`, `settings.validators` (covers every row above, incl. `holdToToggleRun`, `quietBarks`, `damageNumbers` and `binds.<Action>.<Device>` with `KBM`/`Pad` accepted and any other device rejected).
 
 #### 2.8.7 ProfileStore messages
 
@@ -1739,7 +1770,7 @@ There is no `title` settings key in M1-G: ProgressionService auto-equips a newly
 - Scenario `data.update_rollback_on_error` (a mutator that credits 100 Treasure then errors → Treasure unchanged, `ERROR rollback` line).
 - Scenario `data.yield_in_mutator_rejected` (a mutator that calls `task.wait(0.1)` → `ERROR rollback`; 1 s later the Output has no `cannot resume dead coroutine` line and `log_scan` reports no `MessageError`).
 - Scenario `data.overflow_converts` (Wishes at cap; earned credit 5 → +50 Treasure).
-- Scenario `data.rejoin_persists` (multi-client harness, 2 clients): client B invokes `Dev.Command grant {currency = "Treasure", amount = 500}`; B calls `StudioTestService:LeaveTest()`; after `[ALG][Data] released user=<idB>`, the server asserts `DataService._readStored(idB).currencies.Treasure` includes the grant (Mock store retained the saved profile for the server lifetime). `AddPlayers(1)` adds a **new** simulated client with a fresh test UserId (Part 7 `multi.join_leave_rejoin`), so a true rejoin of the same user is asserted only if a Part 7 spike records that `AddPlayers` reuses the departed UserId (§2.14 item 11).
+- Scenario `data.rejoin_persists` (multi-client harness, 2 clients): client B invokes `Dev.Command grant {currency = "Treasure", amount = 500}`; B calls `StudioTestService:LeaveTest()`; after `[HB][Data] released user=<idB>`, the server asserts `DataService._readStored(idB).currencies.Treasure` includes the grant (Mock store retained the saved profile for the server lifetime). `AddPlayers(1)` adds a **new** simulated client with a fresh test UserId (Part 7 `multi.join_leave_rejoin`), so a true rejoin of the same user is asserted only if a Part 7 spike records that `AddPlayers` reuses the departed UserId (§2.14 item 11).
 - Scenario `data.out_of_band_mutation_detected`.
 - Scenario `data.release_on_leave`.
 
@@ -1776,14 +1807,14 @@ export type AssetsApi = {
 }
 ```
 
-Key format (MUST): the key matches the Lua pattern `^%l+%.[%l%d_]+%.[%l%d_]+$` **and** its first segment ∈ {`anim`, `vfx`, `sfx`, `img`, `mesh`, `model`}, e.g. `anim.hero.m1_1`, `vfx.hit.light`, `sfx.ui.click`, `img.rarity.epic`. Keys are IP-neutral (style IDs, never character names). Note: the `sfx` and `img` key prefixes map to entry `kind` `audio` and `image`.
+Key format (MUST): the key matches the Lua pattern `^%l+%.[%l%d_]+%.[%l%d_]+$` **and** its first segment ∈ {`anim`, `vfx`, `sfx`, `img`, `mesh`, `model`}, e.g. `anim.attendant.m1_1`, `vfx.hit.light`, `sfx.ui.click`, `img.rarity.epic`, `model.attendant.gear_chair`. Keys use style IDs, never player-facing names (names live only in `Skin`). Note: the `sfx` and `img` key prefixes map to entry `kind` `audio` and `image`.
 
 `Assets.get(key)` resolution order:
-1. Entry missing → log once `[ALG][Assets] WARN missing key=<key>`; return `""`.
+1. Entry missing → log once `[HB][Assets] WARN missing key=<key>`; return `""`.
 2. `id` starts with `rbxassetid://` or `rbxasset://` → return `id` (a published ID always beats a temp ID).
 3. A temp ID registered on this peer (Studio only) → return it.
 4. `id` starts with `tpl:` → return `id` (callers use `Assets.template(key)`).
-5. Otherwise return `Assets.FALLBACK[entry.kind]` and log once `[ALG][Assets] WARN unresolved key=<key>`.
+5. Otherwise return `Assets.FALLBACK[entry.kind]` and log once `[HB][Assets] WARN unresolved key=<key>`.
 
 Studio placeholder animations:
 - `Main.server.luau` and `Main.client.luau` each call `Assets.registerStudioClips(ReplicatedStorage.Anim)` when `RunService:IsStudio()`. A temp ID works only in the DataModel that registered it, and only in Studio [Docs `AnimationClipProvider.yaml`].
@@ -1797,39 +1828,31 @@ Load-purity: `Assets.luau` touches `game` only inside functions, so `tools/check
 
 ```lua
 --!strict
-export type PackId = "Codename" | "Original" | "Canon"
-export type LookOverride = { palette: { primary: string, secondary: string, accent: string }? } -- "#RRGGBB" (Part 8 §8.2.3)
-export type Pack = { id: PackId, strings: { [string]: string }, looks: { [string]: LookOverride }? } -- Packs/<Id>.luau returns a Pack
-export type PackGate = {                                             -- Part 8 §8.2.6; computed by the server (ConfigReplicator)
-	licenseConfirmed: boolean, publicCodenameAcknowledged: boolean,
-	ackValid: boolean,                                               -- DateTime.now().UnixTimestamp <= Config.Ip.PublicAckExpiresUnix
-	devContext: boolean,                                             -- Studio, or game.GameId listed in Config.Ip.DevUniverseIds
-}
-export type PackDowngrade = "canon_locked" | "codename_public_unacked" | "codename_ack_expired"
+export type PackId = "Base"                                          -- the only shipped pack (§0.4)
+export type Pack = { id: PackId, strings: { [string]: string } }     -- Packs/Base.luau returns a Pack
 export type SkinApi = {
-	setPack: (requested: PackId, licenseConfirmed: boolean) -> PackId, -- "Canon" without license -> "Original" + Log.error once;
-	                                                                   -- fires onChanged callbacks when the active pack changes
-	activePack: () -> PackId,
-	onChanged: (fn: (PackId) -> ()) -> () -> (),                       -- pure callback list; returns a disconnect function
+	activePack: () -> PackId,                                        -- always "Base" in M1-G
+	onChanged: (fn: (PackId) -> ()) -> () -> (),                     -- pure callback list; returns a disconnect function
 	text: (key: string, args: { [string]: string | number }?) -> string,
 	style: (styleId: string) -> { name: string, epithet: string },   -- keys style.<id>.name / style.<id>.epithet
 	move: (moveId: string) -> string,                                -- move.<moveId>.name
-	has: (key: string, pack: PackId?) -> boolean,
+	has: (key: string) -> boolean,                                   -- key present in Base
 	missing: () -> { string },                                       -- keys that fell back this session (for tests)
-	resolvePack: (requested: PackId, gate: PackGate) -> (PackId, PackDowngrade?), -- pure runtime guard (Part 8 §8.2.6 truth table)
-	look: (styleId: string, pack: PackId?) -> LookOverride?,         -- one pack only (active unless given), no fallback (Part 8 §8.2.7)
+	_notify: () -> (),                                               -- fires every onChanged callback with activePack()
 }
 ```
 
-Fallback order (MUST): active pack → `Original` → literal `"[" .. key .. "]"`. Each (pack, key) miss logs once: `[ALG][Skin] WARN missing key=<key> pack=<pack>`.
+One pack ships: `Base` (`src/Shared/Skin/Packs/Base.luau`). There is no pack selection: no config key, no ConfigService key, no Dev command and no runtime guard chooses a pack, and `Skin` needs no setup at boot (§2.3.4). `activePack()` and `onChanged` stay in the API so a later locale or seasonal text override can be added without touching callers. In M1-G no live code calls `_notify`; only a future override layer and the Lune test `skin.on_changed` do.
+
+Fallback order (MUST): `Base` → literal `"[" .. key .. "]"`. Each key miss logs once: `[HB][Skin] WARN missing key=<key> pack=Base`.
 
 Interpolation: `{name}` tokens are replaced by `tostring(args.name)`; arguments whose names end in `Id` are first resolved by kind (`styleId` → `Skin.style(v).name`, `flairId` → `Skin.text("flair."..v..".name")`, `mapId` → `Skin.text("map."..v..".name")`, `rarityId` → `Skin.text("rarity."..v..".name")`).
 
 Key namespaces: §0.4 plus Part 2's: `ui.error.*` (`data_load`, `session_ended`, `not_ready`, `rate_limited`, `restricted`, `disabled`, `insufficient`, `stale`, `cap_reached`, `timeout`, `internal`), `ui.notify.*`, `title.<id>`.
 
-Skin is pure (no Roblox globals) and Lune-testable; packs are pure tables. `onChanged` is a plain callback list (no Signal, no Roblox types), so live pack switching stays pure: the server (`ConfigReplicator`) and the client bootstrap re-run `setPack` on `Runtime.changed` (§2.3.4), and screens, HUD and nameplates re-render their text on `Skin.onChanged` (Part 6). Pack content and the publish gate belong to Part 8.
+Skin is pure (no Roblox globals) and Lune-testable; the pack is a pure table. `onChanged` is a plain callback list (no Signal, no Roblox types). Screens, HUD and nameplates still subscribe to `Skin.onChanged` and re-render their text when it fires (Part 6), so a later text override needs no screen changes. Style palettes come only from `StyleDef.palette` (Part 4); the pack holds strings only. Pack content, the string-lint rules and the publish gate belong to Part 8 (the lint mechanism is Part 7 §7.5.1).
 
-**Verify:** Lune `skin.fallback_order`, `skin.canon_locked`, `skin.interpolate_ids`, `skin.missing_logged_once`, `skin.on_changed` (a callback fires once when `setPack` switches Codename → Original, not when the pack is unchanged; the returned disconnect stops further calls), and Part 8's `skin.resolve_pack_matrix` (the seven §8.2.6 rows, incl. `codename_ack_expired`) and `skin.look_active_only`; Part 8 `tools/lint_strings.luau` reports zero missing keys in `Codename` and `Original` for every key referenced in `src/`.
+**Verify:** Lune `skin.fallback_order` (`activePack() == "Base"`; a key missing from `Base` returns `"[key]"`; `Skin/Packs` holds only `Base.luau`), `skin.interpolate_ids`, `skin.missing_logged_once`, `skin.on_changed` (a callback fires once per `_notify()` with `"Base"`; the returned disconnect stops further calls); `tools/lint_strings.luau` (Part 7 §7.5.1 rule L02) reports zero missing keys in `Base` for every key referenced in `src/`.
 
 ---
 
@@ -1882,7 +1905,7 @@ Skin is pure (no Roblox globals) and Lune-testable; packs are pure tables. `onCh
     - Every tunable cites `GDD §x.y` or says `(tuning default)` in `Defaults.luau`, never in code (no magic numbers in logic).
     - TODOs carry a task ID: `-- TODO(T0xx): ...`.
     - No commented-out code.
-12. **Strings and assets.** No player-visible string literals (only `Skin.text` keys) and no raw asset IDs outside `Assets.luau` (Part 8 lints).
+12. **Strings and assets.** No player-visible string literals (only `Skin.text` keys) and no raw asset IDs outside `Assets.luau` (lints `lint_strings` and `check_manifest`: Part 7 §7.5.1–§7.5.2 mechanism, Part 8 rules).
 13. **Logging.** Use `Log` only (no bare `print`/`warn` in `src/**` outside `src/Shared/Log.luau`, `src/DevTools/**` and `**/Vendor/**`; Part 1 lint `raw-print`). Log state transitions, not per-frame events; never log inside the sim.
 14. **Formatting.** StyLua (tabs, column width 120); Selene `std = "roblox"`; luau-lsp analyze with the Rojo sourcemap. CI fails on any warning in `src/` (excluding Vendor).
 
@@ -1920,22 +1943,22 @@ Skin is pure (no Roblox globals) and Lune-testable; packs are pure tables. `onCh
 | `remote_invalid` | Net | Validator failure |
 | `sim_input` / `sim_reject` | CombatService (Part 3) | Impossible input cadence / prediction rejection rate above Part 3 threshold |
 | `wish_anomaly` | WishService (Part 5) | Ledger inconsistency (e.g. pity counter decreasing without a hit) |
-| `economy_velocity` | DataService | Treasure sourced > `Economy.VelocityAlertTreasurePerHour` in a rolling hour |
+| `economy_velocity` | DataService | Shells (`Treasure`) sourced > `Economy.VelocityAlertTreasurePerHour` in a rolling hour |
 | `data_invariant` | DataService | Rollback due to an invariant |
 | `report_received` | ModerationService | `Report.Submit` |
 
 Policy:
-- Signals are counted per player per session and logged as `[ALG][Mod] signal kind=<k> user=<id> count=<n>` (throttled to once per 30 s per kind).
+- Signals are counted per player per session and logged as `[HB][Mod] signal kind=<k> user=<id> count=<n>` (throttled to once per 30 s per kind).
 - At session end ModerationService sends one `Telemetry.custom(player, "mod_summary", total, {CustomField01 = <top kind>, ...})` aggregate (Part 5 maps the custom fields).
 - **No automatic kicks or bans in M1-G** (GDD §18.10: signals are combined and every automated action goes to human review).
 - `Players:BanAsync` is never called in M1-G; ModerationService keeps a dry-run wrapper (Part 5 §5.9.2, OPS-1).
-- One exception to "no automatic kicks": the dev-universe membership check (§2.3.5, Part 8 §8.2.6) kicks non-members of the dev group outside Studio. It is an access rule, not a moderation action.
+- One exception to "no automatic kicks": the dev-universe membership check (§2.3.5, Part 8 §8.2.6) kicks non-members of the dev group outside Studio. It is an access rule, not a moderation action: the dev universe always stays members-only, and only the human publishes a public build (H-11), after the Part 8 publish gate.
 
 #### 2.11.4 Monetization safety
 
-- PRI items (Wish packs, Lucky Jar) are hidden **and** server-rejected when `PolicyFlags.paidRandomRestricted` is true (GDD §8.8) or the kill switch `Features.PaidRandomItems` is false (Part 8).
+- PRI items (Wish packs and the Lucky Stamp pass) are hidden **and** server-rejected when `PolicyFlags.paidRandomRestricted` is true (GDD §8.8) or the kill switch `Features.PaidRandomItems` is false (Part 5).
 - `PolicyGate.fetchAsync` failure → fail-safe restricted.
-- Mock grant path: executes only when `Config.MockPurchases == true` **and** `RunService:IsStudio()`. Otherwise MockPurchases is ignored and `[ALG][Store] ERROR mock_purchases_ignored_outside_studio` is logged once.
+- Mock grant path: executes only when `Config.MockPurchases == true` **and** `RunService:IsStudio()`. Otherwise MockPurchases is ignored and `[HB][Store] ERROR mock_purchases_ignored_outside_studio` is logged once.
 - Receipt grants are idempotent on `PurchaseId` (§2.8.5).
 - Purchased Wishes over the cap are blocked before prompting (GDD §17.2).
 
@@ -1955,14 +1978,13 @@ Policy:
 - `setPolicy(paidRandomRestricted)`
 - `setPass(pass, owned)`
 - `setConfig(section, json)` → `ConfigReplicator.devOverride`
-- `setSkinPack(pack)` → the same pack-guard path as an `ALG_SkinPack` overlay (§2.6.4 step 9; Part 8 §8.2.6)
 - `simulatePurchase(key)`
 - `setTimeOffset(seconds)` → `DataService.now()`
 - `travel(mapId)`
 - `kill()`
 - `snapshotHash()` → returns the canonical hash of the player's data
 
-Other parts append commands through their "New contracts" (e.g. Part 3 `spawnBots`, Part 5 `setWishSeedMaster`, Part 7 `testReport`); the `cmd` enum of `Dev.Command` (§2.7.4 row 19) is this list plus those additions. Every command logs `[ALG][Test] dev cmd=<cmd> user=<id>`.
+Other parts append commands through their "New contracts" (e.g. Part 3 `spawnBots`, Part 5 `setWishSeedMaster`, Part 6 `breakAll` and `setTidePeriod(sec)` (Part 6 §6.13 item 9), Part 7 `testReport`); the `cmd` enum of `Dev.Command` (§2.7.4 row 19) is this list plus those additions. Every command logs `[HB][Test] dev cmd=<cmd> user=<id>`.
 
 **Verify:**
 - Scenario `security.dev_hooks_studio_only` calls the test seam `Net._buildRemotes(false)` and asserts that the returned detached folder has no `Dev.*` child (and that `Net._buildRemotes(true)` has `Dev.Command`); `Net._buildRemotes(true)` contains no `classicOnly` remote.
@@ -1975,22 +1997,22 @@ Other parts append commands through their "New contracts" (e.g. Part 3 `spawnBot
 ### 2.12 New contracts introduced
 
 1. **Init orders** (server 15, client 10) and the rule "require only earlier modules; reverse communication via Signals" (§2.3.3). `Main.server` errors if a Services module is missing from ORDER.
-2. **Client double-run guard** at the top of `Main.client.luau` (§2.3.4); it is the only client entry, and `.local.luau` stays forbidden (Part 1 §1.2.5). **Boot readiness signals** (Part 1 C2): `ReplicatedStorage.Runtime` attribute `ServerReady = true` after `Net.server.open()`, client-local `LocalPlayer` attribute `AlgClientReady = true` after every controller's `start()`, log lines `[ALG][BOOT] server ready …` / `[ALG][BOOT] client ready …`; cross-root requires in the `@game/` form per Part 1 C1 (T006).
-3. **Service/controller API signatures** in §2.3.5 and §2.3.7, notably `CombatService.ko/damage/lifeEnded/spawned/spawnAsync/onPlayerRemoving/canTravel`, `StyleService.resolveForSpawn/grantInTx/equippedChanged`, `ConfigReplicator.pin/unpin/waitReady/devOverride`, `PlayerService.trove/isReady/travelAsync`, `UiController.state/changed`. PlayerService also logs `[ALG][Player] max_players=<n>` (and `WARN max_players=<n>` when ≠ 20) outside Studio, runs the dev-universe membership check on join (Part 8 §8.2.6) and sets `player.DevEnableMouseLock = false` at join (Part 6 §6.13 item 6(a)). SettingsController is the single owner of key rebinds (§2.3.7 rule 6).
-4. **Types** in §2.4: all meta, net, telemetry and cross-part payload types; frozen ID lists. `Types.Config = Defaults.Config`. A **Combat section** hosted in `Types.luau` with content owned by Part 3 §3.4.1 (Core state types, `Status`/`StatusMods`, `RosterEntry`/`ServerData`/`Movers`/`RewindRing`, constants `Types.CombatS/SET/IN/CF/FLG`) keeps the Core require graph acyclic (Part 3 §3.4.2 order: leaves → `Fsm` → `Damage`). Part 5 §5.12 item 4 fields are included (`WishStats.paidEscrow`, `PurchaseState.weekIndex/weekRobux`, `WishResult.firstReveal`, the `OddsView` additions, `StoreView.spentThisWeekRobux`); `KoEvent.assistBots`.
-5. **Player attributes** (§2.5.2): `DataLoaded, MapId, EquippedStyle, NextStyle, Flair, Variant, MasteryLevel, Level, Prestige, Title, Rookie, CharacterLook, OwnLook, ShowStyleGear, OosonaCode, Vip, CombatCfg, PerfSampled` (18). Initial `MapId` = `"candy_kingdom"` if `Workspace.Map.CandyKingdom` exists, else `"arena_duel_m0"`. Client-local (never replicated): `AlgClientReady`. Bot Model attributes `IsBot, BotId, EquippedStyle, Flair, Level, CombatCfg`, set before parenting. Part 3 HRP attribute budget ≤ 56.
-6. **New config sections** `Net`, `Data`, `Features` (§2.6.2), with `Features` keys `Wish, Shop, Store, Appearance, Training, Bots, WorldEvent, Reports, PaidRandomItems, CodenameLooks, DisabledStyles, DisabledMoves, LoadTestBots, LoadTestMapId, LoadTestGameIds`. Draft values for `Shop`, `Economy`, `Progression` (final values: Part 5 §5.10, which wins where they differ); `Appearance` is filled from Part 5 §5.10 (merged with Part 6 keys; Part 2 validation reads `OosonaSpecies, OosonaFaces, OosonaHats, OosonaOutfits`); minimum keys for `Telemetry` (`Enabled, PerfSampleRate, BudgetFraction, RingSize, EchoInStudio`). Placeholder for `Kits` (Part 4); `Ip` (Part 8) = `{DevUniverseIds, DevGroupId = 0, LicenseRef = "", PublicAckExpiresUnix = 0}`.
-7. **ConfigService key names** `ALG_<Section>` (JSON, incl. `ALG_Kits`, pinned with `CombatCfg`) and `ALG_SkinPack` (string); the overridable-section list; the not-overridable list (`Version, NetModel, LicenseConfirmed, PublicCodenameAcknowledged, MockPurchases, Data, Ip`); JSON-safety rule for all config (vectors as arrays, colors as hex).
-8. **Runtime publishing**: `ReplicatedStorage.Runtime.Config` attributes `Version`, `Hash` (FNV-1a 32 over the published JSON), `Parts` (chunking > 190,000 chars); `ReplicatedStorage.Runtime.History.v<n>` for pinned combat versions; `Runtime.at(version)`; Player attribute `CombatCfg`. The pinned snapshot gives the sim `.Combat` (Core), `.Kits` + kit set (behaviors) and `.Features.DisabledMoves` (per-move kill switch) for the whole life (§2.6.6).
-9. **Schema utilities**: `Schema.t` combinators (shared by config and Net), `canonical`, `hash32`, `merge`, `deepFreeze`, PlayerData template/normalize/migrate, Oosona codec.
-10. **Remote catalog** (§2.7.4), envelope `Response<T>`, `ErrCode` list, reserved domains `Combat.*` (Part 3) and `Fx.*` (Part 6). `RemoteSpec.classicOnly` (Classic-only remotes, e.g. C2S unreliable `Combat.Input`). `Report.Submit` accepts negative (Studio) user IDs; `Telemetry.Perf` is accepted only from senders with `PerfSampled`; `Settings.Set` binds keys `binds.<Action>.<Device>`; `World.Travel` accepts `arena_duel_m0` when the duel arena exists. MessagingService topic `ALG_Announce_v1`, gated by `Wish.Announce.CrossServerEnabled` (false in M1-G; Part 5 §5.2.13).
+2. **Client double-run guard** at the top of `Main.client.luau` (§2.3.4); it is the only client entry, and `.local.luau` stays forbidden (Part 1 §1.2.5). **Boot readiness signals** (Part 1 C2): `ReplicatedStorage.Runtime` attribute `ServerReady = true` after `Net.server.open()`, client-local `LocalPlayer` attribute `HbClientReady = true` after every controller's `start()`, log lines `[HB][BOOT] server ready …` / `[HB][BOOT] client ready …`; cross-root requires in the `@game/` form per Part 1 C1 (T006).
+3. **Service/controller API signatures** in §2.3.5 and §2.3.7, notably `CombatService.ko/damage/lifeEnded/spawned/spawnAsync/onPlayerRemoving/canTravel`, `StyleService.resolveForSpawn/grantInTx/equippedChanged`, `ConfigReplicator.pin/unpin/waitReady/devOverride`, `PlayerService.trove/isReady/travelAsync`, `UiController.state/changed`. PlayerService also logs `[HB][Player] max_players=<n>` (and `WARN max_players=<n>` when ≠ 20) outside Studio, runs the dev-universe membership check on join (Part 8 §8.2.6) and sets `player.DevEnableMouseLock = false` at join (Part 6 §6.13 item 6(a)). SettingsController is the single owner of key rebinds (§2.3.7 rule 6).
+4. **Types** in §2.4: all meta, net, telemetry and cross-part payload types; frozen ID lists (`STYLE_IDS` in GDD §7.3.1–§7.3.18 order, never reordered; `STARTER_STYLES`, `IMPLEMENTED_M0`, `IMPLEMENTED_M1G`; `FLAIR_ORDER` `plain, glossy, gilt, seaglass, pearl, glowtide, misprint`). `Types.Config = Defaults.Config`. A **Combat section** hosted in `Types.luau` with content owned by Part 3 §3.4.1 (Core state types, `Status`/`StatusMods`, `RosterEntry`/`ServerData`/`Movers`/`RewindRing`, constants `Types.CombatS/SET/IN/CF/FLG`) keeps the Core require graph acyclic (Part 3 §3.4.2 order: leaves → `Fsm` → `Damage`). Part 5 §5.12 item 4 fields are included (`WishStats.paidEscrow`, `PurchaseState.weekIndex/weekRobux`, `WishResult.firstReveal`, the `OddsView` additions, `StoreView.spentThisWeekRobux`); `KoEvent.assistBots`.
+5. **Player attributes** (§2.5.2): `DataLoaded, MapId, EquippedStyle, NextStyle, Flair, Variant, MasteryLevel, Level, Prestige, Title, Rookie, CharacterLook, OwnLook, ShowStyleGear, PostcardCode, Vip, CombatCfg, PerfSampled` (18). `CharacterLook` (the Full Uniform) defaults to `false`; `Flair` defaults to `"plain"`. Initial `MapId` = `"hub"` if `Workspace.Map.Hub` exists, else `"arena_duel_m0"`. Client-local (never replicated): `HbClientReady`. Bot Model attributes `IsBot, BotId, EquippedStyle, Flair, Level, CombatCfg`, set before parenting. Part 3 HRP attribute budget ≤ 56.
+6. **New config sections** `Net`, `Data`, `Features` (§2.6.2), with `Features` keys `Wish, Shop, Store, Appearance, Training, Bots, WorldEvent, Reports, PaidRandomItems, DisabledStyles, DisabledMoves, LoadTestBots, LoadTestMapId, LoadTestGameIds`. Draft values for `Shop`, `Economy`, `Progression` (final values: Part 5 §5.10, which wins where they differ); `Appearance` is filled from Part 5 §5.10 (merged with Part 6 keys; Part 2 validation reads `PostcardStyles` (body-style records `{id}`: `classic`, `round`, `tall`, `tiny`), `PostcardSkins` (skin palette), `PostcardFaces, PostcardHats, PostcardOutfits`); minimum keys for `Telemetry` (`Enabled, PerfSampleRate, BudgetFraction, RingSize, EchoInStudio`). Placeholder for `Kits` (Part 4); `Ip` (Part 8) = `{DevUniverseIds, DevGroupId = 0}`. Config has no pack selector and no look switch (§0.9).
+7. **ConfigService key names** `HB_<Section>` (JSON, incl. `HB_Kits`, pinned with `CombatCfg`); the overridable-section list; the not-overridable list (`Version, NetModel, MockPurchases, Data, Ip`); JSON-safety rule for all config (vectors as arrays, colors as hex).
+8. **Runtime publishing**: `ReplicatedStorage.Runtime.Config` attributes `Version`, `Hash` (FNV-1a 32 over the published JSON), `Parts` (chunking > 190,000 chars); `ReplicatedStorage.Runtime.History.v<n>` for pinned combat versions; `Runtime.at(version)`; Player attribute `CombatCfg`. `ReplicatedStorage.Runtime` also hosts Part 5's attribute `CosmicArrivalUntil` (WishService only, §2.5.1). The pinned snapshot gives the sim `.Combat` (Core), `.Kits` + kit set (behaviors) and `.Features.DisabledMoves` (per-move kill switch) for the whole life (§2.6.6).
+9. **Schema utilities**: `Schema.t` combinators (shared by config and Net), `canonical`, `hash32`, `merge`, `deepFreeze`, PlayerData template/normalize/migrate, Postcard codec (`p1.<body>.<skin>.<RRGGBB>.<face>.<hat>.<outfit>`, ≤ 30 chars; `PostcardSpec = {v, body, skin, color, face, hat, outfit}`).
+10. **Remote catalog** (§2.7.4), envelope `Response<T>`, `ErrCode` list, reserved domains `Combat.*` (Part 3) and `Fx.*` (Part 6). `RemoteSpec.classicOnly` (Classic-only remotes, e.g. C2S unreliable `Combat.Input`). `Report.Submit` accepts negative (Studio) user IDs; `Telemetry.Perf` is accepted only from senders with `PerfSampled`; `Settings.Set` binds keys `binds.<Action>.<Device>`; `World.Travel` accepts `arena_duel_m0` when the duel arena exists. MessagingService topic `HB_Announce_v1`, gated by `Wish.Announce.CrossServerEnabled` (false in M1-G; Part 5 §5.2.13).
 11. **DataService tx model**: one atomic `update` per economic operation; `tx.credit/debit/canAcceptWishes` with `CreditOpts {purchased?, sku?}` and `DebitOpts {sku?}` (sku → `TelCurrencyFlow.sku`); a yielded mutator is stopped with `task.cancel`; overflow conversion; `beforeRelease`; delta coalescing at 4 Hz; Studio integrity check; `DataService.now()` as the meta clock (Studio offset). Template fields `wishStats.paidEscrow`, `purchases.weekIndex/weekRobux` and normalize step 8.
 12. **Ledger codec contract** for Part 5: `Pity.encodeLedger/decodeLedger` in `Shared/Wish/Pity.luau`, compact base-36 format v1 (§2.8.4), ≤ 80 chars per entry. **Variant IDs** are local per style, `v1`..`v9` (`Types.VARIANT_IDS`); Part 4/8 name variants with these IDs.
-13. **Test seams**: `Net._buildRemotes(isStudio, classic?)`, `Net.server.setReadyCheck`, `Net.server.setViolationSink`, `DataService._readStored(userId)` (Studio only), `PlayerService._leaveTest(player)` (Studio only; `player.leave_releases`), and `MonetizationService._isStudio` (overridable in Studio tests only). Hosted for Part 8 (§8.2.6): `PlayerService._devAccessCheck(player, opts)` and `ConfigReplicator._devContextOverride`, the latter used by ConfigReplicator's pack guard (`applyPackGuard`, `GUARD_RECHECK_SEC = 3600`, `DevCmd setSkinPack`; §2.6.4 step 9).
-14. **`Types.DataSection`** (persisted tables passed to `DataService.update`) vs `Types.Section` (owner PrivateView sections); `Types.SETTING_KEYS` (incl. `holdToToggleRun`, `quietBarks`, `damageNumbers`; no `title` key in M1-G).
-15. **Shards are one global currency** (`currencies.Shards`), spendable on any owned style's mastery up to M20 (see §2.14 item 8).
+13. **Test seams**: `Net._buildRemotes(isStudio, classic?)`, `Net.server.setReadyCheck`, `Net.server.setViolationSink`, `DataService._readStored(userId)` (Studio only), `PlayerService._leaveTest(player)` (Studio only; `player.leave_releases`), and `MonetizationService._isStudio` (overridable in Studio tests only). Hosted for Part 8 (§8.2.6): `PlayerService._devAccessCheck(player, opts)` (dev-universe members-only check). `Skin._notify()` (pure; Lune `skin.on_changed`).
+14. **`Types.DataSection`** (persisted tables passed to `DataService.update`) vs `Types.Section` (owner PrivateView sections); `Types.SETTING_KEYS` (incl. `holdToToggleRun`, `quietBarks`, `damageNumbers`, `misprintCalm`; no `title` key in M1-G). Settings defaults: `characterLook = false` (Full Uniform Off), `showStyleGear = true` (Charm Gear), `ownLook = "Postcard"` (Postcard Look).
+15. **Stamps are one global currency** (internal `currencies.Shards`), spendable on any owned style's mastery up to M20 (see §2.14 item 8).
 16. **Assets**: key regex, `tpl:` ID scheme, `FALLBACK`, `registerTemp`/`registerStudioClips`, `Assets.products[0]` for unpublished Studio.
-17. **Skin**: fallback order active → Original → `[key]`; Canon without license → Original; `ui.error.<ErrCode>` keys; `*Id` argument resolution; `Skin.activePack()` and `Skin.onChanged(fn) -> disconnect` for live pack switching; Part 8's `Skin.resolvePack(requested, gate)` (`PackGate` incl. `ackValid`; `PackDowngrade` incl. `codename_ack_expired`) and `Skin.look(styleId, pack?)` (`LookOverride`, optional `Pack.looks`) are part of the same module API.
+17. **Skin**: one pack, `Base` (`Skin/Packs/Base.luau`; `PackId = "Base"`); fallback order `Base` → `[key]`; no pack selection anywhere (no config key, ConfigService key, Dev command or runtime guard); `ui.error.<ErrCode>` keys; `*Id` argument resolution; `Skin.activePack()` and `Skin.onChanged(fn) -> disconnect` stay for later locale or seasonal text overrides; the pack holds strings only (palettes come from `StyleDef.palette`).
 18. **Mock purchases honoured only in Studio** (§2.11.4).
 19. **Log format**: `WARN `/`ERROR ` message prefixes; `key=value` data rendering; tag lists (§2.3.6): operational UPPERCASE `BOOT, TEST, BUILD, CHECK, LINT, GATE, TEL`; domain PascalCase (no `Boot`).
 20. **New Lune specs** (Part 7 runs them):
@@ -2004,7 +2026,7 @@ Other parts append commands through their "New contracts" (e.g. Part 3 `spawnBot
     - `data.load_mock`, `data.update_rollback_on_error`, `data.yield_in_mutator_rejected`, `data.overflow_converts`, `data.rejoin_persists`, `data.out_of_band_mutation_detected`, `data.release_on_leave`, `data.delta_seq_monotonic`
     - `attrs.player_public_set`
     - `security.no_private_attrs`, `security.dev_hooks_studio_only`, `security.pri_server_rejects`, `security.mock_ignored_live`
-22. **`ReplicatedStorage.Looks`** (builder `BuildTemplates`) for client-rendered cosmetic templates; `Workspace.Map`, `Workspace.Sim` and `Workspace.Bots` containers created by `BuildAll`'s containers step (`Util.ensureContainer`, never pruned or reset); builder call order = Part 1 §1.6.6 `ORDER` (TASKS C6).
+22. **`ReplicatedStorage.Looks`** (builder `BuildTemplates`) for client-rendered cosmetic templates (attribute `Silhouette` only for capture staging, Part 6 §6.8.6); `Workspace.Map`, `Workspace.Sim` and `Workspace.Bots` containers created by `BuildAll`'s containers step (`Util.ensureContainer`, never pruned or reset); builder call order = Part 1 §1.6.6 `ORDER` (TASKS C6).
 23. **Load-purity list** (§2.10 item 2): `Styles/init.luau` must be loadable in Lune and expose `Styles.get(id)`/`Styles.all()` including 12 stub `StyleDef`s with `implemented = false` (Part 4).
 24. **Human-set properties** (§2.2 table): Max Players 20 (H-01), `StreamingIntegrityMode`, `EnableSLIMAvatars`, `MeshStreamingAndImprovedLods`, `ClientAnimatorThrottling`, `Terrain.Decoration` (H-04), avatar type R15 (H-05). `Verify` reads only `StreamingEnabled`.
 25. **Size exceptions** (§2.10 item 5): `Types.luau` ≤ 1,200 lines, `Sim/Adapter.luau` ≤ 1,600 lines.
@@ -2013,21 +2035,21 @@ Other parts append commands through their "New contracts" (e.g. Part 3 `spawnBot
 
 1. **`Main.client.luau` in `StarterPlayerScripts` runs twice.** Script Sync maps `*.client.luau` to a Script with RunContext Client, and the docs state that such a script in a Starter container runs as the original **and** the copy ("which isn't desirable") [Docs `scripting/locations.md`]. Rojo maps `.client.luau` to a LocalScript by default, so the two tools differ. Following the spine, this part adds a mandatory guard (§2.3.4). Recommended spine fix: move the client entry to `ReplicatedStorage` per the official recommendation, or name it `Main.local.luau` (Script Sync → LocalScript). Until the spine changes, `.local.luau` stays forbidden (Part 1 §1.2.5); the guard is the mechanism.
 2. **`--!strict` in every file vs vendored code.** Upstream ProfileStore, Signal and Shake have no `--!strict` line (Trove has). Editing vendored files breaks "byte-for-byte upstream". This part exempts `Vendor/*` and excludes them from analysis (§2.10 item 10).
-3. **Client-visible cosmetic templates.** Part 0 puts "kit props" in `ServerStorage.Templates`, which clients cannot see. Viewer-local appearance (`OthersAppearance`) forces client-side rendering, so Style Gear props, Oosona parts and graybox character-look models need a replicated home. This part adds `ReplicatedStorage.Looks`; `ServerStorage.Templates` keeps server-only rigs.
+3. **Client-visible cosmetic templates** (resolved: §0.3 now lists `ReplicatedStorage.Looks`; kept for the rationale). §0.3 put Charm Gear props and summon models in `ServerStorage.Templates`, which clients cannot see. Viewer-local appearance (`OthersAppearance`) forces client-side rendering, so Charm Gear props, summon models, Postcard Look parts and graybox Full Uniform models need a replicated home. This part adds `ReplicatedStorage.Looks`; `ServerStorage.Templates` keeps server-only rigs.
 4. **`ReplicatedStorage.Runtime` needs a `History` folder** so late-joining clients can decode combat config versions pinned by living characters (apply-at-boundary rule). This is an extension, not a contradiction.
-5. **Deprecated list incomplete.** `Player:LoadCharacter` is deprecated in favour of `LoadCharacterAsync` [Docs `Player.yaml`]; add it to §0.4.
+5. **Deprecated list incomplete** (resolved: §0.4 now lists `Player:LoadCharacter`). `Player:LoadCharacter` is deprecated in favour of `LoadCharacterAsync` [Docs `Player.yaml`].
 6. **Config size.** A single StringValue holds ≤ 200,000 characters [Docs `StringValue.yaml`]. This part adds `Parts` chunking above 190,000.
 
 ### 2.14 Open questions / spikes
 
-1. **ConfigService in Studio** (P0 spike): does `GetConfigAsync` work in an unpublished place (expected: throws → Defaults)? For JSON-typed configs, does `ConfigSnapshot:GetValue` return a Luau table or a JSON string? Is `_` allowed in key names (`ALG_Combat`)? Does `SetTestingValue` work in Studio play sessions of the dev universe?
+1. **ConfigService in Studio** (P0 spike): does `GetConfigAsync` work in an unpublished place (expected: throws → Defaults)? For JSON-typed configs, does `ConfigSnapshot:GetValue` return a Luau table or a JSON string? Is `_` allowed in key names (`HB_Combat`)? Does `SetTestingValue` work in Studio play sessions of the dev universe?
 2. **Require-by-string** (P0 spike; Part 1 S11, task T006): confirm `./`, `../`, `@self/` resolve identically in Studio (Script Sync), Lune (installed version) and luau-lsp (with sourcemap), and that `@game/` works in Studio and luau-lsp. Fallback: instance-path requires across roots (§2.10 item 2, one `OPS:` commit), with Part 7's Lune shim providing `script`.
 3. **RunContext Client double-run** (P0 spike): confirm with Script Sync that the guard yields exactly one `client ready` line.
 4. **`PolicyService:GetPolicyInfoForPlayerAsync` in Studio**: what does it return? The fail-safe plus `Dev.Command setPolicy` cover tests regardless.
 5. **`AnimationClipProvider:RegisterAnimationClip` across peers**: is the hash ID identical on server and client for the same KeyframeSequence? It matters for Server Authority animation playback in Studio.
 6. **Bot Model attributes set before parenting** under Server Authority: confirm no rollback/misprediction (§2.5.4).
 7. **ProfileStore `Cancel` typing**: confirm whether luau-lsp flags `{Cancel = ...}` against ProfileStore's exported `{Steal: boolean?}` param type (the `:: any` cast is the fallback).
-8. **Shards design interpretation**: the GDD calls them "Style Shards" but lists them as one currency (§17.2). This part makes them global. If design wants per-style shards, change `StyleRecord` (add `shards`) and `Mastery.SpendShards` before P7; the remote shape is unchanged.
+8. **Stamps design interpretation** (internal `Shards`): GDD §17.2 lists Stamps as one currency, so this part makes them global. If design wants per-style Stamps, change `StyleRecord` (add `shards`) and `Mastery.SpendShards` before P7; the remote shape is unchanged.
 9. **Mastery XP curve** (`400 + 80·m`) is a tuning default; the GDD gives no curve. Needs design sign-off.
-10. **MessagingService in M1-G** (single place): resolved — `ALG_Announce_v1` is implemented but gated by `Wish.Announce.CrossServerEnabled = false` in M1-G and never runs in Studio (Part 5 §5.2.13).
+10. **MessagingService in M1-G** (single place): resolved — `HB_Announce_v1` is implemented but gated by `Wish.Announce.CrossServerEnabled = false` in M1-G and never runs in Studio (Part 5 §5.2.13).
 11. **`StudioTestService:AddPlayers` and UserIds**: does a client added after another client's `LeaveTest` reuse the departed test UserId? The docs only say it adds new client DataModels. Until the Part 7 spike §7.11 T7-S16 (TASKS ADD-1) shows reuse, `data.rejoin_persists` checks the stored profile through `DataService._readStored` instead of a true rejoin (§2.8.7).

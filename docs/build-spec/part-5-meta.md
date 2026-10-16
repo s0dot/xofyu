@@ -2,7 +2,7 @@
 
 ## 5. Meta systems
 
-This part specifies every non-combat system of M1-G: style ownership and equip rules, the Wish system (odds, pity, Flairs, ledger), PolicyService gating, Choose Goose's Shop, the economy and progression tracks, mock-first monetization, the appearance data model (Character Look toggle), the telemetry wrapper and moderation basics.
+This part specifies every non-combat system of M1-G: style (Charm) ownership and equip rules, the Wish system (odds, pity, Finishes, ledger, the stamp-first reveal data and the Cosmic Arrival event), PolicyService gating, Sundry's Rack (the shop), the economy and progression tracks, mock-first monetization, the appearance data model (the Full Uniform toggle and the Postcard Look), the telemetry wrapper and moderation basics.
 
 It builds on Part 2's contracts and does not restate them: service APIs (§2.3.5), `Types.luau` (§2.4), attribute homes (§2.5), config publishing (§2.6), the remote catalog (§2.7.4), the DataService transaction model (§2.8.5) and the security model (§2.11). Where this part **adds** to a Part 2 shape, it says so and lists the addition in §5.12.
 
@@ -13,11 +13,11 @@ It builds on Part 2's contracts and does not restate them: service APIs (§2.3.5
 | Quantity | Unit | Notes |
 |---|---|---|
 | Odds | integer **ppm** (parts per million) | 10,000 ppm = 1%. Every odds table the server rolls from sums to exactly 1,000,000. |
-| Display odds | percent | ppm / 10,000. Tiers and Flairs are shown with 4 decimals; per-style odds with 3 decimals (GDD §8.3 style). |
+| Display odds | percent | ppm / 10,000. Tiers and Finishes are shown with 4 decimals; per-style odds with 3 decimals (GDD §8.3 style). |
 | Time (meta) | unix seconds from `DataService.now()` | `workspace:GetServerTimeNow()` plus the Studio dev offset (§2.8.5). Pure modules receive `now` as a parameter. |
 | Day, week, period indices | integers | `Pity.dayIndex/weekIndex/periodIndex` (§5.5.8). All resets are UTC. |
 | Distances | studs | — |
-| Currencies | integers ≥ 0 | `Treasure`, `Wishes`, `Shards`, `CosmicSparks` (`Types.CurrencyId`) |
+| Currencies | integers ≥ 0 | `Treasure`, `Wishes`, `Shards`, `CosmicSparks` (`Types.CurrencyId`); players see them as Shells, Wishes, Stamps and Messages in a Bottle |
 
 **Rules (MUST).**
 1. Every economic operation is **one** `DataService.update` call that checks, debits and grants together (§2.8.5). No yields inside mutators.
@@ -25,12 +25,31 @@ It builds on Part 2's contracts and does not restate them: service APIs (§2.3.5
 3. The client never supplies a seed, an odds value, a price, a counter or an outcome. C2S payloads carry only intents (`count`, `slot`, `styleId`…), validated per §2.7.4.
 4. Every tunable is in `Defaults.luau` (§5.10) with a `GDD §x.y` or `(tuning default)` comment.
 5. Log tags used by this part: `Style`, `Wish`, `Shop`, `Store`, `Policy`, `Progress`, `Appearance`, `Tel`, `Mod` (Part 2 list) plus **`TEL`** for the Studio analytics echo (GDD §18.10 wording; new, §5.12).
+6. Prose uses the **player-facing names**; code, config, remotes, log fields and test IDs keep the internal identifiers below. Every player-visible string comes from a Skin key (§5.12 item 14).
+
+**Names used in this part.**
+
+| Internal identifier (code, config, logs) | Player-facing name |
+|---|---|
+| a style (`StyleId`) | a **Charm** (in the fiction a souvenir; its power is a knack). "Fighting Style" is fine in UI help text |
+| `Treasure` (earn-only currency) | **Shells** |
+| `Shards` (duplicate refund) | **Stamps** |
+| `CosmicSparks` (10 = one Cosmic craft) | **Messages in a Bottle** |
+| `Flair` / `flair` (data field) | **Finish**: Plain, Glossy, Gilt, Sea-Glass, Pearl, Glowtide, Misprint |
+| `Variant` / `variantId` | **Off-Duty Look** |
+| a Wish; `Wish.Make{count = 10}`; pity | a **Wish** (a postcard posted through Pip-Pip); a **Mailbag**; **Guaranteed Delivery** |
+| passes `vip` / `quick_wish` / `lucky_jar` | **First Class** / **Quick Post** / **Lucky Stamp** |
+| `CharacterLook` / `ShowStyleGear` / `OwnLook = "Postcard"` | **Full Uniform** (default Off) / **Charm Gear** / **Postcard Look** |
+| totem (`Totems`, `TotemRangeStuds`) / the Part 6 style wheel | **Charm Rack** / **Charm Ring** |
+| `styleMoment` / Awakening (`Meter`) / Realm / Finale | **Snapshot** / **Peak** / **Getaway** / **Send-off** |
+| `training` (map key) | **The Staff Room** |
+| battle pass / subscription | **Holiday Pass** / **Deckchair Club** (future hooks) |
 
 **Files owned by this part.**
 
 | File | Realm | Pure | Responsibility |
 |---|---|---|---|
-| `src/Shared/Wish/Odds.luau` | shared | yes | Deterministic stream, tier/Flair tables, roll, effective-odds view, odds hash, shop rotation, free rotation, daily-quest pick |
+| `src/Shared/Wish/Odds.luau` | shared | yes | Deterministic stream, tier/Finish tables, roll, effective-odds view, odds hash, shop rotation, free rotation, daily-quest pick |
 | `src/Shared/Wish/Pity.luau` | shared | yes | Pity rules, ledger codec (§2.8.4 contract), base-36, account/mastery curves, UTC indices, anti-farm multipliers |
 | `src/ServerScriptService/Services/StyleService.luau` | server | no | §5.1 (Part 4 owns `Shared/Styles`; this service owns ownership/equip) |
 | `.../WishService.luau` | server | no | §5.2 |
@@ -47,12 +66,12 @@ Both pure modules obey the load-purity rule (§2.10 item 2): they may require on
 
 ---
 
-### 5.1 StyleService: ownership, equip rules, free rotation, Training trial
+### 5.1 StyleService: ownership, equip rules, free rotation, Staff Room trial
 
 #### 5.1.1 Ownership
 
 - A style is **owned** iff `data.styles[styleId] ~= nil`. Records follow `Types.StyleRecord` (§2.4).
-- `hero` and `stretch` are owned by every account (`source = "starter"`). The template and `Schema.normalizePlayerData` guarantee it (§2.8.3; §0.10).
+- `attendant` and `lifeguard` are owned by every account (`source = "starter"`). The template and `Schema.normalizePlayerData` guarantee it (§2.8.3; §0.10).
 - Styles are granted only through `StyleService.grantInTx(data, styleId, source, now)`, a **pure** function called inside an `update` mutator by WishService (`"wish"`, `"cosmic_craft"`), ShopService (`"shop"`) or TestHarness (`"dev"`). It returns `true` if the style became newly owned; it never overwrites an existing record (GDD §8.2, "rolls add, never replace").
 - Ownership is account-bound. There is no trading (GDD §16.2); `PolicyFlags.paidTradingAllowed` is stored but unused in M1-G.
 - Styles with `implemented = false` can be owned (collectible) but not equipped (§0.10). The UI shows the "In development" badge from `Styles.get(id).implemented`.
@@ -67,12 +86,12 @@ Both pure modules obey the load-purity rule (§2.10 item 2): they may require on
 | 2 | `Styles.isPlayable(styleId, Runtime.get())` (Part 4 §4.1.2, the one equip gate). When false: `Styles.get(styleId).implemented == false` → `not_implemented`; otherwise (the kit is in Part 4's runtime-disabled set because it failed validation outside Studio, or `styleId ∈ Runtime.get().Features.DisabledStyles`) → `disabled` | `not_implemented` / `disabled` |
 | 3 | Owned, **or** `styleId ∈ StyleService.freeRotation(now)`, **or** (`player:GetAttribute("MapId") == "training"` and `Progression.TrainingTrialAllStyles`) | `not_owned` |
 
-Acceptance: a request for an unimplemented owned style returns `{ok=false, err="not_implemented"}`; an owned style listed in `Features.DisabledStyles` returns `disabled`; an unowned style outside the rotation and outside Training returns `not_owned`. StyleService never checks `implemented` or `DisabledStyles` on its own: every equip, rotation and trial decision goes through `Styles.isPlayable`.
+Acceptance: a request for an unimplemented owned style returns `{ok=false, err="not_implemented"}`; an owned style listed in `Features.DisabledStyles` returns `disabled`; an unowned style outside the rotation and outside the Staff Room returns `not_owned`. StyleService never checks `implemented` or `DisabledStyles` on its own: every equip, rotation and trial decision goes through `Styles.isPlayable`.
 
 #### 5.1.3 When an equip applies
 
-- **Default: next respawn.** An accepted `Style.Equip` sets `NextStyle = styleId` (Player attribute) and returns `{nextStyle = styleId, applyAt = "respawn"}`. The Style Wheel opens on death with a 3 s auto-confirm (GDD §15.4; Part 6).
-- **At a Style Totem: now.** GDD §4.3 allows switching mid-life at the Style Totem in each spawn hub. The server decides "totem" from position, not from the payload:
+- **Default: next respawn.** An accepted `Style.Equip` sets `NextStyle = styleId` (Player attribute) and returns `{nextStyle = styleId, applyAt = "respawn"}`. The Charm Ring opens on death with a 3 s auto-confirm (GDD §15.4; Part 6).
+- **At a Charm Rack: now.** GDD §4.3 allows switching mid-life at the Charm Rack in each spawn hub (internally a totem: builder folder `Totems`). The server decides "totem" from position, not from the payload:
   1. `StyleService.start()` caches totem positions per map: for every Model `m` under `Workspace.Map` and `Workspace.Arena` with attribute `MapId`, each direct child `c` of `m:FindFirstChild("Totems")` contributes `c:GetPivot().Position` (`PVInstance:GetPivot` [Docs]). Part 6's builders place totems there (§2.2 tree).
   2. On `Style.Equip`, if the player's `HumanoidRootPart` is within `Progression.TotemRangeStuds` (12, tuning default) of a cached totem of the player's `MapId`, **and** the injected swap gate returns true, the request is accepted with `applyAt = "now"`: StyleService sets `NextStyle` and fires `StyleService.swapNow(player)`.
   3. The swap gate is installed by PlayerService in its `init()`: `StyleService.setSwapGate(function(p) return CombatService.canTravel(p) end)`. This follows the `Net.setReadyCheck` pattern, because StyleService (#7) may not require CombatService (#9) (§2.3.3). Until a gate is set, the gate returns false (applyAt falls back to `"respawn"`).
@@ -86,12 +105,12 @@ function StyleService.resolveForSpawn(player: Player): Types.StyleId
 	local data = DataService.get(player)
 	local candidate: string = player:GetAttribute("NextStyle") or ""
 	if candidate == "" then
-		candidate = sessionPick[player] or (if data then data.equipped.styleId else "hero")
+		candidate = sessionPick[player] or (if data then data.equipped.styleId else "attendant")
 	end
 	local ok = StyleService.canEquip(player, candidate)          -- re-validated: rotation may have ended, map may have changed
 	local styleId: Types.StyleId = if ok then candidate :: Types.StyleId
 		elseif data and StyleService.canEquip(player, data.equipped.styleId) then data.equipped.styleId
-		else "hero"
+		else "attendant"
 	if data and data.styles[styleId] ~= nil and data.equipped.styleId ~= styleId then
 		DataService.update(player, { "equipped" }, "equip", function(d) d.equipped.styleId = styleId end)
 	end
@@ -99,7 +118,7 @@ function StyleService.resolveForSpawn(player: Player): Types.StyleId
 	local prev = player:GetAttribute("EquippedStyle")
 	local rec = data and data.styles[styleId]
 	player:SetAttribute("EquippedStyle", styleId)
-	player:SetAttribute("Flair", if rec then rec.equippedFlair else "standard")
+	player:SetAttribute("Flair", if rec then rec.equippedFlair else "plain")
 	player:SetAttribute("Variant", if rec then rec.equippedVariant else "")
 	player:SetAttribute("NextStyle", "")
 	StyleService.lifeStyleResolved:Fire(player, styleId)          -- every spawn; handlers MUST NOT yield
@@ -113,34 +132,34 @@ end
 
 #### 5.1.4 Weekly free rotation (GDD §8.1 goal 2)
 
-- **Candidates:** pool styles for which `Styles.isPlayable(id, Runtime.get())` is true and whose rarity ∉ {`starter`, `cosmic`}, in `Types.STYLE_IDS` order. In M1-G these are `monarch`, `rocker`, `frost` and `decay`. A style removed by a kill switch (`Features.DisabledStyles` or Part 4's runtime-disabled set) drops out of the candidate list, which can change that week's draw; this is accepted because the kill switch is an emergency tool.
-- **Ratio note (DES-6, §5.14):** with 4 candidates and `Count = 3` (GDD §8.1, kept), 3 of the 4 rollable implemented styles (75 %) are free every week in M1-G, against the GDD's 3 of 16 at full roster. This weakens the Wish/Shop chase the slice demonstrates; the owner keeps it or disables the rotation through `ALG_Progression` (`{"FreeRotation":{"Enabled":false}}`). The default is keep.
+- **Candidates:** pool styles for which `Styles.isPlayable(id, Runtime.get())` is true and whose rarity ∉ {`starter`, `cosmic`}, in `Types.STYLE_IDS` order. In M1-G these are `sandcastle`, `scoop`, `busker` and `dustsheet`. A style removed by a kill switch (`Features.DisabledStyles` or Part 4's runtime-disabled set) drops out of the candidate list, which can change that week's draw; this is accepted because the kill switch is an emergency tool.
+- **Ratio note (DES-6, §5.14):** with 4 candidates and `Count = 3` (GDD §8.1, kept), 3 of the 4 rollable implemented styles (75 %) are free every week in M1-G, against the GDD's 3 of 16 at full roster. This weakens the Wish/Shop chase the slice demonstrates; the owner keeps it or disables the rotation through `HB_Progression` (`{"FreeRotation":{"Enabled":false}}`). The default is keep.
 - **Index:** `w = Pity.weekIndex(now)`, where weeks start Monday 00:00 UTC (GDD §9.5 weekly refresh). This holds when `Progression.FreeRotation.PeriodSec == 604800`. Any other value uses `Pity.periodIndex(now, PeriodSec)` (test aid).
 - **Selection:** `Odds.freeRotation(w, candidates, Count, Salt)`. It seeds `Odds.stream(bit32.bxor(Odds.mul32(w % 2^32, 0x9E3779B9), Salt))` and makes `min(Count, #candidates)` uniform draws without replacement (`Odds.pickWeighted` with weights 1). The result is sorted in `STYLE_IDS` order.
 - **Disabled** (`FreeRotation.Enabled == false`) → the result is the empty list.
-- The client computes the same list from `Runtime` and `DataService.now()`-equivalent time for the Style Wheel badge. The server value is authoritative at equip time.
+- The client computes the same list from `Runtime` and `DataService.now()`-equivalent time for the Charm Ring badge. The server value is authoritative at equip time.
 
 Vectors (Lune `style.free_rotation_vectors`; candidates = the 4 M1-G styles; `Count = 3`, `Salt = 0x52A1C3E7`):
 
 | `now` (UTC) | week index | expected |
 |---|---|---|
-| 1791763200 (2026-10-12 00:00, Monday) | 2963 | `rocker, frost, decay` |
-| +604800 | 2964 | `monarch, rocker, frost` |
-| +1209600 | 2965 | `monarch, rocker, frost` |
+| 1791763200 (2026-10-12 00:00, Monday) | 2963 | `scoop, busker, dustsheet` |
+| +604800 | 2964 | `sandcastle, scoop, busker` |
+| +1209600 | 2965 | `sandcastle, scoop, busker` |
 | 1791763199 | 2962 | (week boundary check: index 2962) |
 
-#### 5.1.5 Training trial mode
+#### 5.1.5 Staff Room trial mode
 
-- On `MapId == "training"` with `Progression.TrainingTrialAllStyles = true`, every style that passes rule 2 (`Styles.isPlayable`) also passes rule 3 (GDD §4.5 "free trial of any style").
-- Trial styles use `Flair = "standard"` and `Variant = ""`. Character Look is available for them (GDD §12.3 "own (or are trialing)").
-- No Treasure, XP, Mastery or Wish progress is earned on `training` (`Economy.TrainingEarns = false`, §5.5.3).
-- On leaving Training (`World.Travel` → `candy_kingdom`), the next `resolveForSpawn` re-validates and falls back to `data.equipped.styleId`.
+- In the Staff Room (`MapId == "training"`) with `Progression.TrainingTrialAllStyles = true`, every style that passes rule 2 (`Styles.isPlayable`) also passes rule 3 (GDD §4.5: a free trial of any Charm).
+- Trial styles use `Flair = "plain"` and `Variant = ""`. The Full Uniform is available for them (GDD §12.3: styles you own or are trialing).
+- No Shells, XP, Mastery or Wish progress is earned in the Staff Room (`Economy.TrainingEarns = false`, §5.5.3).
+- On leaving the Staff Room (`World.Travel` → `hub`), the next `resolveForSpawn` re-validates and falls back to `data.equipped.styleId`.
 
-#### 5.1.6 Flair and Variant equip
+#### 5.1.6 Finish and Off-Duty Look equip
 
-- `Style.SetFlair{styleId, flair}`: the style must be owned and `styles[id].flairs[flair] ~= nil` (any Flair ever rolled for that style is equippable, GDD §8.7). The handler does one update of `styles` (`equippedFlair = flair`). If `styleId == EquippedStyle`, it writes the `Flair` attribute immediately; Flairs are cosmetic, so a mid-life change is safe.
-- `Style.SetVariant{styleId, variantId}`: `""` or an owned variant (`styles[id].variants[variantId] == true`). Same write pattern, with the `Variant` attribute.
-- Log `[ALG][Style] flair user=<id> style=<id> flair=<f>` and `[ALG][Style] variant ...`.
+- `Style.SetFlair{styleId, flair}`: the style must be owned and `styles[id].flairs[flair] ~= nil` (any Finish ever rolled for that style is equippable, GDD §8.7). The handler does one update of `styles` (`equippedFlair = flair`). If `styleId == EquippedStyle`, it writes the `Flair` attribute immediately; Finishes are cosmetic, so a mid-life change is safe.
+- `Style.SetVariant{styleId, variantId}`: `""` or an owned Off-Duty Look (`styles[id].variants[variantId] == true`). Same write pattern, with the `Variant` attribute.
+- Log `[HB][Style] flair user=<id> style=<id> flair=<f>` and `[HB][Style] variant ...`.
 
 #### 5.1.7 StyleService API (Part 2 contract plus additions)
 
@@ -163,32 +182,32 @@ export type StyleServiceApi = {
 }
 ```
 
-The `Style.Equip` handler calls `requestEquip(player, req.styleId, "wheel")`; the `via` is upgraded to `"totem"` by the proximity rule. It logs `[ALG][Style] equip user=<id> style=<id> apply=<respawn|now> via=<wheel|totem|dev>`.
+The `Style.Equip` handler calls `requestEquip(player, req.styleId, "wheel")`; the `via` is upgraded to `"totem"` by the proximity rule. It logs `[HB][Style] equip user=<id> style=<id> apply=<respawn|now> via=<wheel|totem|dev>`.
 
 #### 5.1.8 Verify (§5.1)
 
 - Lune: `style.free_rotation_vectors`, `time.week_index_monday`.
 - Scenarios (Part 7 harness names):
-  - `style.equip_owned_respawn`: equip `stretch` → `NextStyle="stretch"`; after `Dev.Command kill` and respawn → `EquippedStyle="stretch"`, `NextStyle=""`.
-  - `style.equip_unimplemented_rejected`: `giveStyle sentry`; `Style.Equip{styleId="sentry"}` → `err="not_implemented"`.
-  - `style.equip_unowned_rejected`: `Style.Equip{styleId="decay"}` on `candy_kingdom` with the rotation disabled (`setConfig Progression {"FreeRotation":{"Enabled":false}}`) → `not_owned`.
-  - `style.training_trial`: `travel training`; equip `decay` → ok; travel `candy_kingdom`; respawn → `EquippedStyle` = the persisted owned style.
-  - `style.free_rotation_equip`: `setTimeOffset` to week 2963 → `Style.Equip{styleId="rocker"}` ok on `candy_kingdom`.
-  - `style.totem_swap`: teleport the character next to a totem (Part 6 builder), out of combat → response `applyAt="now"`; a new character spawns within 2 s; the log shows `via=totem`.
-  - `style.disabled_kill_switch`: `setConfig Features {"DisabledStyles":["stretch"]}` while `stretch` is equipped → the next spawn resolves to the persisted fallback or `hero`.
+  - `style.equip_owned_respawn`: equip `lifeguard` → `NextStyle="lifeguard"`; after `Dev.Command kill` and respawn → `EquippedStyle="lifeguard"`, `NextStyle=""`.
+  - `style.equip_unimplemented_rejected`: `giveStyle skimstone`; `Style.Equip{styleId="skimstone"}` → `err="not_implemented"`.
+  - `style.equip_unowned_rejected`: `Style.Equip{styleId="dustsheet"}` on `hub` with the rotation disabled (`setConfig Progression {"FreeRotation":{"Enabled":false}}`) → `not_owned`.
+  - `style.training_trial`: `travel training`; equip `dustsheet` → ok; travel `hub`; respawn → `EquippedStyle` = the persisted owned style.
+  - `style.free_rotation_equip`: `setTimeOffset` to week 2963 → `Style.Equip{styleId="busker"}` ok on `hub`.
+  - `style.totem_swap`: teleport the character next to a Charm Rack (a totem, Part 6 builder), out of combat → response `applyAt="now"`; a new character spawns within 2 s; the log shows `via=totem`.
+  - `style.disabled_kill_switch`: `setConfig Features {"DisabledStyles":["lifeguard"]}` while `lifeguard` is equipped → the next spawn resolves to the persisted fallback or `attendant`.
 
 ---
 
 ### 5.2 Wish system
 
-GDD §8.1–§8.8, §15.5 (first Wish), §17.2 (cap). The pool is the full 16-style rollable roster with `Wish.PoolMode = "Full"` (§0.10).
+GDD §8.1–§8.8, §15.5 (first Wish), §17.2 (cap). In the fiction a Wish is a postcard posted through Pip-Pip, the postbox; a staff member writes back with their Charm. Players see pity as **Guaranteed Delivery** and a 10× Wish as a **Mailbag**. The pool is the full 16-style rollable roster with `Wish.PoolMode = "Full"` (§0.10).
 
 #### 5.2.1 Pool
 
 - `Odds.buildPool(entries: { PoolEntry }) -> Pool`, where `entries` comes from `Styles.all()` mapped to `{styleId, rarity, implemented}`.
 - It filters out `rarity == "starter"`, sorts by `STYLE_IDS` index and groups by tier.
-- It errors if any of the 7 rollable tiers is empty, or if a `FirstWishGuarantee.Styles` entry is not in the pool at `FirstWishGuarantee.Rarity`. WishService catches this at `start()`, logs `[ALG][Wish] ERROR pool_invalid ...`, and its remotes return `disabled`.
-- M1-G pool (GDD §8.3): common `sentry, granny, diva`; uncommon `tyrant, console, grappler`; rare `monarch, flame, butler`; epic `rocker, frost, huntress`; legendary `decay, demon`; mythic `wish`; cosmic `chaos`.
+- It errors if any of the 7 rollable tiers is empty, or if a `FirstWishGuarantee.Styles` entry is not in the pool at `FirstWishGuarantee.Rarity`. WishService catches this at `start()`, logs `[HB][Wish] ERROR pool_invalid ...`, and its remotes return `disabled`.
+- M1-G pool (GDD §8.3): common `skimstone, masseur, bellhop`; uncommon `angler, kite, boxcamera`; rare `sandcastle, scoop, diver`; epic `busker, lamplighter, cablecar`; legendary `dustsheet, raincloud`; mythic `serpent`; cosmic `ferry`. Of these, `sandcastle`, `scoop`, `busker` and `dustsheet` are implemented in M1-G; the rest are collectible stubs (§5.1.1).
 - Lune `wish.pool_matches_styles` asserts that the registry produces exactly this pool.
 
 #### 5.2.2 Pure module API (`Shared/Wish/Odds.luau`, `Shared/Wish/Pity.luau`)
@@ -218,7 +237,7 @@ export type RollInput = {
 	owned: { [string]: boolean },              -- StyleId -> true (current, including earlier rolls of the same batch)
 	variantsOwned: { [string]: { [string]: boolean } }, -- StyleId -> VariantId -> true
 	first: boolean,                            -- first-Wish guarantee pending (§5.2.9)
-	lucky: boolean,                            -- Lucky Jar active (owned AND not PRI-restricted)
+	lucky: boolean,                            -- Lucky Stamp (`lucky_jar`) active (owned AND not PRI-restricted)
 }
 export type RollOut = {
 	rarity: Types.Rarity, styleId: Types.StyleId, flair: Types.FlairId, isNew: boolean,
@@ -279,7 +298,7 @@ export type ViewState = {
   - Seeds never come from the client and are never sent to the client before the roll is committed.
 - **Per-roll stream (pure, replayable).** `Odds.stream(seed)` returns `{state = Rng.new(Odds.fmix32(seed % 4294967296))}`. `Odds.draw(s)` calls `Rng.next(s.state)` (Part 3 §3.4.3 xorshift32; value = new state / 2^32), stores the new state and returns the value.
   - `fmix32` removes xorshift32's weak low-seed start. For example, seed 1 would otherwise give a first draw of 0.00006, which is a Cosmic.
-  - Every roll consumes **exactly 5 draws**, in this order: `d1` tier, `d2` style, `d3` Flair, `d4` Variant, `d5` fake-out. This holds whether or not a draw is used, so the ledger seed alone reproduces the roll.
+  - Every roll consumes **exactly 5 draws**, in this order: `d1` tier, `d2` style, `d3` Finish, `d4` Off-Duty Look, `d5` fake-out. This holds whether or not a draw is used, so the ledger seed alone reproduces the roll.
 - **32-bit helpers** (exact in doubles; products stay below 2^53):
 
 ```lua
@@ -392,21 +411,21 @@ end
 
 The arithmetic order above (`a * b / c`, left-associative; sums accumulated left to right from 0) is **normative**: the test vectors in §5.2.15 depend on it.
 
-#### 5.2.5 Style selection, Flair, Variant, fake-out
+#### 5.2.5 Style selection, Finish, Off-Duty Look, fake-out
 
 **Style (`d2`).** `Odds.candidates(ctx, rarity, owned, hit)`:
 
 | Case | Candidates (in `STYLE_IDS` order) | Weights |
 |---|---|---|
-| `hit == "first"` | `FirstWishGuarantee.Styles` (`monarch`, `flame`) | `FirstWishGuarantee.Weights` (1, 1 → 50/50, GDD §15.5) |
+| `hit == "first"` | `FirstWishGuarantee.Styles` (`sandcastle`, `scoop`) | `FirstWishGuarantee.Weights` (1, 1 → 50/50, GDD §15.5) |
 | `hit ∈ {epic, legendary, mythic}` and `Pity.NewStylePriority` | unowned styles of the rolled tier; if none are unowned, all styles of the tier (GDD §8.4 new-style priority) | 1 each |
 | otherwise | all pool styles of the rolled tier (GDD §8.3 equal per-style split) | 1 each |
 
 `styleId = ids[Odds.pickWeighted(weights, d2)]`. `pickWeighted` computes `r = u × Σw` and returns the first index whose cumulative weight exceeds `r` (last index as a guard).
 
-New-style priority applies whenever a hard-pity floor was active for the roll, even if the unfloored roll would have reached that tier. It is **not** applied to soft-pity hits (GDD: "when a pity triggers").
+New-style priority applies whenever a hard-pity floor was active for the roll, even if the unfloored roll would have reached that tier. It is **not** applied to soft-pity hits (GDD §8.4: priority applies when a guarantee triggers).
 
-**Flair (`d3`).** `Odds.flairTable(ctx, lucky)` uses `FLAIR_ORDER` order.
+**Finish (`d3`).** `Odds.flairTable(ctx, lucky)` uses `FLAIR_ORDER` order: `plain, glossy, gilt, seaglass, pearl, glowtide, misprint` (`Types.FLAIR_ORDER`, Part 2).
 
 ```lua
 --!strict
@@ -420,23 +439,24 @@ function Odds.flairTable(ctx: Context, lucky: boolean): { number }
 		out[i] = math.floor(ctx.cfg.Flair[Types.FLAIR_ORDER[i]] * m + 0.5)
 		sum += out[i]
 	end
-	out[1] = Odds.MILLION - sum                      -- "standard" takes the remainder (re-normalized)
+	out[1] = Odds.MILLION - sum                      -- "plain" takes the remainder (re-normalized)
 	ctx.flairCache[key] = out
 	return out
 end
 ```
 
-- Base odds (GDD §8.7): shiny 20,000; golden 4,000; crystal 1,000; rainbow 200; nightosphere 40; glitched 10; standard 974,750 ppm.
-- Lucky Jar (×1.5, **Flairs only**, never style rarity; GDD §17.3): shiny 30,000; golden 6,000; crystal 1,500; rainbow 300; nightosphere 60; glitched 15; standard 962,125.
-- `lucky = MonetizationService.ownsPass(player, "lucky_jar") and not PolicyGate.get(player).paidRandomRestricted`. A restricted player who owns the pass gets no paid luck boost on a paid random item (GDD §8.8).
+- Base odds (GDD §8.7): glossy 20,000; gilt 4,000; seaglass 1,000; pearl 200; glowtide 40; misprint 10; plain 974,750 ppm.
+- Lucky Stamp (×1.5, **Finishes only**, never style rarity; GDD §17.3): glossy 30,000; gilt 6,000; seaglass 1,500; pearl 300; glowtide 60; misprint 15; plain 962,125.
+- `lucky = MonetizationService.ownsPass(player, "lucky_jar") and not PolicyGate.get(player).paidRandomRestricted`. A restricted player who owns the Lucky Stamp gets no paid luck boost on a paid random item (GDD §8.8).
+- Finishes are cosmetic, and Part 6 renders them. The accessibility setting `misprintCalm` (Part 2 §2.8.6; GDD §16.3) makes the Misprint Finish render static for that viewer. It changes presentation only, never the roll, the odds or the stored Finish.
 
-**Variant (`d4`).** Only on a duplicate (`not isNew`), and only if `d4 < VariantChance` (0.05, GDD §9.3).
+**Off-Duty Look (`d4`).** Only on a duplicate (`not isNew`), and only if `d4 < VariantChance` (0.05, GDD §9.3).
 - `unowned` = `"v1".."v<VariantsPerStyle>"` that are not in `variantsOwned[styleId]`.
 - If it is non-empty: `variantId = unowned[min(#unowned, floor(d4 / VariantChance × #unowned) + 1)]`.
-- The duplicate still grants its Shards.
-- The placeholder catalog is `VariantsPerStyle = 2` (`v1`, `v2`), named by Skin keys `variant.<styleId>.<vid>.name` (Part 8).
+- The duplicate still grants its Stamps.
+- The placeholder catalog is `VariantsPerStyle = 2` (`v1`, `v2`), named by Skin keys `variant.<styleId>.<vid>.name` (§5.12 item 14; Part 8).
 
-**Fake-out (`d5`).** `fakeOut = FakeOut[rarity] ~= nil and d5 < FakeOut[rarity]`, where `FakeOut = {epic = 0.03}` (GDD §8.6: a Rare "glitches" into an Epic in 3% of Epic pulls). It is presentation only, upgrade-only, and disclosed in the odds panel footer (`ui.wish.fakeout_note`).
+**Fake-out (`d5`).** `fakeOut = FakeOut[rarity] ~= nil and d5 < FakeOut[rarity]`, where `FakeOut = {epic = 0.03}` (GDD §8.6: in 3% of Epic pulls a Rare stamp lands first and is then re-stamped Epic). It is presentation only, upgrade-only, and disclosed in the odds panel footer (`ui.wish.fakeout_note`).
 
 **Pity advance.** `Pity.advance(p, rarity)`, where rank is the index in `RARITY_ORDER`:
 
@@ -473,52 +493,55 @@ Cosmic craft (§5.2.8) and Shop purchases do **not** touch the counters. Counter
 ```
 
 Rules:
-1. Per-style odds in a tier use the same candidate rule as the roll. For example, under the Epic+ floor with `rocker` owned, the rows are `frost` and `huntress` at 50% of the epic tier each, and `rocker` at 0%. The view is therefore exact, not an approximation.
-2. The client computes the view locally from `Runtime.get().Wish`, `Styles.all()`, and the PrivateView (`pity`, `styles`, `wishStats.firstGuaranteeUsed`, `passes.lucky_jar`, `policy`). It recomputes after every store change, so the view updates live after every Wish.
-3. When the Wish screen opens, the client calls `Wish.GetOdds` once and compares `oddsHash` and every tier ppm. On a mismatch it logs `[ALG][UI] WARN odds_mismatch local=<h> server=<h>` and renders the server view.
-4. The footer states that each roll of a 10× Wish uses the odds in effect for that roll (pity applies per roll), and that Cosmic is never boosted by pity or luck.
-5. PRI display rule (GDD §8.8): the odds button is always visible, including to restricted players, and the tier rows sum to exactly 100.0000%. The view lists every style and every Flair. Per-style rows are rounded to 3 decimals for display only.
+1. Per-style odds in a tier use the same candidate rule as the roll. For example, under the Epic+ floor with `busker` owned, the rows are `lamplighter` and `cablecar` at 50% of the epic tier each, and `busker` at 0%. The view is therefore exact, not an approximation.
+2. The client computes the view locally from `Runtime.get().Wish`, `Styles.all()`, and the PrivateView (`pity`, `styles`, `wishStats.firstGuaranteeUsed`, `passes.lucky_jar` (Lucky Stamp), `policy`). It recomputes after every store change, so the view updates live after every Wish.
+3. When the Wish screen opens, the client calls `Wish.GetOdds` once and compares `oddsHash` and every tier ppm. On a mismatch it logs `[HB][UI] WARN odds_mismatch local=<h> server=<h>` and renders the server view.
+4. The footer states that each Wish in a Mailbag uses the odds in effect for that roll (Guaranteed Delivery applies per roll), and that Cosmic is never boosted by pity or luck.
+5. PRI display rule (GDD §8.8): the odds button is always visible, including to restricted players, and the tier rows sum to exactly 100.0000%. The view lists every style and every Finish. Per-style rows are rounded to 3 decimals for display only.
 
 **Odds hash.** `Odds.oddsHash(ctx, lucky) = Schema.hash32(Schema.canonical(input))`, where `input` is:
 
 ```lua
-{ v = 1, tiers = cfg.TierOdds, pity = cfg.Pity, flair = <flairTable(lucky) as {flairId = ppm}>, lucky = lucky,
-  first = cfg.FirstWishGuarantee, fakeOut = cfg.FakeOut, variantChance = cfg.VariantChance,
-  pool = { "<styleId>:<rarity>", ... } -- STYLE_IDS order
+--!strict
+local input = {
+	v = 1, tiers = cfg.TierOdds, pity = cfg.Pity,
+	flair = flairById,      -- Odds.flairTable(ctx, lucky) as { [FlairId] = ppm }
+	lucky = lucky, first = cfg.FirstWishGuarantee, fakeOut = cfg.FakeOut, variantChance = cfg.VariantChance,
+	pool = poolKeys,        -- { "<styleId>:<rarity>", ... } in STYLE_IDS order
 }
 ```
 
-It is memoized in `ctx.hashCache`. Any change to odds, pity rules, Flair odds, luck, the guarantee or the pool changes the hash. The ledger stores it per roll.
+It is memoized in `ctx.hashCache`. Any change to odds, pity rules, Finish odds, luck, the guarantee or the pool changes the hash. The ledger stores it per roll.
 
-#### 5.2.7 10× Wish semantics
+#### 5.2.7 Mailbag (10× Wish) semantics
 
 - `Wish.Make{count = 10}` performs 10 **sequential** rolls inside one `DataService.update`. Roll *i* uses the pity counters, ownership and `first` flag left by roll *i−1*. A style unlocked in roll 3 is a duplicate in roll 7, and it is "owned" for the new-style priority of later rolls.
 - 10 Wishes are required. There is no discount and no partial batch.
 - The result is a `WishBatchResult` with `best` = the index of the highest rarity (first occurrence on ties).
-- The reveal grid (GDD §8.6) shows all 10 results with duplicates faded and "+Shards". The best result plays the full reveal (Part 6).
+- The reveal grid (GDD §8.6) shows all 10 results with duplicates faded and "+Stamps". The best result plays the full stamp-first reveal (§5.2.13; Part 6).
 
-#### 5.2.8 Duplicates, Shards, Cosmic Sparks, Cosmic craft
+#### 5.2.8 Duplicates, Stamps, Messages in a Bottle, Cosmic craft
 
 | Outcome | Grant |
 |---|---|
-| New style | `StyleService.grantInTx(d, styleId, "wish", now)`. The Flair is counted; if the Flair is not `standard`, `equippedFlair` is set to it. |
-| Duplicate | `rec.dupes += 1`; `Shards += Wish.DuplicateShards[rarity]` (common 3, uncommon 5, rare 10, epic 25, legendary 60, mythic 150, cosmic 300 — tuning default); optional Variant (§5.2.5). |
-| Mythic duplicate | additionally `CosmicSparks += Wish.SparksPerMythicDupe` (1, GDD §8.4) |
-| Any roll | `rec.flairs[flair] += 1`. If the Flair rank (index in `FLAIR_ORDER`) is greater than `bestFlair`, `bestFlair = flair` and `bestFlairUpgraded = true` (GDD §8.7 "keep the best Flair ever rolled"). |
+| New style | `StyleService.grantInTx(d, styleId, "wish", now)`. The Finish is counted; if the Finish is not `plain`, `equippedFlair` is set to it. |
+| Duplicate | `rec.dupes += 1`; Stamps: `Shards += Wish.DuplicateShards[rarity]` (common 3, uncommon 5, rare 10, epic 25, legendary 60, mythic 150, cosmic 300 — tuning default); optional Off-Duty Look (§5.2.5). |
+| Mythic duplicate | additionally one Message in a Bottle: `CosmicSparks += Wish.SparksPerMythicDupe` (1, GDD §8.4) |
+| Any roll | `rec.flairs[flair] += 1`. If the Finish rank (index in `FLAIR_ORDER`) is greater than `bestFlair`, `bestFlair = flair` and `bestFlairUpgraded = true` (GDD §8.7: keep the best Finish ever rolled). |
 
-Shards and Sparks are summed over the batch and credited once each at the end of the mutator (`tx.credit("Shards", total, "duplicate")`, `tx.credit("CosmicSparks", total, "mythic_dupe")`). This produces one economy event per currency per batch.
+Stamps and Messages in a Bottle are summed over the batch and credited once each at the end of the mutator (`tx.credit("Shards", total, "duplicate")`, `tx.credit("CosmicSparks", total, "mythic_dupe")`). This produces one economy event per currency per batch.
 
 **`Wish.CraftCosmic`** (§2.7.4 row 10), as one update over `{"currencies","styles","ledger"}`:
 1. Requires `CosmicSparks ≥ Wish.CosmicSparksNeeded` (10, GDD §8.4) → else `insufficient`.
-2. Candidates are the pool's cosmic styles not owned. If there are none → `{ok=false, err="denied", detail="all_cosmic_owned"}`; Sparks are kept.
-3. A server seed drives a stream: `d2` picks the style (uniform), `d3` rolls the Flair (Lucky Jar rules apply), and `d4`/`d5` are drawn and unused.
-4. Debit Sparks (`cosmic_craft`); grant the style (source `"cosmic_craft"`); append a ledger entry (`src = "f"`, `pityHit = "c"`, `n = wishStats.total`). The pity counters and `wishStats.total` are unchanged.
-5. Return a `WishBatchResult` with one result (`pityHit = "cosmic_craft"`). Announce at Cosmic level (§5.2.13).
+2. Candidates are the pool's cosmic styles not owned. If there are none → `{ok=false, err="denied", detail="all_cosmic_owned"}`; the Messages in a Bottle are kept.
+3. A server seed drives a stream: `d2` picks the style (uniform), `d3` rolls the Finish (Lucky Stamp rules apply), and `d4`/`d5` are drawn and unused.
+4. Debit the Messages in a Bottle (`CosmicSparks`, reason `cosmic_craft`); grant the style (source `"cosmic_craft"`); append a ledger entry (`src = "f"`, `pityHit = "c"`, `n = wishStats.total`). The pity counters and `wishStats.total` are unchanged.
+5. Return a `WishBatchResult` with one result (`pityHit = "cosmic_craft"`). Announce at Cosmic level (§5.2.13); the first Cosmic on the server also runs the Cosmic Arrival (§5.2.18).
 
 #### 5.2.9 First-Wish guarantee and tutorial Wishes (GDD §15.5)
 
-- `WishService.onPlayerReady(player)`: if `not wishStats.tutorialGranted`, run one update that does `tx.credit("Wishes", Economy.TutorialWishes, "tutorial")` (3) and sets `tutorialGranted = true`. This happens on the first join, whether or not the tutorial is played or skipped (GDD: "Skipping still grants the 3 wishes").
-- The **first roll ever** made by the account, from any source (in 1× or 10×), has `first = Wish.FirstWishGuarantee.Enabled and not wishStats.firstGuaranteeUsed`. That roll is Rare, with style `monarch`/`flame` weighted 1:1. It sets `firstGuaranteeUsed = true` in the same mutator. `pityHit = "first"`.
+- `WishService.onPlayerReady(player)`: if `not wishStats.tutorialGranted`, run one update that does `tx.credit("Wishes", Economy.TutorialWishes, "tutorial")` (3) and sets `tutorialGranted = true`. This happens on the first join, whether or not the tutorial is played or skipped (GDD §15.5: skipping still grants the 3 Wishes).
+- The **first roll ever** made by the account, from any source (in 1× or 10×), has `first = Wish.FirstWishGuarantee.Enabled and not wishStats.firstGuaranteeUsed`. That roll is Rare, with style `sandcastle`/`scoop` weighted 1:1 (both are implemented in M1-G, so the guaranteed Charm is playable at once). It sets `firstGuaranteeUsed = true` in the same mutator. `pityHit = "first"`.
 - Source labels per roll:
   - `"paid"` while paid Wishes are being spent (§5.2.10);
   - else `"tutorial"` while `wishStats.total < Economy.TutorialWishes`;
@@ -531,7 +554,7 @@ Shards and Sparks are summed over the batch and credited once each at the end of
 | Rule | Implementation |
 |---|---|
 | Cap 1,000 | `Wish.StorageCap = 1000`. DataService invariant: no update raises `Wishes` above the cap (§2.8.5). |
-| Earned Wishes over the cap → 10 Treasure each | `tx.credit("Wishes", n, reason)` (earned) credits up to the cap and converts the excess at `Wish.OverflowTreasure` (10) with reason `wish_overflow` (§2.8.5 rule 6). Robux never becomes Treasure because purchased Wishes never overflow. |
+| Earned Wishes over the cap → 10 Shells each | `tx.credit("Wishes", n, reason)` (earned) credits up to the cap and converts the excess to `Treasure` at `Wish.OverflowTreasure` (10) with reason `wish_overflow` (§2.8.5 rule 6). Robux never becomes Shells because purchased Wishes never overflow. |
 | Purchases that would exceed the cap are blocked | `Store.Prompt` checks `Wishes + paidEscrow + pack ≤ StorageCap`, else `cap_reached` (§5.6.4). |
 | Race: a receipt arrives while the room is gone | The grant credits `min(pack, room)` and puts the rest in **`wishStats.paidEscrow`** (new field). The escrow is released as `tx.credit("Wishes", m, "purchase", {purchased = true})` at the end of every `Wish.Make` and in `WishService.onPlayerReady`, with `m = min(paidEscrow, cap − Wishes)`. A paid Wish is never lost and never converted. |
 | Paid Wishes are spent first | `nPaid = if restricted then 0 else min(count, paidUnspent)`; the first `nPaid` rolls of the batch are `"paid"`. |
@@ -544,8 +567,10 @@ Shards and Sparks are summed over the batch and credited once each at the end of
 --!strict
 export type WishServiceApi = {
 	onPlayerReady: (player: Player) -> (),         -- tutorial grant (once) + escrow release
+	cosmicArrival: (player: Player?, styleId: Types.StyleId) -> boolean, -- §5.2.18; true only on the call that fired
 	-- Studio-only seams (no-ops outside Studio):
 	_setSeedMaster: (seed: number?) -> (),
+	_resetArrival: () -> (),                       -- §5.2.18: clears the once-per-server flag and the Runtime attribute
 }
 ```
 
@@ -604,7 +629,7 @@ local function make(player: Player, count: number): Types.Response<Types.WishBat
 				rec.flairs[r.flair] = (rec.flairs[r.flair] or 0) + 1
 				local upgraded = FLAIR_RANK[r.flair] > FLAIR_RANK[rec.bestFlair]
 				if upgraded then rec.bestFlair = r.flair end
-				if isNew and r.flair ~= "standard" then rec.equippedFlair = r.flair end
+				if isNew and r.flair ~= "plain" then rec.equippedFlair = r.flair end
 				local shards, sparks = 0, 0
 				if not isNew then
 					rec.dupes += 1
@@ -642,8 +667,9 @@ end
 - `busy[player]` is also cleared in a `pcall` guard around the body. An error at any point leaves the flag false.
 - `ownedSet(d)` is rebuilt per roll (≤ 18 keys), so in-batch unlocks count.
 - `FLAIR_RANK` = index in `Types.FLAIR_ORDER`.
-- `afterCommit` logs `[ALG][Wish] batch user=<id> n=<count> best=<rarity> src=<first roll src> pityE=<n> pityL=<n> pityM=<n> hash=<h> batch=<id>`.
+- `afterCommit` logs `[HB][Wish] batch user=<id> n=<count> best=<rarity> src=<first roll src> pityE=<n> pityL=<n> pityM=<n> hash=<h> batch=<id>`.
 - `afterCommit` emits `ModerationService.signal(player, "wish_anomaly", {why = ...})` for each anomaly (§2.11.3).
+- Before it sends announcements, `afterCommit` calls `WishService.cosmicArrival(player, styleId)` for the first `cosmic` result of the batch; when that returns true, the plain server-wide Notify for that result is skipped (§5.2.18).
 - The TestHarness command `setPity` bypasses the transition check. TestHarness writes with reason `"dev"`, and the check runs only in `Wish.Make`.
 
 #### 5.2.12 Ledger (GDD §18.5)
@@ -652,28 +678,28 @@ end
 - The index fields `style`, rarity and flair are **0-based** (style 0–17 as one base-36 char, rarity 0–7, flair 0–6).
 - The "pity after" value is not stored. It is derived as `Pity.advance(pityBefore, rarity)`, which `Pity.checkTransition` already verifies at write time.
 - **Replay** (support tickets, monthly Wish Report): given an entry and the config identified by its `oddsHash`, `Odds.roll` with the stored `seed`, the decoded `pityBefore`, `first = (pityHit == "first")` and `lucky` (encoded in the hash) reproduces `rarity`, `flair` and `fakeOut` exactly. It also reproduces `styleId` whenever `pityHit == "none"`. Under a floor, the style also depends on the owned set at that time, so the check is `styleId ∈ tier`.
-- The ledger is never sent to clients (§2.8.5). Quick Wish's "wish-history export" is a future hook.
+- The ledger is never sent to clients (§2.8.5). Quick Post's wish-history export is a future hook.
 
 **Vector (Lune `ledger.vector_v1`).**
 
 ```
 entry: n=1, t=1791763200, src="tutorial", batch="a1b2c3", seed=958783841, oddsHash="0badc0de",
-       styleId="monarch", rarity="rare", flair="standard", isNew=true, shards=0, sparks=0,
+       styleId="sandcastle", rarity="rare", flair="plain", isNew=true, shards=0, sparks=0,
        variantId="", pityBefore={0,0,0}, pityHit="first"
 encodeLedger -> "1|1|tmrpc0|t|a1b2c3|fuu2ch|0badc0de|8|301f|0|0||0,0,0"   (53 chars)
 ```
 
 `ledger.codec_roundtrip` covers 1,000 random valid entries with `decode(encode(e)) == e`. `ledger.max_len_80` asserts the worst-case entry is ≤ 80 chars. `ledger.decode_rejects_garbage` covers a wrong version, 12 fields, a non-base-36 digit, a style index > 17, and an unknown hit code.
 
-#### 5.2.13 Announcements and post-commit effects (GDD §8.6)
+#### 5.2.13 Announcements, stamp-first reveal data and post-commit effects (GDD §8.6)
 
 | Best rarity in the batch (or craft) | Effect |
 |---|---|
 | epic | `Net.server.fire("Notify", player, {kind="announce", key="ui.notify.wish_epic", args={styleId, rarityId="epic"}, rarity="epic", scope="self"})` |
 | legendary | `Net.server.fireAll("Notify", {kind="announce", key="ui.notify.wish_legendary", args={who=player.DisplayName, styleId, rarityId}, rarity, scope="server"})` |
-| mythic, cosmic | the server-wide Notify above, plus a cross-server publish (below) |
+| mythic, cosmic | the server-wide Notify above, plus a cross-server publish (below). The first Cosmic on a server runs the Cosmic Arrival instead of the plain server-wide Notify for that result (§5.2.18) |
 
-- **Cross-server in M1-G** (decides §2.7.4's open note): WishService implements topic `Wish.Announce.CrossServerTopic = "ALG_Announce_v1"`, but it is **off by default**: both calls below run only when `Runtime.get().Wish.Announce.CrossServerEnabled == true` **and** `not RunService:IsStudio()`. `CrossServerEnabled = false` is the M1-G default (§5.10); the owner can enable it live through `ALG_Wish` (`{"Announce":{"CrossServerEnabled":true}}`). Without it, mythic/cosmic pulls get the server-wide Notify only.
+- **Cross-server in M1-G** (decides §2.7.4's open note): WishService implements topic `Wish.Announce.CrossServerTopic = "HB_Announce_v1"`, but it is **off by default**: both calls below run only when `Runtime.get().Wish.Announce.CrossServerEnabled == true` **and** `not RunService:IsStudio()`. `CrossServerEnabled = false` is the M1-G default (§5.10); the owner can enable it live through `HB_Wish` (`{"Announce":{"CrossServerEnabled":true}}`). Without it, mythic/cosmic pulls get the server-wide Notify only.
   - **Publish:** `pcall(MessagingService.PublishAsync, MessagingService, topic, {jobId = game.JobId, key = "ui.notify.wish_<rarity>_global", rarityId, styleId})`. The payload is < 200 bytes (1 kB limit [Docs]). `PublishAsync` yields, so it runs in the post-commit `task.spawn` (never inside the DataService mutator).
   - **Subscribe:** `MessagingService:SubscribeAsync` yields until the backend registers the subscription [Docs `MessagingService.yaml`], and the Part 2 module contract requires `start()` to return within 1 s. So `start()` only spawns it, once, when the gate above holds at start time (enabling the flag later takes effect on the next server; publishing follows the live flag):
 
@@ -697,18 +723,29 @@ encodeLedger -> "1|1|tmrpc0|t|a1b2c3|fuu2ch|0badc0de|8|301f|0|0||0,0,0"   (53 ch
     end
     ```
 
-    The handler `onAnnounce(msg)` drops messages whose `msg.Data.jobId == game.JobId` and `fireAll`s the rest with `scope = "global"`. A failure logs `[ALG][Wish] WARN announce_subscribe_failed err=<e>` and is not retried in M1-G.
-  - Cross-server messages carry no player name (GDD: "Someone just wished…"). Delivery is best-effort (GDD §18.5).
+    The handler `onAnnounce(msg)` drops messages whose `msg.Data.jobId == game.JobId` and `fireAll`s the rest with `scope = "global"`. For a message with `rarityId == "cosmic"` it also calls `WishService.cosmicArrival(nil, msg.Data.styleId)` (§5.2.18). A failure logs `[HB][Wish] WARN announce_subscribe_failed err=<e>` and is not retried in M1-G.
+  - Cross-server messages carry no player name (GDD §8.6: the global line names no one). Delivery is best-effort (GDD §18.5).
 - Telemetry (§5.8): `Telemetry.custom(player, "wish_made", count, {CustomField01 = <src of roll 1>, CustomField02 = <best rarity>, CustomField03 = Wish.BannerId, + echo extras})`, then the wish funnel step 2 `wished`.
 - Server-detected FTUE step 8 `first_wish` is sent if `flags.ftueStep < 8` (§5.8.4).
 - Fake-outs, reveal lengths and the skip rule are presentation (Part 6). `firstReveal` tells the client whether the rarity's reveal has been seen; `Settings.skipSeenReveals` governs repeat views.
+
+**Stamp-first reveal (data hook for Part 6).** Every Wish is a postcard that comes back with a stamp. The stamp lands first, and its colour shows the rarity before the card flips. The server sends each `WishResult` whole, after the commit; nothing about a roll reaches the client earlier, so the staging below is presentation only. The client stages each result from these fields, in this order:
+
+| Step | Field(s) | What the player sees (Part 6 renders) |
+|---|---|---|
+| 1. Stamp lands | `rarity` | The stamp *thunks* onto the card in the rarity colour (GDD §8.3: Seafoam, Sky, Coral, Twilight, Sun Gold, Deep Sea, Fog-and-Starlight; Part 6 `Theme`), with its shape, the plain rarity name (`rarity.<id>.name`) and a postal zone printed as flavour only (`ui.wish.zone_<rarity>`). A Rare stamp lands first when `fakeOut` is true (step 2) |
+| 2. Re-stamp | `fakeOut` (Epic only) | A Rare (Coral) stamp lands, then an Epic (Twilight) stamp is struck over it. Upgrade-only; disclosed by `ui.wish.fakeout_note` |
+| 3. Card flips | `styleId`, `flair`, `isNew`, `variantId` | The staff member's postcard with the Finish (a Misprint renders static when the viewer's `misprintCalm` is on); "New!" or "+{n} Stamps" (`shards`); an Off-Duty Look tag when `variantId` is set |
+| 4. Length | `firstReveal`, Quick Post | Full reveal the first time a rarity is seen; later reveals follow `Settings.skipSeenReveals` and Quick Post (`quick_wish`, Part 6 §6.9.7) |
+
+Rarity theatre (Part 6; GDD §8.6): a plain stamp *thunk* for Common to Epic; a gilt stamp for Legendary and up; a hump surfacing at night for Mythic; a ferry horn, sea fog and the music cutting out for Cosmic. Only Legendary-and-up stamps are gilt. The first Cosmic on a server also sets off the Cosmic Arrival (§5.2.18).
 
 #### 5.2.14 Policy integration summary
 
 | Condition | Wish screen | Server |
 |---|---|---|
-| `paidRandomRestricted = false` | 1× / 10× / odds; paid Wishes spent first; Lucky Jar applies if owned | as specified |
-| `paidRandomRestricted = true` | 1× / 10× / odds stay (free Wishes always allowed); paid Wish packs and Lucky Jar are hidden; the wallet shows "locked paid Wishes: N" | paid Wishes not spendable (`restricted`); luck off; `Store.Prompt` for PRI keys → `restricted` |
+| `paidRandomRestricted = false` | 1× / Mailbag / odds; paid Wishes spent first; Lucky Stamp applies if owned | as specified |
+| `paidRandomRestricted = true` | 1× / Mailbag / odds stay (free Wishes always allowed); paid Wish packs and Lucky Stamp are hidden; the wallet shows "locked paid Wishes: N" | paid Wishes not spendable (`restricted`); luck off; `Store.Prompt` for PRI keys → `restricted` |
 | Policy fetch failed (live) | treated as restricted (§5.3) | same as restricted |
 
 #### 5.2.15 Lune test vectors (normative; `tests/wish/*.spec.luau`)
@@ -750,30 +787,30 @@ All vectors were generated by a reference implementation of exactly §5.2.3–§
 
 `wish.tier_tables_sum_1e6`: every table for E ∈ 0..29, L ∈ 0..119, and M ∈ {0, 398, 399} sums to 1,000,000; cosmic = 100 in every non-first table; no entry is negative.
 
-**D. Flair tables** (`wish.flair_tables`; `FLAIR_ORDER` order): normal `974750, 20000, 4000, 1000, 200, 40, 10`; lucky `962125, 30000, 6000, 1500, 300, 60, 15`.
+**D. Finish tables** (`wish.flair_tables`; `FLAIR_ORDER` order `plain, glossy, gilt, seaglass, pearl, glowtide, misprint`): normal `974750, 20000, 4000, 1000, 200, 40, 10`; lucky `962125, 30000, 6000, 1500, 300, 60, 15`.
 
-**E. Single rolls** (`wish.roll_vectors`). Defaults: `owned = {hero, stretch}`, `variantsOwned = {}`, `lucky = false`, `first = false`.
+**E. Single rolls** (`wish.roll_vectors`). Defaults: `owned = {attendant, lifeguard}`, `variantsOwned = {}`, `lucky = false`, `first = false`.
 
 | ID | Seed | Pity E/L/M | Other input | rarity | style | flair | isNew | variant | hit | pity after | fakeOut |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| R1 | 1 | 0/0/0 | — | common | diva | standard | true | "" | none | 1/1/1 | false |
-| R2 | 42 | 0/0/0 | — | rare | butler | standard | true | "" | none | 1/1/1 | false |
-| R3 | 123456789 | 0/0/0 | lucky | uncommon | tyrant | standard | true | "" | none | 1/1/1 | false |
-| R4 | 10 | 29/29/29 | owned +rocker | epic | **frost** (priority skips owned rocker) | standard | true | "" | epic | 0/30/30 | false |
-| R5 | 99 | 5/119/119 | owned +decay | legendary | **demon** (priority) | standard | true | "" | legendary | 0/0/120 | false |
-| R6 | 2024 | 5/10/399 | — | mythic | wish | standard | true | "" | mythic | 0/0/0 | false |
-| R7 | 5 | 0/0/0 | first | rare | monarch | standard | true | "" | first | 1/1/1 | false |
-| R8 | 6 | 0/0/0 | first | rare | flame | standard | true | "" | first | 1/1/1 | false |
-| R9 | 314159 | 0/118/118 | — | legendary | demon | standard | true | "" | none | 0/0/119 | false |
-| R10 | 3 | 0/0/0 | owned +sentry,granny,diva | legendary | decay | standard | true | "" | none | 0/0/1 | false |
-| R11 | 66 | 0/0/0 | same as R10 | epic | rocker | shiny | true | "" | none | 0/1/1 | false |
-| R12 | 144 | 0/0/0 | same as R10 | common | diva | standard | **false** | **v1** | none | 1/1/1 | false |
-| R13 | 289 | 0/0/0 | same as R10 | common | diva | golden | false | "" | none | 1/1/1 | false |
-| R14 | 1326 | 0/0/0 | same as R10 | epic | rocker | standard | true | "" | none | 0/1/1 | **true** |
-| R15 | 14 | 0/0/0 | lucky = false / true | common | diva | standard / **shiny** | true | "" | none | 1/1/1 | false |
-| R16 | 1 | 5/10/399 | owned +wish | mythic | wish | standard | false | "" | mythic | 0/0/0 | false |
+| R1 | 1 | 0/0/0 | — | common | bellhop | plain | true | "" | none | 1/1/1 | false |
+| R2 | 42 | 0/0/0 | — | rare | diver | plain | true | "" | none | 1/1/1 | false |
+| R3 | 123456789 | 0/0/0 | lucky | uncommon | angler | plain | true | "" | none | 1/1/1 | false |
+| R4 | 10 | 29/29/29 | owned +busker | epic | **lamplighter** (priority skips owned busker) | plain | true | "" | epic | 0/30/30 | false |
+| R5 | 99 | 5/119/119 | owned +dustsheet | legendary | **raincloud** (priority) | plain | true | "" | legendary | 0/0/120 | false |
+| R6 | 2024 | 5/10/399 | — | mythic | serpent | plain | true | "" | mythic | 0/0/0 | false |
+| R7 | 5 | 0/0/0 | first | rare | sandcastle | plain | true | "" | first | 1/1/1 | false |
+| R8 | 6 | 0/0/0 | first | rare | scoop | plain | true | "" | first | 1/1/1 | false |
+| R9 | 314159 | 0/118/118 | — | legendary | raincloud | plain | true | "" | none | 0/0/119 | false |
+| R10 | 3 | 0/0/0 | owned +skimstone,masseur,bellhop | legendary | dustsheet | plain | true | "" | none | 0/0/1 | false |
+| R11 | 66 | 0/0/0 | same as R10 | epic | busker | glossy | true | "" | none | 0/1/1 | false |
+| R12 | 144 | 0/0/0 | same as R10 | common | bellhop | plain | **false** | **v1** | none | 1/1/1 | false |
+| R13 | 289 | 0/0/0 | same as R10 | common | bellhop | gilt | false | "" | none | 1/1/1 | false |
+| R14 | 1326 | 0/0/0 | same as R10 | epic | busker | plain | true | "" | none | 0/1/1 | **true** |
+| R15 | 14 | 0/0/0 | lucky = false / true | common | bellhop | plain / **glossy** | true | "" | none | 1/1/1 | false |
+| R16 | 1 | 5/10/399 | owned +serpent | mythic | serpent | plain | false | "" | mythic | 0/0/0 | false |
 
-R4 and R5 discriminate new-style priority: without priority, R4 yields `rocker` and R5 yields `decay`. R15 discriminates luck: `d3 = 0.9683376` lies between the lucky and normal standard thresholds. R16 is a Mythic duplicate, which grants 150 Shards and 1 Spark through the service.
+R4 and R5 discriminate new-style priority: without priority, R4 yields `busker` and R5 yields `dustsheet`. R15 discriminates luck: `d3 = 0.9683376` lies between the lucky and normal `plain` thresholds. R16 is a Mythic duplicate, which grants 150 Stamps (`Shards`) and 1 Message in a Bottle (`CosmicSparks`) through the service.
 
 **F. 10× batch** (`wish.batch10_vector`). Fresh account: starters only, pity 0/0/0, first guarantee pending, `lucky = false`.
 - Seeds come from a master stream `Odds.stream(777)`: `seed_i = 1 + floor(draw × 2147483646)`, giving `958783841, 607366981, 1790956215, 233935709, 1289326241, 1555924166, 1754204260, 972302372, 585530844, 1189389602`.
@@ -781,18 +818,18 @@ R4 and R5 discriminate new-style priority: without priority, R4 yields `rocker` 
 
 | # | rarity | style | flair | isNew | hit |
 |---|---|---|---|---|---|
-| 1 | rare | monarch | standard | true | first |
-| 2 | uncommon | console | standard | true | none |
-| 3 | uncommon | console | standard | false | none |
-| 4 | uncommon | grappler | standard | true | none |
-| 5 | uncommon | console | standard | false | none |
-| 6 | common | diva | shiny | true | none |
-| 7 | uncommon | tyrant | standard | true | none |
-| 8 | common | sentry | standard | true | none |
-| 9 | common | diva | standard | false | none |
-| 10 | common | granny | standard | true | none |
+| 1 | rare | sandcastle | plain | true | first |
+| 2 | uncommon | kite | plain | true | none |
+| 3 | uncommon | kite | plain | false | none |
+| 4 | uncommon | boxcamera | plain | true | none |
+| 5 | uncommon | kite | plain | false | none |
+| 6 | common | bellhop | glossy | true | none |
+| 7 | uncommon | angler | plain | true | none |
+| 8 | common | skimstone | plain | true | none |
+| 9 | common | bellhop | plain | false | none |
+| 10 | common | masseur | plain | true | none |
 
-Final pity 10/10/10. Service-level totals: Shards = 5 + 5 + 3 = 13; Sparks 0; no Variants.
+Final pity 10/10/10. Service-level totals: Stamps (`Shards`) = 5 + 5 + 3 = 13; Messages in a Bottle 0; no Off-Duty Looks.
 
 **G. Other pure tests:**
 - `wish.ftue_styles_match_rarity`
@@ -800,7 +837,7 @@ Final pity 10/10/10. Service-level totals: Shards = 5 + 5 + 3 = 13; Sparks 0; no
 - `wish.lucky_flair_only` (tier tables identical with lucky on and off)
 - `wish.view_matches_roll_tables` (view pct × 1e4 == tierTable ppm for 200 random pity states)
 - `wish.view_sums_100`
-- `wish.view_priority_rows` (Epic+ floor with rocker owned → rocker 0, frost and huntress 375432 ppm-equivalent each)
+- `wish.view_priority_rows` (Epic+ floor with busker owned → busker 0, lamplighter and cablecar 375432 ppm-equivalent each)
 - `wish.hash_stable` (same ctx → same hash; key order shuffled → same)
 - `wish.hash_changes` (luck on/off, any TierOdds change, a pool change → different)
 - `pity.floor_precedence`, `pity.soft_bonus_values` (k = 59 → 0, 60 → 5000, 119 → 300000), `pity.advance_resets`
@@ -809,7 +846,7 @@ Final pity 10/10/10. Service-level totals: Shards = 5 + 5 + 3 = 13; Sparks 0; no
 
 **H. Frequency tests** (`wish.tier_frequencies_fresh`, `wish.flair_frequencies_fresh`):
 - 200,000 rolls with seeds from master stream 99, pity reset to 0/0/0 before each roll, owned = starters.
-- Each tier frequency, and the shiny and golden frequencies, must lie within ±4σ of the configured probability (σ = √(p(1−p)/n)).
+- Each tier frequency, and the glossy and gilt Finish frequencies, must lie within ±4σ of the configured probability (σ = √(p(1−p)/n)).
 
 #### 5.2.16 Monte Carlo acceptance (§0.11; `tests/wish/montecarlo.spec.luau`)
 
@@ -818,7 +855,7 @@ Final pity 10/10/10. Service-level totals: Shards = 5 + 5 + 3 = 13; Sparks 0; no
 - Each run starts at pity 0/0/0 with owned = starters, `first = false` (the 3 tutorial Wishes are excluded, as in GDD §8.4) and `lucky = false`.
 - Roll *n* uses `seed = 1 + floor(draw(master) × 2147483646)`. Pity and ownership update per roll.
 - Day = `ceil(n / 14)` (14 Wishes/day, GDD §17.5).
-- Record the day of the first Epic+, first Legendary+, first Mythic+, and full non-Cosmic roster (all 15 pool styles except `chaos`). Run until both Mythic+ and the full roster are reached.
+- Record the day of the first Epic+, first Legendary+, first Mythic+, and full non-Cosmic roster (all 15 pool styles except `ferry`). Run until both Mythic+ and the full roster are reached.
 - Median of an even count = mean of the two middle values; P95 = the sorted value at index `ceil(0.95 × n)` (1-based).
 
 **Assertions:**
@@ -849,20 +886,36 @@ A 4,000-run reference with an independent seed gave 1.41 / 3.17 / 12.42 / 16.46.
 | Scenario | Steps | Expected |
 |---|---|---|
 | `wish.tutorial_grant_once` | Fresh mock profile join; rejoin | `Wishes = 3` after first join; still 3 after rejoin; `tutorialGranted = true` |
-| `wish.batch10_server` | `resetProfile`; `grant Wishes 10`; `setWishSeedMaster {seed = 777}`; `Wish.Make{count=10}` | results equal §5.2.15 F (the Lune spec of the same vector is `wish.batch10_vector`; test IDs are unique across Lune and Studio, Part 7 §7.1.4); `Shards = 13`; ledger has 10 entries; `[ALG][Wish] batch ... n=10 best=rare` |
-| `wish.ftue_first_rare` | 20 iterations of: `resetProfile`; `grant Wishes 1`; `setWishSeedMaster {seed = k}` (k = 1..20); `Wish.Make{count=1}` | every roll is `rare` and `monarch` or `flame`; `pityHit = first`; both styles occur at least once |
+| `wish.batch10_server` | `resetProfile`; `grant Wishes 10`; `setWishSeedMaster {seed = 777}`; `Wish.Make{count=10}` | results equal §5.2.15 F (the Lune spec of the same vector is `wish.batch10_vector`; test IDs are unique across Lune and Studio, Part 7 §7.1.4); `Shards = 13`; ledger has 10 entries; `[HB][Wish] batch ... n=10 best=rare` |
+| `wish.ftue_first_rare` | 20 iterations of: `resetProfile`; `grant Wishes 1`; `setWishSeedMaster {seed = k}` (k = 1..20); `Wish.Make{count=1}` | every roll is `rare` and `sandcastle` or `scoop`; `pityHit = first`; both styles occur at least once |
 | `wish.insufficient` | `Wishes = 5`; `Make{10}` | `err = "insufficient"`; wallet unchanged |
 | `wish.busy` | two concurrent `Make{10}` from one client | one ok, one `busy` (or both ok sequentially if the first completed); never 20 rolls charged for 10 |
 | `wish.pity_epic_hard` | `setPity 29 0 0`; `Make{1}` | rarity ∈ epic+; `pity.sinceEpicPlus = 0` |
 | `wish.pity_mythic_hard` | `setPity 0 0 399`; `Make{1}` | rarity ∈ {mythic, cosmic} |
 | `wish.restricted_paid_locked` | `simulatePurchase wishes_10` (unrestricted); `setPolicy true`; `Make{10}` with 3 free + 10 paid | `err = "restricted"`; `Make{1}` ×3 ok (free); `paidUnspent = 10` |
-| `wish.restricted_no_luck` | `setPass lucky_jar true`; `setPolicy true`; `Wish.GetOdds` | `luckyJar = false`; flair standard = 97.4750% |
-| `wish.lucky_odds_live` | `setPass lucky_jar true`; `Wish.GetOdds` | shiny = 3.0000%, standard = 96.2125% |
+| `wish.restricted_no_luck` | `setPass lucky_jar true`; `setPolicy true`; `Wish.GetOdds` | `luckyJar = false`; Finish `plain` = 97.4750% |
+| `wish.lucky_odds_live` | `setPass lucky_jar true`; `Wish.GetOdds` | `glossy` = 3.0000%, `plain` = 96.2125% |
 | `wish.odds_view_matches_server` | client computes `Odds.view`; server `Wish.GetOdds` | identical `oddsHash` and tier ppm |
-| `wish.cosmic_craft` | `grant CosmicSparks 10`; `CraftCosmic` | owns `chaos`; Sparks 0; ledger hit `c`; second craft with 10 Sparks → `denied all_cosmic_owned` |
+| `wish.cosmic_craft` | `grant CosmicSparks 10`; `CraftCosmic` | owns `ferry`; `CosmicSparks` 0; ledger hit `c`; second craft with 10 more → `denied all_cosmic_owned` |
 | `wish.escrow_release` | `grant Wishes` to 995; `simulatePurchase wishes_10` (receipt path, no cap check) | Wishes = 1000, `paidEscrow = 5`, `paidUnspent = 5`; `Make{10}` → Wishes 995 after release (990 + 5); escrow 0; `paidUnspent = 5` |
 | `wish.config_change_rehash` | `setConfig Wish {"TierOdds":{"common":499900,"cosmic":200}}`; `Wish.GetOdds` | new `oddsHash`; the next ledger entry carries it |
-| `wish.anomaly_signal` | Studio seam injects a pity regression | `[ALG][Mod] signal kind=wish_anomaly` |
+| `wish.anomaly_signal` | Studio seam injects a pity regression | `[HB][Mod] signal kind=wish_anomaly` |
+| `wish.cosmic_arrival_once` | `WishService._resetArrival()`; `resetProfile`; `grant CosmicSparks 10`; `CraftCosmic`; then the harness calls `WishService.cosmicArrival(P, "ferry")` again | after the craft: every client receives `ui.notify.cosmic_arrival`; `ReplicatedStorage.Runtime` attribute `CosmicArrivalUntil` = server time + 60 (±1); one `[HB][Wish] arrival user=<id> style=ferry` line. Second call returns false, logs `[HB][Wish] arrival skip reason=already_fired`, and leaves the attribute unchanged |
+
+#### 5.2.18 Cosmic Arrival event (GDD §8.6)
+
+In the fiction, nobody has heard from the Last Ferry in 365 summers. In the design (GDD §8.6), the first Cosmic pull anywhere sets off the **Arrival** on every server: a ferry horn, a server-wide message, and sea fog for 60 s while the music cuts out. **M1-G scope:** the first Cosmic a server sees sets off the Arrival on that server; the universe-wide "first pull anywhere" record is a future hook (§5.14 ARR-1). It is presentation only: odds, pity, economy and the sim are untouched.
+
+- **Server only.** `WishService.cosmicArrival(player: Player?, styleId: Types.StyleId): boolean` is called in exactly two places: by `afterCommit` (§5.2.11) for the first `cosmic` result of a committed `Wish.Make` batch or `Wish.CraftCosmic`, and by `onAnnounce` (§5.2.13) for a cross-server Cosmic message (`player = nil`; only when `Wish.Announce.CrossServerEnabled`). There is no remote for it; clients only read its effects.
+- **Idempotent.** A module-level flag `arrivalFired` (server memory) lets the first call win. Every later call on the same server returns false and logs `[HB][Wish] arrival skip reason=already_fired`, so two Cosmics in one Mailbag, two players, or a craft plus a cross-server message give one Arrival. With `Wish.CosmicArrival.Enabled == false` the call returns false, logs `reason=disabled` and leaves the flag unset.
+- **Effects** (in this order, synchronous, no yields):
+  1. `arrivalFired = true`.
+  2. Set the `ReplicatedStorage.Runtime` attribute `CosmicArrivalUntil = workspace:GetServerTimeNow() + Wish.CosmicArrival.FogSec` (60). Only WishService writes it, and only here. Outside the Studio seam below it is never cleared; clients compare it with `workspace:GetServerTimeNow()`, so a player who joins mid-Arrival sees the remaining fog.
+  3. With a `player`: `Net.server.fireAll("Notify", {kind = "announce", key = "ui.notify.cosmic_arrival", args = {who = player.DisplayName, styleId = styleId}, rarity = "cosmic", scope = "server"})`. This replaces the plain server-wide Notify of §5.2.13 for that result; the cross-server publish still runs when enabled. With `player = nil`, no extra Notify is sent (`onAnnounce` already showed `ui.notify.wish_cosmic_global`).
+  4. Log `[HB][Wish] arrival user=<id|remote> style=<styleId> until=<t>`.
+- **Render (Part 6 §6.5.1: preset `hub.Fog`, `sfx.wish.horn`).** While `workspace:GetServerTimeNow() < CosmicArrivalUntil`: the ferry-horn sting plays once, sea fog rolls over the `hub` map (client-side atmosphere only) and the map music cuts out. Other maps show the message only. Telegraphs, hit flashes, nameplates and the Style Tell stay fully visible; no part, hurtbox, query group or sim attribute changes.
+- **Out of M1-G scope:** a universe-wide "first ever" record and the Summer Board's sightings line on the pier ("SIGHTINGS OF THE HOMEWARD: 1", GDD §8.6) need a world store (§5.14 ARR-1). M1-G fires the Arrival once per server and adds no Summer Board key.
+- **Studio seam:** `WishService._resetArrival()` (no-op outside Studio) clears `arrivalFired` and sets the attribute to 0, so `wish.cosmic_arrival_once` can run more than once per session.
 
 ---
 
@@ -877,7 +930,7 @@ API: §2.3.5 (`fetchAsync`, `get`, `devSet`).
 | `paidRandomRestricted` | `ArePaidRandomItemsRestricted` | `true` unless the key is exactly `false` (missing → restricted) |
 | `paidTradingAllowed` | `IsPaidItemTradingAllowed` | `true` only if exactly `true` (unused in M1-G; no trading) |
 | `adsAllowed` | `AreAdsAllowed` | `true` only if exactly `true` (rewarded ads are a future hook) |
-| `subscriptionEligible` | `IsEligibleToPurchaseSubscription` | `true` only if exactly `true` (Club is a future hook) |
+| `subscriptionEligible` | `IsEligibleToPurchaseSubscription` | `true` only if exactly `true` (the Deckchair Club subscription is a future hook) |
 | `source` | — | `"live"`, `"failsafe"` or `"dev"` |
 
 Fetch algorithm (MUST):
@@ -906,7 +959,7 @@ function PolicyGate.fetchAsync(player: Player): Types.PolicyFlags
 end
 ```
 
-- `store()` caches the flags per player, calls `DataService.setRuntime(player, "policy", flags)` (owner UI updates through the delta), and logs `[ALG][Policy] flags user=<id> restricted=<bool> source=<live|failsafe|dev>` once per change.
+- `store()` caches the flags per player, calls `DataService.setRuntime(player, "policy", flags)` (owner UI updates through the delta), and logs `[HB][Policy] flags user=<id> restricted=<bool> source=<live|failsafe|dev>` once per change.
 - `get(player)` never yields. It returns the cached flags, or `failsafe()` if none are cached yet.
 - Join step 4 bounds the yield to about 10 s worst case (3 attempts × engine timeout is not ours to control). PlayerService does not wait on background retries.
 - The cache is per player and dropped on leave. Flags are not refreshed mid-session except by background retries after a failsafe.
@@ -916,21 +969,23 @@ end
 **Consumers.** WishService (paid Wish spending and luck, §5.2.14), MonetizationService (store visibility and prompts, §5.6), and the UI (through `PrivateView.policy`).
 
 **Verify.**
-- Scenario `policy.failsafe_restricted`: the Studio seam `PolicyGate._forceFail = true` with `StudioFailOpen = false` → `restricted=true source=failsafe`; `Store.Get` hides `wishes_*` and `lucky_jar`.
+- Scenario `policy.failsafe_restricted`: the Studio seam `PolicyGate._forceFail = true` with `StudioFailOpen = false` → `restricted=true source=failsafe`; `Store.Get` hides `wishes_*` and `lucky_jar` (Lucky Stamp).
 - Scenario `policy.dev_override`: `setPolicy false` → `source=dev`; PRI items visible.
 - Scenario `policy.live_in_studio` (spike, §5.14): log what `GetPolicyInfoForPlayerAsync` returns in Studio.
 - Scenario `security.pri_server_rejects` (Part 2).
 
 ---
 
-### 5.4 Choose Goose's Shop (GDD §8.5)
+### 5.4 Sundry's Rack (GDD §8.5)
+
+The shop is **Sundry's Rack**: Sundry is a woken spinning postcard rack under a striped awning, plain-spoken and never pushy. Its stock is deterministic per player and window; no luck is involved.
 
 #### 5.4.1 Rules
 
 - **Style slots:** `Shop.StyleSlots = 3`, drawn from pool styles with rarity ∉ `Shop.ExcludeRarities` (`starter`, `cosmic`), i.e. 15 styles. `IncludeUnimplemented = true` (§0.10: collectible).
 - **Weighting toward unowned:** weight `UnownedWeight = 4` for unowned styles and `OwnedWeight = 1` for owned ones (tuning default). Owned styles can appear; they show as "Owned" and cannot be bought.
-- **Cosmetic slots:** `Shop.CosmeticSlots = 4` with a placeholder catalog: **Variants of owned styles** (`v1..v<Wish.VariantsPerStyle>` not yet owned). Price `Shop.VariantPrices[rarity of the style]` (tuning default; GDD §17.5 cosmetics 500–8k). With no candidates, a slot is empty (`itemId = ""`). `CosmeticSlotsEnabled = true` (§5.12 notes the change from §2.6.2's draft). Emotes and Finales are future hooks, because PlayerData has no cosmetics inventory yet.
-- **Prices** (Treasure only, GDD §8.5): common 1,500 · uncommon 3,000 · rare 6,000 · epic 12,000 · legendary 30,000 · mythic 75,000. Robux can never buy shop items (GDD §17.2).
+- **Cosmetic slots:** `Shop.CosmeticSlots = 4` with a placeholder catalog: **Off-Duty Looks of owned styles** (`Variant`s `v1..v<Wish.VariantsPerStyle>` not yet owned). Price `Shop.VariantPrices[rarity of the style]` (tuning default; GDD §17.5 cosmetics 500–8k). With no candidates, a slot is empty (`itemId = ""`). `CosmeticSlotsEnabled = true` (§5.12 notes the change from §2.6.2's draft). Emotes and Send-offs are future hooks, because PlayerData has no cosmetics inventory yet.
+- **Prices** (Shells only, `Treasure`; GDD §8.5): common 1,500 · uncommon 3,000 · rare 6,000 · epic 12,000 · legendary 30,000 · mythic 75,000. Robux can never buy shop items (GDD §17.2).
 - **Refresh:** every `Shop.RefreshSec = 43200` (12 h). Windows are aligned to 00:00 and 12:00 UTC: `period = Pity.periodIndex(now, 43200)`, `refreshAt = (period + 1) × 43200`.
 
 #### 5.4.2 Deterministic rotation (pure)
@@ -961,12 +1016,12 @@ Vectors (Lune `shop.rotation_vectors`; defaults `StyleSlots 3`, `CosmeticSlots 4
 
 | userId | period | owned (besides starters) | variants owned | rotationId | styles | cosmetics |
 |---|---|---|---|---|---|---|
-| 1 | 41476 | — | — | `w04:97b:12,11,02,01` | flame, grappler, rocker | stretch/v2, stretch/v1, hero/v2, hero/v1 |
-| 1 | 41477 | — | — | `w05:8fd:11,02,01,12` | monarch, demon, huntress | stretch/v1, hero/v2, hero/v1, stretch/v2 |
-| 12345 | 41476 | — | — | `w04:c56:01,11,12,02` | frost, tyrant, console | hero/v1, stretch/v1, stretch/v2, hero/v2 |
-| 12345 | 41477 | — | — | `w05:b7f:01,12,02,11` | rocker, grappler, demon | hero/v1, stretch/v2, hero/v2, stretch/v1 |
-| 12345 | 41476 | monarch, rocker, sentry | rocker: v1 | `w04:c56:01,81,b2,82` | frost, tyrant, console | hero/v1, monarch/v1, rocker/v2, monarch/v2 |
-| 12345 | 41477 | monarch, rocker, sentry | rocker: v1 | `w05:c7f:01,81,12,b2` | frost, grappler, demon | hero/v1, monarch/v1, stretch/v2, rocker/v2 |
+| 1 | 41476 | — | — | `w04:97b:12,11,02,01` | scoop, boxcamera, busker | lifeguard/v2, lifeguard/v1, attendant/v2, attendant/v1 |
+| 1 | 41477 | — | — | `w05:8fd:11,02,01,12` | sandcastle, raincloud, cablecar | lifeguard/v1, attendant/v2, attendant/v1, lifeguard/v2 |
+| 12345 | 41476 | — | — | `w04:c56:01,11,12,02` | lamplighter, angler, kite | attendant/v1, lifeguard/v1, lifeguard/v2, attendant/v2 |
+| 12345 | 41477 | — | — | `w05:b7f:01,12,02,11` | busker, boxcamera, raincloud | attendant/v1, lifeguard/v2, attendant/v2, lifeguard/v1 |
+| 12345 | 41476 | sandcastle, busker, skimstone | busker: v1 | `w04:c56:01,81,b2,82` | lamplighter, angler, kite | attendant/v1, sandcastle/v1, busker/v2, sandcastle/v2 |
+| 12345 | 41477 | sandcastle, busker, skimstone | busker: v1 | `w05:c7f:01,81,12,b2` | lamplighter, boxcamera, raincloud | attendant/v1, sandcastle/v1, lifeguard/v2, busker/v2 |
 
 Period 41476 is 2026-10-12 00:00 UTC (`now = 1791763200`). Also: `shop.rotation_id_roundtrip`, and `shop.rotation_owned_weighting` (10,000 periods for one user owning 7 of 15 styles: the share of unowned picks is within ±2 percentage points of the exact expectation, computed by enumerating the 3-step weighted draw).
 
@@ -975,7 +1030,7 @@ Period 41476 is 2026-10-12 00:00 UTC (`now = 1791763200`). Also: `shop.rotation_
 - **Persistence of the composition.** On `Shop.Get` (and before `Shop.Buy`), if `Odds.parseRotationId(data.shop.rotationId)` is nil or its `period ≠ currentPeriod`:
   - compute `Odds.shopRotation(...)` with the **current** ownership;
   - store `rotationId` and reset `bought` to `false × (StyleSlots + CosmeticSlots)` in one update of `{"shop"}`;
-  - log `[ALG][Shop] rotation user=<id> rid=<rotationId>`.
+  - log `[HB][Shop] rotation user=<id> rid=<rotationId>`.
 
   The slots stay fixed for the whole window, even after purchases change ownership.
 - **`Shop.Get` → `ShopView`.**
@@ -996,20 +1051,20 @@ Period 41476 is 2026-10-12 00:00 UTC (`now = 1791763200`). Also: `shop.rotation_
 
   Grant inside the same mutator:
   - `tx.debit("Treasure", price, "shop_buy", {sku = "style:<id>"})` or `{sku = "variant:<id>/<v>"}`;
-  - a style is granted with `StyleService.grantInTx(d, id, "shop", tx.now)`; Flair stays `standard` (the shop is deterministic and does not roll);
-  - a variant is granted with `styles[id].variants[v] = true`;
+  - a style is granted with `StyleService.grantInTx(d, id, "shop", tx.now)`; the Finish stays `plain` (the shop is deterministic and does not roll);
+  - an Off-Duty Look is granted with `styles[id].variants[v] = true`;
   - `bought[slot] = true`.
 
-  Response `ShopBuyRes{itemId, price, treasureLeft}`. Log `[ALG][Shop] buy user=<id> slot=<n> item=<id> price=<p>`. Notify `ui.notify.shop_bought`.
-- Choose Goose's rhyming dialogue is UI text (Skin keys `ui.shop.goose_line_<n>`, n = 1…6, Part 6/8; the Original lines are plain prose, Part 8 §8.3.7).
+  Response `ShopBuyRes{itemId, price, treasureLeft}`. Log `[HB][Shop] buy user=<id> slot=<n> item=<id> price=<p>`. Notify `ui.notify.shop_bought`.
+- Sundry's lines are UI text (Skin keys `ui.shop.sundry_line_<n>`, n = 1…6; Part 6 shows one at random). The Base lines are plain-spoken and never pushy (§5.12 item 14; Part 8 §8.3.7 carries them).
 
 **Verify.** Scenarios:
 - `shop.rotation_stable`: two `Shop.Get` calls in the same window return the same `rotationId`; `setTimeOffset +43200` → a new one; `bought` is reset.
-- `shop.buy_style`: `grant Treasure 1500`; buy a common slot → owned; Treasure 0; `bought = true`; rebuying → `denied`.
+- `shop.buy_style`: `grant Treasure 1500`; buy a common slot → owned; `Treasure` 0; `bought = true`; rebuying → `denied`.
 - `shop.buy_stale`: buy with an old `rotationId` → `stale`; with a wrong price → `stale`.
 - `shop.buy_insufficient`.
 - `shop.buy_variant`.
-- `shop.unimplemented_purchasable`: buying `sentry` succeeds; equipping it → `not_implemented`.
+- `shop.unimplemented_purchasable`: buying `skimstone` succeeds; equipping it → `not_implemented`.
 
 ---
 
@@ -1017,25 +1072,25 @@ Period 41476 is 2026-10-12 00:00 UTC (`now = 1791763200`). Also: `shop.rotation_
 
 #### 5.5.1 Currencies (GDD §17.2)
 
-| Currency | Sources (reasons) | Sinks (reasons) | Robux-purchasable |
+| Currency (player-facing name) | Sources (reasons) | Sinks (reasons) | Robux-purchasable |
 |---|---|---|---|
-| `Treasure` | `combat_ko`, `combat_assist`, `combat_damage`, `streak_bounty`, `level_up`, `daily_login`, `quest`, `world_event`, `wish_overflow`, `compensation`, `dev` | `shop_buy` (quest rerolls and Variant crafting are future hooks) | **No** |
+| `Treasure` (Shells) | `combat_ko`, `combat_assist`, `combat_damage`, `streak_bounty`, `level_up`, `daily_login`, `quest`, `world_event`, `wish_overflow`, `compensation`, `dev` | `shop_buy` (quest rerolls and Off-Duty Look crafting are future hooks) | **No** |
 | `Wishes` | `tutorial`, `level_up`, `daily_login`, `quest`, `world_event`, `combat_active`, `purchase`, `compensation`, `dev` | `wish` | Yes (dev products; PRI-gated) |
-| `Shards` | `duplicate` | `shard_convert` (Mastery ≤ M20) | No |
-| `CosmicSparks` | `mythic_dupe` | `cosmic_craft` | No |
+| `Shards` (Stamps) | `duplicate` | `shard_convert` (Mastery ≤ M20) | No |
+| `CosmicSparks` (Messages in a Bottle) | `mythic_dupe` | `cosmic_craft` | No |
 
 Event tokens are out of scope.
 
-#### 5.5.2 Earn table (GDD §17.5 casual target ≈ 14 Wishes and ≈ 1,775 Treasure per 45-min day)
+#### 5.5.2 Earn table (GDD §17.5 casual target ≈ 14 Wishes and ≈ 1,775 Shells per 45-min day)
 
-| Source | Trigger | Treasure | Wishes | Account XP | Mastery XP | Config |
+| Source | Trigger | Shells (`Treasure`) | Wishes | Account XP | Mastery XP | Config |
 |---|---|---|---|---|---|---|
-| KO | `CombatService.ko`, killer | 25 × decay | — | 25 × decay | 50 × decay (killer's style) | `Economy.CombatEarn.KoTreasure`, `Progression.Account.XpKo`, `Progression.Mastery.XpKo` |
-| Assist | `ko.assists[*]` | 10 × decay | — | 10 × decay | — | `AssistTreasure`, `XpAssist` |
+| KO | `CombatService.ko`, killer | 25 × r | — | 25 × r | 50 × r (killer's style) | `Economy.CombatEarn.KoTreasure`, `Progression.Account.XpKo`, `Progression.Mastery.XpKo` |
+| Assist | `ko.assists[*]` | 10 × r | — | 10 × r | — | `AssistTreasure`, `XpAssist` |
 | Damage dealt | `CombatService.damage` | 5 per 100 HP (fractional accumulator) | — | — | 1 per HP (attacker's style) | `TreasurePer100Damage`, `Mastery.XpPerDamage` |
 | Active minute | §5.5.3 | — | — | 10 | — | `XpPerActiveMinute` |
 | Active combat Wish | every 900 cumulative active seconds | — | 1 | — | — | `CombatEarn.ActiveWishEverySec` (GDD §17.5 "1 per 15 min active") |
-| Style Moment | `CombatService.styleMoment` | — | — | — | 100 | `Mastery.XpStyleMoment` |
+| Snapshot | `CombatService.styleMoment` | — | — | — | 100 | `Mastery.XpStyleMoment` |
 | Streak bounty | `CombatService.streak` kind `ended`, to `endedBy` | 25 / 60 / 150 (`Combat.Streak.Bounty`, Part 3) | — | — | — | GDD §6.11 |
 | Level-up | per level gained | 250 | 3 | — | — | `Account.RewardPerLevel` (GDD §9.1) |
 | Daily login | first ready per UTC day | 100 | 2 | — | — | `Economy.DailyLogin` |
@@ -1044,16 +1099,17 @@ Event tokens are out of scope.
 | Tutorial | first join | — | 3 | — | — | `Economy.TutorialWishes` |
 
 **Multipliers and exclusions:**
-- **Royal VIP:** every Treasure **source** except `wish_overflow`, `compensation` and `dev` is multiplied by `Economy.VipTreasureMultiplier` (1.10), then floored, by the caller (ProgressionService) when `MonetizationService.ownsPass(player, "vip")` (GDD §17.3; §2.8.5 rule 7).
-- **Training:** if `MapId == "training"` and `Economy.TrainingEarns == false`, the KO, assist, damage, active-minute, active-Wish, Style Moment and bounty rows earn nothing.
+- **Repeat victim:** `r` in the KO and assist rows is the repeat-victim multiplier of §5.5.4 (1, 0.5, 0.25, 0).
+- **First Class** (`vip`): every Shells **source** except `wish_overflow`, `compensation` and `dev` is multiplied by `Economy.VipTreasureMultiplier` (1.10), then floored, by the caller (ProgressionService) when `MonetizationService.ownsPass(player, "vip")` (GDD §17.3; §2.8.5 rule 7).
+- **Staff Room:** if `MapId == "training"` and `Economy.TrainingEarns == false`, the KO, assist, damage, active-minute, active-Wish, Snapshot and bounty rows earn nothing.
 - **Bots:** rewards derived from a bot victim (`victimBot ~= nil`) are multiplied by `Economy.BotRewardMultiplier` (0.5, tuning default).
 
-**M1-G earn model (DES-7, §5.14).** With daily quests on, world events stubbed (`Features.WorldEvent = false`) and weekly quests a future hook, a casual 45-min day in M1-G earns ≈ **10.5 Wishes** (active 3 + daily quests 4 + login 2 + level-ups 1.5) and ≈ **1,025 Treasure** (combat 350 + daily quests 450 + login 100 + level-ups 125). That is ≈ 75 % of the GDD §17.5 Wishes (14) and ≈ 58 % of its Treasure (1,775): the missing rows are world events (1 Wish, ~500 Treasure) and amortized weekly quests (2.5 Wishes, 250 Treasure). The level-up row keeps the GDD amortization and slightly overstates M1-G, because world-event and weekly-quest XP are also missing. No GDD number changes; the owner accepts the gap or adds a temporary grant (DES-7).
+**M1-G earn model (DES-7, §5.14).** With daily quests on, world events stubbed (`Features.WorldEvent = false`) and weekly quests a future hook, a casual 45-min day in M1-G earns ≈ **10.5 Wishes** (active 3 + daily quests 4 + login 2 + level-ups 1.5) and ≈ **1,025 Shells** (combat 350 + daily quests 450 + login 100 + level-ups 125). That is ≈ 75 % of the GDD §17.5 Wishes (14) and ≈ 58 % of its Shells (1,775): the missing rows are world events (1 Wish, ~500 Shells) and amortized weekly quests (2.5 Wishes, 250 Shells). The level-up row keeps the GDD amortization and slightly overstates M1-G, because world-event and weekly-quest XP are also missing. No GDD number changes; the owner accepts the gap or adds a temporary grant (DES-7).
 
 #### 5.5.3 Activity and AFK detection (GDD §9.1 "AFK-detected and zeroed")
 
 - ProgressionService runs one server loop every `Progression.Account.ActiveWindowSec` (60 s).
-- For each ready player, the minute is **active** iff the player **dealt** at least `Progression.Account.ActiveMinDamage` (10, tuning default) damage to non-dummy targets during the window, outside Training.
+- For each ready player, the minute is **active** iff the player **dealt** at least `Progression.Account.ActiveMinDamage` (10, tuning default) damage to non-dummy targets during the window, outside the Staff Room.
 - Taking damage does not count, so an AFK player being farmed earns nothing. This narrows Part 2's draft wording ("dealt or took ≥ 1"); see §5.12.
 - An active minute adds `XpPerActiveMinute` and 60 s to `account.activeSec`. `account.activeSec` persists (§2.4). When `floor(activeSec / 900)` increases, 1 Wish is credited (`combat_active`).
 - Inactive minutes add nothing. Partial windows at join and leave are dropped.
@@ -1062,9 +1118,9 @@ Event tokens are out of scope.
 
 - **Repeat victim.** For each earner, keep a server-memory log of KO/assist timestamps per victim key (UserId string or bot id), pruned to `Economy.RepeatVictim.WindowSec` (600 s).
   - The *n*th reward on the same victim inside the window uses `Pity.repeatMultiplier(n, {1, 0.5, 0.25, 0})` = `mults[min(n, #mults)]`.
-  - The multiplier applies to Treasure, Account XP and Mastery XP from that KO or assist. XP is included because level-ups pay Wishes (tuning default; the GDD names Treasure).
-- **Rookie rule** (per earner, GDD §15.5 "no Treasure from killing Rookies more than twice per 10 minutes"). If the victim's `Rookie` attribute is true and the earner's is false, the earner gets **0 Treasure** (XP still follows the repeat multiplier) from the 3rd and later Rookie KO (**any** Rookie, not only the same one) within `Economy.RookieKill.WindowSec` (600 s, `MaxTreasureKills = 2`).
-  - The server-memory log is keyed **per earner**: `rookieKos[earner] = { t1, t2, … }` holds the timestamps of the earner's **paid** Rookie KOs (all victims together), pruned to `WindowSec`. A Rookie KO pays Treasure iff fewer than `MaxTreasureKills` paid entries remain in the window; only paid KOs are appended.
+  - The multiplier applies to Shells, Account XP and Mastery XP from that KO or assist. XP is included because level-ups pay Wishes (tuning default; the GDD names Shells only).
+- **Rookie rule** (per earner, GDD §15.5: no Shells for KOing Rookies more than twice per 10 minutes). If the victim's `Rookie` attribute is true and the earner's is false, the earner gets **0 Shells** (XP still follows the repeat multiplier) from the 3rd and later Rookie KO (**any** Rookie, not only the same one) within `Economy.RookieKill.WindowSec` (600 s, `MaxTreasureKills = 2`).
+  - The server-memory log is keyed **per earner**: `rookieKos[earner] = { t1, t2, … }` holds the timestamps of the earner's **paid** Rookie KOs (all victims together), pruned to `WindowSec`. A Rookie KO pays Shells iff fewer than `MaxTreasureKills` paid entries remain in the window; only paid KOs are appended.
   - Pure helper `Pity.rookieKoPays(log: { number }, now: number, cfg: { WindowSec: number, MaxTreasureKills: number }) -> boolean` = (count of `t` in `log` with `now − t < WindowSec`) `< MaxTreasureKills`; the caller appends `now` only when it returns true, and prunes expired entries.
   - Lune `progression.rookie_rule_per_earner`: KOs of Rookies R1, R2, R3 at t = 0, 60, 120 → paid, paid, **unpaid**; a 4th Rookie KO at t = 601 → paid (the t = 0 entry has expired).
 - **Rookie status.** `flags.rookieSecLeft` (initially `Progression.Rookie.DurationSec` = 7,200) decreases by session play seconds at every flush. At 0, ProgressionService sets `Rookie = false` and sends Notify `ui.notify.rookie_ended`.
@@ -1073,22 +1129,22 @@ Event tokens are out of scope.
 
 #### 5.5.5 Accumulators and flush
 
-- Per-player server memory: `{treasure = {[reason] = number}, wishes = {[reason] = number}, xp = number, mastery = {[styleId] = number}, life = {treasure, xp, mastery}, minuteDamage, victims}`. Fractional Treasure from damage stays in memory until it reaches an integer.
+- Per-player server memory: `{treasure = {[reason] = number}, wishes = {[reason] = number}, xp = number, mastery = {[styleId] = number}, life = {treasure, xp, mastery}, minuteDamage, victims}`. Fractional Shells from damage stay in memory until they reach an integer.
 - **Flush** (one `DataService.update` over `{"currencies","account","styles","flags","quests"}`) happens:
   - every `Economy.FlushSec` (30 s);
   - in the `lifeEnded` handler, which must not yield (`DataService.update` is synchronous; §3.13.7);
   - in `DataService.beforeRelease` (synchronous, §2.8.2).
 - The flush mutator, in order:
-  1. Credit Treasure per reason (VIP applied).
-  2. Credit Wishes per reason (earned; overflow converts to Treasure, §5.2.10).
-  3. Add XP. While `account.xp ≥ toNext`, level up: `+3 Wishes` and `+250 Treasure × VIP` per level (`level_up`). Cap at `MaxLevel` 100; XP beyond the cap accumulates only in `xpTotal`. Prestige is a future hook.
+  1. Credit Shells (`Treasure`) per reason (First Class applied).
+  2. Credit Wishes per reason (earned; overflow converts to Shells, §5.2.10).
+  3. Add XP. While `account.xp ≥ toNext`, level up: `+3 Wishes` and `+250` Shells (× 1.10 with First Class) per level (`level_up`). Cap at `MaxLevel` 100; XP beyond the cap accumulates only in `xpTotal`. Prestige is a future hook.
   4. Add Mastery XP to **owned** styles only. Trial and rotation styles accrue none. Grant Mastery rewards (§5.5.7). **Title auto-equip:** whenever this step or step 3 grants a title (`account.titles[id] = true`, newly) while `account.title == ""`, set `account.title = id` (the first title granted becomes the equipped one; later grants never replace it). There is no `title` settings key and no title picker in M1-G (Part 6 §6.15 future hook).
   5. Decrement `rookieSecLeft`.
 - After commit:
   - write `Level`, `MasteryLevel`, `Rookie`, `Title` attributes on change;
   - Notify `ui.notify.level_up {level}` / `ui.notify.mastery_up {styleId, level}`;
   - Telemetry progression events;
-  - log `[ALG][Progress] flush user=<id> treasure=<n> wishes=<n> xp=<n> levels=<n>` (only when non-zero) and `[ALG][Progress] level user=<id> level=<n>`.
+  - log `[HB][Progress] flush user=<id> treasure=<n> wishes=<n> xp=<n> levels=<n>` (only when non-zero) and `[HB][Progress] level user=<id> level=<n>`.
 - In `lifeEnded(player, summary)`: fill `summary.treasureEarned`, `xpEarned` and `masteryXpEarned` from `life` and reset it; flush; emit `match_summary` (§5.8).
 
 #### 5.5.6 Account level (GDD §9.1)
@@ -1107,8 +1163,8 @@ Event tokens are out of scope.
 | 10^7 | (100, 0, 0) |
 
   `progression.account_curve` asserts the total to reach level 100 is 252,450 (GDD "≈ 252k").
-- **Rewards:** 3 Wishes and 250 Treasure per level.
-- **Cosmetic every 10 levels** (data only in M1-G): `account.titles["level_<n>"] = true` for n = 10, 20, …, with Skin key `title.level_<n>`. Emote and Finale rewards are future hooks.
+- **Rewards:** 3 Wishes and 250 Shells per level.
+- **Cosmetic every 10 levels** (data only in M1-G): `account.titles["level_<n>"] = true` for n = 10, 20, …, with Skin key `title.level_<n>`. Emote and Send-off rewards are future hooks.
 
 #### 5.5.7 Style Mastery (GDD §9.2)
 
@@ -1125,8 +1181,8 @@ Event tokens are out of scope.
 | `masteryLevel(46399)` | 29 |
 | `masteryLevel(10^9)` | 30 |
 
-- **XP sources:** §5.5.2 (damage 1/HP, KO 50, Style Moment 100).
-- **`Mastery.SpendShards{styleId, shards}`** (§2.7.4 row 7), one update of `{"currencies","styles"}`:
+- **XP sources:** §5.5.2 (damage 1/HP, KO 50, Snapshot 100).
+- **`Mastery.SpendShards{styleId, shards}`** (§2.7.4 row 7; players trade Stamps for Mastery XP), one update of `{"currencies","styles"}`:
   - the style must be owned, else `not_owned`;
   - `level = masteryLevel(xp)`; if `level ≥ ShardCapLevel` (20) → `denied` (`detail = "cap"`);
   - `remaining = masteryXpToReach(20) − xp`; `spent = min(shards, ceil(remaining / ShardXp))`; `gained = min(spent × 60, remaining)`;
@@ -1134,11 +1190,11 @@ Event tokens are out of scope.
   - `tx.debit("Shards", spent, "shard_convert", {sku = "mastery:<styleId>"})`; `masteryXp += gained`;
   - return `{shardsSpent, xpGained, level}`.
 
-  Vector (`progression.shard_clamp`): xp 22,790 and 5 shards requested → spent 1, gained 10, level 20. Another request → `denied cap`. Mastery 21–30 can only come from combat.
-- **Rewards:** data table `Progression.Mastery.Rewards` (GDD §9.2).
+  Vector (`progression.shard_clamp`): xp 22,790 and 5 Stamps requested → spent 1, gained 10, level 20. Another request → `denied cap`. Mastery 21–30 can only come from combat.
+- **Rewards:** data table `Progression.Mastery.Rewards` (GDD §9.2). Reward kinds are internal strings: `lore_card` = a lore postcard (postmarked "Summer 1" to "Summer 365"), `finale_1_and_palette` = the first Send-off and a palette, `awaken_tint_and_variant_choice` = a Peak tint and a choice of Off-Duty Look.
   - On reaching each reward level above `masteryClaimed`, the flush sets `masteryClaimed = level`.
   - Titles are granted for real: `title.mastery_<styleId>_5` at M5 and `title.master_<styleId>` at M30, stored in `account.titles`.
-  - Every other reward kind is logged `[ALG][Progress] reward_pending user=<id> style=<id> level=<n> reward=<kind>` (art pending).
+  - Every other reward kind is logged `[HB][Progress] reward_pending user=<id> style=<id> level=<n> reward=<kind>` (art pending).
 - **Attribute:** `MasteryLevel` = the level of the life's style (1 for unowned trial/rotation styles), written on `lifeStyleResolved` and on level-up.
 
 #### 5.5.8 Time, daily and weekly reset (UTC, server time)
@@ -1146,7 +1202,7 @@ Event tokens are out of scope.
 - `Pity.dayIndex(t) = t // 86400`; `Pity.weekIndex(t) = (t // 86400 + 3) // 7` (weeks start Monday 00:00 UTC; 1970-01-01 was a Thursday); `Pity.periodIndex(t, s) = t // s`.
 - Vector (`time.week_index_monday`): `t = 1791763200` (Monday 2026-10-12 00:00 UTC) → day 20738, week 2963; `t − 1` → week 2962.
 - **Daily login:**
-  - On `ProgressionService.onPlayerReady`, and every `Progression.DailyResetCheckSec` (60 s) for online players: if `flags.lastLoginDay < today`, credit `DailyLogin` (2 Wishes, 100 Treasure, reasons `daily_login`).
+  - On `ProgressionService.onPlayerReady`, and every `Progression.DailyResetCheckSec` (60 s) for online players: if `flags.lastLoginDay < today`, credit `DailyLogin` (2 Wishes, 100 Shells, reasons `daily_login`).
   - `loginStreak = if lastLoginDay == today − 1 then loginStreak + 1 else 1`; `lastLoginDay = today`.
   - Notify `ui.notify.daily_login`. The streak curve is a future hook; M1-G pays the flat GDD §17.5 average.
 - **Quests:** reset at day/week rollover (§5.5.9). All time comes from `DataService.now()`, so `Dev.Command setTimeOffset` tests resets.
@@ -1161,14 +1217,14 @@ Event tokens are out of scope.
 | `perfect_blocks` | perfectBlocks | 10 |
 | `kos` | kos | 5 |
 | `active_minutes` | activeMinutes | 15 |
-| `awaken` | awakenings | 1 |
+| `awaken` (Go Peak) | awakenings | 1 |
 
 - **Selection:** at day rollover (or first ready of the day), `Odds.dailyQuestPick(userId, dayIndex, #DailyPool, DailyCount)`: seed `bxor(userId % 2^32, mul32(day, 0x85EBCA6B))`, uniform without replacement. Store `quests.daily = {QuestProgress}` and `lastDailyReset = day`.
-- **Progress** comes from `DamageEvent` (dealt), `LifeSummary.perfectBlocks`/`kos`/`awakened`, and active minutes. It is not counted on Training.
-- **Claim:** automatic when `progress ≥ goal`. Rewards: `DailyQuest.Treasure` (150 × VIP), `DailyQuest.Wishes` (1), `XpDailyQuest` (150). When all 3 are claimed, add `AllDoneBonusWishes` (1). That totals 450 Treasure and 4 Wishes, matching GDD §17.5.
-- Rerolls (`DailyRerolls`, VIP +1) and weekly quests are future hooks: they need a `Quest.Reroll` remote and a weekly pool.
-- **UI:** Part 6 HUD element **Quests** (§6.9.5): 3 rows from `PrivateView.quests` (`Skin.text("ui.quest.<id>", {goal})`, progress bar), header `ui.hud.quests`, hidden in Simple HUD. After the flush commit that auto-claims a quest, ProgressionService sends `Net.server.fire("Notify", player, {kind = "reward", key = "ui.notify.quest_done", scope = "self"})` and logs `[ALG][Progress] quest_done user=<id> quest=<id>` once per claimed quest. This server Notify is the only quest-done toast; Part 6 adds no client-side toast for the same claim. Scenario `hud.quests_progress` (Part 6).
-- **Skin lines:** every pool `id` needs a `ui.quest.<id>` line (token `{goal}`); Part 8 §8.3.7 defines the Original lines for the five ids above, and a task that adds a `DailyPool` entry adds its line in the same task.
+- **Progress** comes from `DamageEvent` (dealt), `LifeSummary.perfectBlocks`/`kos`/`awakened`, and active minutes. It is not counted in the Staff Room.
+- **Claim:** automatic when `progress ≥ goal`. Rewards: `DailyQuest.Treasure` (150 Shells, × 1.10 with First Class), `DailyQuest.Wishes` (1), `XpDailyQuest` (150). When all 3 are claimed, add `AllDoneBonusWishes` (1). That totals 450 Shells and 4 Wishes, matching GDD §17.5.
+- Rerolls (`DailyRerolls`, First Class +1) and weekly quests are future hooks: they need a `Quest.Reroll` remote and a weekly pool.
+- **UI:** Part 6 HUD element **Quests** (§6.9.5): 3 rows from `PrivateView.quests` (`Skin.text("ui.quest.<id>", {goal})`, progress bar), header `ui.hud.quests`, hidden in Simple HUD. After the flush commit that auto-claims a quest, ProgressionService sends `Net.server.fire("Notify", player, {kind = "reward", key = "ui.notify.quest_done", scope = "self"})` and logs `[HB][Progress] quest_done user=<id> quest=<id>` once per claimed quest. This server Notify is the only quest-done toast; Part 6 adds no client-side toast for the same claim. Scenario `hud.quests_progress` (Part 6).
+- **Skin lines:** every pool `id` needs a `ui.quest.<id>` line (token `{goal}`); §5.12 item 14 gives the Base lines for the five ids above (Part 8 §8.3.7 carries them), and a task that adds a `DailyPool` entry adds its line in the same task.
 - **Why on in M1-G (DES-7):** with quests off, M1-G earned ≈ 6.5 Wishes/day (≈ 46 % of GDD §17.5); turning them on closes most of the gap without a hidden-reward path (a flag flip on a server without the HUD element would grant invisible rewards).
 - The Studio seam `_simActivity` feeds quest progress exactly like real activity: each simulated active minute adds 1 to `activeMinutes` and `dmg` to `damage`.
 - Verify: Lune `quests.pick_deterministic`; scenario `progress.daily_quest_claim` (§5.5.12).
@@ -1177,7 +1233,7 @@ Event tokens are out of scope.
 
 - `CombatService.streak` (§3.13.3):
   - `kind = "tier"` → `Net.server.fireAll("Notify", {kind = "announce", key = "ui.notify.streak_<tier>", args = {who = player.DisplayName}, scope = "server"})`.
-  - `kind = "ended"` with `endedBy` → accumulate `bounty × VIP` Treasure (`streak_bounty`) for `endedBy`, and Notify `ui.notify.streak_ended`.
+  - `kind = "ended"` with `endedBy` → accumulate `bounty` Shells (× 1.10 with First Class; `streak_bounty`) for `endedBy`, and Notify `ui.notify.streak_ended`.
 - World event: the M1-G stub (Features.WorldEvent false) exposes `ProgressionService.worldEventParticipation(player)`, which applies the §5.5.2 row. Part 6's stub zone calls it when enabled.
 
 #### 5.5.11 ProgressionService API
@@ -1209,17 +1265,17 @@ export type ProgressionServiceApi = {
 | Lune | `progression.account_curve`, `progression.level_from_xp_vectors`, `progression.mastery_curve`, `progression.shard_clamp`, `progression.repeat_victim_multipliers` (n = 1..6 → 1, 0.5, 0.25, 0, 0, 0), `progression.rookie_rule_per_earner` (§5.5.4), `time.week_index_monday`, `quests.pick_deterministic` | as stated |
 | Scenario | `progress.afk_zero_xp` | `simActivity {sec=600, dmg=0}` → XP unchanged; `{sec=600, dmg=50}` → +100 XP |
 | Scenario | `progress.active_wish` | `simActivity {sec=900, dmg=50}`; flush → +1 Wish (`combat_active`) |
-| Scenario | `progress.level_up_rewards` | fresh profile; `simActivity {sec=2100, dmg=50}`; `flushProgress` → 35 active minutes = 350 XP ≥ 345 → level 2; Wishes +5 (3 level-up + 2 `combat_active`); Treasure +250 (`[ALG][Progress] level user=<id> level=2`) |
-| Scenario | `progress.repeat_kill_decay` | 4 × `simKo {victim="b1"}` within 10 min; `flushProgress` → Treasure +21 (25 × 0.5 bot × (1 + 0.5 + 0.25 + 0) = 21.875, floored; the 0.875 remainder stays in memory) |
-| Scenario | `progress.rookie_rule` | killer non-Rookie; `simKo` on three **different** Rookie victims (`{victim="-101", rookie=true}`, `"-102"`, `"-103"`) within 10 min → the first two pay, the 3rd yields 0 Treasure (per-earner rule, §5.5.4) |
-| Scenario | `progress.daily_quest_claim` | quests on (default); fresh day; `simActivity {sec=900, dmg=50}` (15 active minutes, 750 damage) → `flushProgress` → every picked quest with stat `damage` (goal 600) or `activeMinutes` (goal 15) has `claimed = true` (at least one is always picked: 3 of 5); one `[ALG][Progress] quest_done` line per claim |
-| Scenario | `progress.training_no_earn` | `travel training`; `simActivity` → no XP, no Treasure |
-| Scenario | `progress.daily_login` | join → +2 Wishes +100 Treasure once; `setTimeOffset +86400` → granted again within 60 s; `loginStreak = 2` |
-| Scenario | `progress.overflow_to_treasure` | `grant Wishes` to 999; `setTimeOffset +86400` → daily login (+2 Wishes, +100 Treasure) → Wishes 1000, Treasure +110 (100 `daily_login` + 10 `wish_overflow`) |
-| Scenario | `progress.spend_shards` | `grant Shards 400`; `Mastery.SpendShards {hero, 400}` → level 20; Shards 20 (380 spent) |
+| Scenario | `progress.level_up_rewards` | fresh profile; `simActivity {sec=2100, dmg=50}`; `flushProgress` → 35 active minutes = 350 XP ≥ 345 → level 2; Wishes +5 (3 level-up + 2 `combat_active`); `Treasure` +250 (`[HB][Progress] level user=<id> level=2`) |
+| Scenario | `progress.repeat_kill_decay` | 4 × `simKo {victim="b1"}` within 10 min; `flushProgress` → `Treasure` +21 (25 × 0.5 bot × (1 + 0.5 + 0.25 + 0) = 21.875, floored; the 0.875 remainder stays in memory) |
+| Scenario | `progress.rookie_rule` | killer non-Rookie; `simKo` on three **different** Rookie victims (`{victim="-101", rookie=true}`, `"-102"`, `"-103"`) within 10 min → the first two pay, the 3rd yields 0 `Treasure` (per-earner rule, §5.5.4) |
+| Scenario | `progress.daily_quest_claim` | quests on (default); fresh day; `simActivity {sec=900, dmg=50}` (15 active minutes, 750 damage) → `flushProgress` → every picked quest with stat `damage` (goal 600) or `activeMinutes` (goal 15) has `claimed = true` (at least one is always picked: 3 of 5); one `[HB][Progress] quest_done` line per claim |
+| Scenario | `progress.training_no_earn` | `travel training`; `simActivity` → no XP, no `Treasure` |
+| Scenario | `progress.daily_login` | join → +2 Wishes +100 `Treasure` once; `setTimeOffset +86400` → granted again within 60 s; `loginStreak = 2` |
+| Scenario | `progress.overflow_to_treasure` | `grant Wishes` to 999; `setTimeOffset +86400` → daily login (+2 Wishes, +100 `Treasure`) → Wishes 1000, `Treasure` +110 (100 `daily_login` + 10 `wish_overflow`) |
+| Scenario | `progress.spend_shards` | `grant Shards 400`; `Mastery.SpendShards {attendant, 400}` → level 20; `Shards` 20 (380 spent) |
 | Scenario | `progress.life_summary_filled` | KO a bot → the client's `Life.Summary.treasureEarned > 0` |
 
-Quests are on in M1-G, so simulated activity can complete a quest and add rewards. Every `progress.*` scenario with exact Wish/Treasure/XP expectations (all rows above except `progress.daily_quest_claim`, `progress.training_no_earn` and `progress.life_summary_filled`) starts with `Dev.Command setConfig Progression {"Quests":{"Enabled":false}}` and restores the overlay in cleanup.
+Quests are on in M1-G, so simulated activity can complete a quest and add rewards. Every `progress.*` scenario with exact Wish/Shells/XP expectations (all rows above except `progress.daily_quest_claim`, `progress.training_no_earn` and `progress.life_summary_filled`) starts with `Dev.Command setConfig Progression {"Quests":{"Enabled":false}}` and restores the overlay in cleanup.
 
 ---
 
@@ -1233,25 +1289,25 @@ Quests are on in M1-G, so simulated activity can complete a quest and add reward
 | `wishes_55` | dev product | 55 Wishes | yes | 449 | |
 | `wishes_120` | dev product | 120 Wishes | yes | 899 | equals the Legendary+ hard pity |
 | `wishes_300` | dev product | 300 Wishes | yes | 1,999 | |
-| `vip` | game pass | +10% Treasure, `Vip` attribute (nameplate frame), +1 quest reroll (future), VIP emote (future) | no | 299 | |
-| `quick_wish` | game pass | instant reveals after each rarity's first view (GDD §8.6) and auto-10× (client, Part 6 §6.9.7); history export (future) | no | 99 | |
-| `lucky_jar` | game pass | ×1.5 Flair luck (§5.2.5) | yes (paid luck boost) | 349 | hidden when restricted |
+| `vip` | game pass | **First Class**: +10% Shells, `Vip` attribute (nameplate frame), +1 quest reroll (future), a First Class emote (future) | no | 299 | |
+| `quick_wish` | game pass | **Quick Post**: instant reveals after each rarity's first view (GDD §8.6) and auto-Mailbag (client, Part 6 §6.9.7); history export (future) | no | 99 | |
+| `lucky_jar` | game pass | **Lucky Stamp**: ×1.5 Finish luck (§5.2.5) | yes (paid luck boost) | 349 | hidden when restricted |
 
 - Reference prices live in `Economy.Products/Passes[key].RefPriceRobux`. They are used **only** for the mock store display and the H-09 checklist.
 - Live prices always come from `MarketplaceService:GetProductInfoAsync(id, Enum.InfoType.Product | Enum.InfoType.GamePass).PriceInRobux` [Docs], cached for `Economy.ProductInfoCacheSec` (600 s) and fetched under `pcall`. The deprecated `GetProductInfo` is never used.
 - **IDs:** `Assets.product(key)` = `Assets.products[game.GameId][key]` (§2.9.1). `[0]` is the unpublished-Studio entry (mock only).
-- **The agent never creates products or passes and never sets prices** (H-09). It writes the IDs the human provides into `Assets.luau`. Product names are IP-neutral ("10 Wishes", "Royal VIP", "Quick Wish", "Lucky Jar").
+- **The agent never creates products or passes and never sets prices** (H-09). It writes the IDs the human provides into `Assets.luau`. Product and pass names come from the Base Skin pack ("10 Wishes", "First Class", "Quick Post", "Lucky Stamp"; §5.12 item 14).
 
 #### 5.6.2 Mock mode
 
 - `MonetizationService.isMock() = Runtime.get().MockPurchases == true and _isStudio`, where `_isStudio = RunService:IsStudio()` is the test seam of §2.12 item 13.
-- Outside Studio, `MockPurchases` is ignored, with a one-time log `[ALG][Store] ERROR mock_purchases_ignored_outside_studio` (§2.11.4).
+- Outside Studio, `MockPurchases` is ignored, with a one-time log `[HB][Store] ERROR mock_purchases_ignored_outside_studio` (§2.11.4).
 - In mock mode:
   - `Store.Prompt` for a product calls the **same** `grantProduct` used by real receipts, with `purchaseId = "mock-" .. HttpService:GenerateGUID(false)` and `robuxSpent = RefPriceRobux`, and returns `{status = "mock_granted"}`.
   - For a pass, it sets `mockPasses[userId][key] = true` (server memory; it survives rejoin within the Studio session) and fires `passChanged`.
   - `Dev.Command simulatePurchase {key}` **simulates a granted receipt**. It calls `grantProduct` directly with a fresh mock PurchaseId and skips every prompt-time check (policy, cap, confirmation), exactly like a real receipt arriving late. Escrow (§5.2.10) and idempotency are tested this way.
   - `Dev.Command setPass {pass, owned}` sets or clears mock ownership.
-- Log `[ALG][Store] mock grant user=<id> key=<k> pid=<id>`.
+- Log `[HB][Store] mock grant user=<id> key=<k> pid=<id>`.
 
 #### 5.6.3 Receipt handling (decision: `BindReceiptHandler`)
 
@@ -1260,7 +1316,7 @@ Quests are on in M1-G, so simulated activity can complete a quest and add reward
 - a bound handler takes precedence over `ProcessReceipt`;
 - a duplicate registration throws.
 
-MonetizationService registers **one catch-all** handler (no filter) in `start()`, inside `pcall`, and never assigns `ProcessReceipt`. If the call errors (API unavailable), it logs `[ALG][Store] WARN bind_receipt_failed` and falls back to assigning `MarketplaceService.ProcessReceipt` with the identical body, mapping the result to `Enum.ProductPurchaseDecision.PurchaseGranted`/`NotProcessedYet` [Docs]. Exactly one of the two is ever active.
+MonetizationService registers **one catch-all** handler (no filter) in `start()`, inside `pcall`, and never assigns `ProcessReceipt`. If the call errors (API unavailable), it logs `[HB][Store] WARN bind_receipt_failed` and falls back to assigning `MarketplaceService.ProcessReceipt` with the identical body, mapping the result to `Enum.ProductPurchaseDecision.PurchaseGranted`/`NotProcessedYet` [Docs]. Exactly one of the two is ever active.
 
 ```lua
 --!strict
@@ -1358,9 +1414,9 @@ end
 - **`PromptGamePassPurchaseFinished(player, gamePassId, wasPurchased)`:** if `wasPurchased`, re-check ownership with `UserOwnsGamePassAsync`, update the cache, and fire `passChanged(player, key, true)`.
 - `ownsPass(player, key)` never yields: it reads the cache.
 - **Effects:**
-  - `vip` → Treasure multiplier (§5.5.2) and `Vip` attribute;
-  - `lucky_jar` → §5.2.5;
-  - `quick_wish` → `PrivateView.passes.quick_wish` (Part 6 §6.9.7: the first view of each rarity still plays in full, GDD §8.6, and every later reveal is instant; [Auto ×10] sends each batch as a normal `Wish.Make{count = 10}` only after the previous response and ≥ 2.0 s after the previous send, so it stays under the rate limit).
+  - `vip` (First Class) → Shells multiplier (§5.5.2) and `Vip` attribute;
+  - `lucky_jar` (Lucky Stamp) → §5.2.5;
+  - `quick_wish` (Quick Post) → `PrivateView.passes.quick_wish` (Part 6 §6.9.7: the first view of each rarity still plays in full, GDD §8.6, and every later reveal is instant; the Auto Mailbag button (`ui.wish.auto10`) sends each batch as a normal `Wish.Make{count = 10}` only after the previous response and ≥ 2.0 s after the previous send, so it stays under the rate limit).
 
 #### 5.6.6 MonetizationService API (Part 2 contract plus additions)
 
@@ -1383,47 +1439,52 @@ export type MonetizationServiceApi = {
 
 | Scenario | Expected |
 |---|---|
-| `store.mock_grant_wishes` | `Store.Prompt{key="wishes_10", entryPoint="test"}` → `mock_granted`; Wishes +10; `paidUnspent +10`; `[ALG][Store] mock grant` |
+| `store.mock_grant_wishes` | `Store.Prompt{key="wishes_10", entryPoint="test"}` → `mock_granted`; Wishes +10; `paidUnspent +10`; `[HB][Store] mock grant` |
 | `store.receipt_idempotent` | Call `grantProduct` twice with the same `purchaseId` → second result `duplicate`; Wishes +10 once |
 | `store.cap_blocked` | Wishes 995 → `Store.Prompt wishes_10` → `cap_reached` |
 | `store.fourth_purchase_confirm` | 3 mock purchases, 4th without `confirmed` → `needs_confirm`; with `confirmed=true` → granted |
 | `store.pri_hidden_restricted` | `setPolicy true`; `Store.Get` → `wishes_*` and `lucky_jar` have `hidden=true`; `vip` visible |
 | `store.mock_ignored_live` | Part 2 `security.mock_ignored_live` |
-| `store.pass_mock_vip` | `setPass vip true` → `Vip` attribute true; Treasure from a KO ×1.1 |
+| `store.pass_mock_vip` | `setPass vip true` → `Vip` attribute true; Shells (`Treasure`) from a KO ×1.1 |
 | `store.week_spend` | mock `Store.Prompt` for `wishes_10` then `wishes_55` → `spentThisWeekRobux = 548` (99 + 449, mock reference prices) |
-| `store.receipt_live_spike` (human, H-09; tags `{"m1g", "spike"}`) | In the dev universe with real dev products and `MockPurchases=false`: a Studio test purchase reaches `onReceipt`; `[ALG][Store] receipt ... result=granted`. Tagged `spike`: it needs optional H-09 products, so every gate A4 selector excludes it with `-@spike` (Part 7 §7.7.2/§7.7.3); it runs only when MON-1 is investigated |
+| `store.receipt_live_spike` (human, H-09; tags `{"m1g", "spike"}`) | In the dev universe with real dev products and `MockPurchases=false`: a Studio test purchase reaches `onReceipt`; `[HB][Store] receipt ... result=granted`. Tagged `spike`: it needs optional H-09 products, so every gate A4 selector excludes it with `-@spike` (Part 7 §7.7.2/§7.7.3); it runs only when MON-1 is investigated |
 
 ---
 
-### 5.7 Appearance and the Character Look toggle (owner's change; GDD §12.3; §0.4)
+### 5.7 Appearance and the Full Uniform toggle (owner's request; GDD §12.3; §0.4)
+
+Players fight as **their own look plus Charm Gear**: one oversized held or back prop that defines the silhouette, plus a head piece (Part 4 §4.7, Part 6). The **Full Uniform** (the staff member's whole look) is optional: a player toggle, **default Off**. The own look is either the **Postcard Look** (your own avatar drawn in the postcard toon style, made in a simple creator: body style, skin tone, colour, face, hat and outfit; §0.4, GDD §12.3) or the player's Roblox **Avatar** as it is. Internally these are `characterLook`/`CharacterLook` (Full Uniform), `showStyleGear`/`ShowStyleGear` (Charm Gear) and `ownLook = "Postcard" | "Avatar"`.
 
 #### 5.7.1 Data (persisted in `settings`, §2.8.6)
 
 | Setting | Type | Default | Scope | Set via |
 |---|---|---|---|---|
-| `characterLook` | boolean | true | global | `Appearance.Set{characterLook}` |
+| `characterLook` (Full Uniform) | boolean | **false** | global | `Appearance.Set{characterLook}` |
 | `characterLookByStyle` | `{[StyleId]: boolean}` | `{}` | per-style override (absent = inherit) | `Appearance.Set{styleOverride = {styleId, value = "on"\|"off"\|"inherit"}}` |
-| `ownLook` | `"Oosona"` \| `"Avatar"` | `"Oosona"` | global | `Appearance.Set{ownLook}` |
-| `showStyleGear` | boolean | true | global | `Appearance.Set{showStyleGear}` |
-| `oosona` | `OosonaSpec` | §2.8.6 default | global | `Appearance.Set{oosona}` |
+| `ownLook` | `"Postcard"` \| `"Avatar"` | `"Postcard"` | global | `Appearance.Set{ownLook}` |
+| `showStyleGear` (Charm Gear) | boolean | true | global | `Appearance.Set{showStyleGear}` |
+| `postcard` | `PostcardSpec` | §2.8.6 default | global | `Appearance.Set{postcard}` |
 | `othersAppearance` | `AsChosen` \| `AlwaysCharacter` \| `AlwaysOwn` \| `Simplified` | `AsChosen` | **viewer-local**, never replicated | `Settings.Set` |
 
-**Effective Character Look** (pure; shared helper `AppearanceService.effectiveLook` mirrored on the client): `effective(settings, styleId) = settings.characterLookByStyle[styleId]` if present, else `settings.characterLook`. It is available for every owned, trialing or rotation style from the moment it is obtained; it is not gated by Mastery (GDD §12.3).
+The `characterLook` default is **false** in the PlayerData template, and `Schema.normalizePlayerData` fills a missing value with false (Part 2 §2.8.6 row; §5.12 item 7). A new player therefore shows the Postcard Look plus Charm Gear to everyone.
 
-**Ooo-sona placeholder** (graybox): blocky R15 with three colours from the player's choices.
-- Head and arms use the species skin: `Appearance.OosonaSpecies[species].skin`.
-- The torso uses the player-chosen `color`.
+**Effective Full Uniform** (pure; shared helper `AppearanceService.effectiveLook` mirrored on the client): `effective(settings, styleId) = settings.characterLookByStyle[styleId]` if present, else `settings.characterLook`. It is available for every owned, trialing or rotation style from the moment it is obtained; it is not gated by Mastery (GDD §12.3).
+
+**Postcard Look placeholder** (graybox): a blocky R15 drawn in flat postcard colours, with three colours from the player's choices. The spec is Part 2's `PostcardSpec = {v, body, skin, color, face, hat, outfit}` (§2.4; default `{v=1, body=1, skin=1, color="#F2C14E", face=1, hat=0, outfit=0}`, §2.8.6).
+- **Body style:** `PostcardSpec.body` indexes `Appearance.PostcardStyles`, four neutral body-style records `{id}`: `classic`, `round`, `tall`, `tiny` (§5.10). There are no creature options: every body style is a person. The body style changes only the client render proxies (proportions from `Perf.Looks.BodyScale[<id>]`, Part 6 §6.8.2); the hurtbox and collider never change (§5.7.3).
+- **Skin tone:** `PostcardSpec.skin` indexes the skin palette `Appearance.PostcardSkins` (§5.10). Head and arms use `Appearance.PostcardSkins[spec.skin]`. Skin tone and body style are chosen separately.
+- The torso uses the player-chosen `color` (swatches: `Appearance.PostcardColors`).
 - The legs use `Appearance.OutfitColors[outfit]`, or `color` darkened by `Appearance.NoOutfitDarken` (0.65) when `outfit = 0`.
-- Face, hat and outfit indices select placeholder parts from `ReplicatedStorage.Looks` (Part 6).
-- The `OosonaCode` attribute carries the spec (`Schema.encodeOosona`, ≤ 30 chars).
+- Hat and outfit indices select placeholder parts from `ReplicatedStorage.Looks` (`Postcard_Hat_1..6`, `Postcard_Outfit_1..4`; Part 6 §6.8.6); the face index picks a UI-drawn face (Part 6 §6.8.5). There are no body-style templates.
+- The `PostcardCode` attribute carries the spec (`Schema.encodePostcard`: `p1.<body>.<skin>.<RRGGBB>.<face>.<hat>.<outfit>`, ≤ 30 chars, Part 2 §2.8.6).
 
 #### 5.7.2 Replication (Player attributes, §2.5.2)
 
 | Attribute | Written by AppearanceService when | Value |
 |---|---|---|
-| `CharacterLook` | ready; `Appearance.Set`; `lifeStyleResolved` | effective look for the **current life's** style |
+| `CharacterLook` | ready; `Appearance.Set`; `lifeStyleResolved` | effective Full Uniform for the **current life's** style |
 | `ShowStyleGear` | ready; `Appearance.Set` (immediate) | `settings.showStyleGear` |
-| `OosonaCode` | ready; `Appearance.Set` (immediate) | `Schema.encodeOosona(settings.oosona)` |
+| `PostcardCode` | ready; `Appearance.Set` (immediate) | `Schema.encodePostcard(settings.postcard)` |
 | `OwnLook` | ready; **`lifeStyleResolved` only** (clarification of §2.5.2, §5.12) | the base look the current character was loaded with |
 
 `OwnLook` changes take effect on the next spawn because Avatar loading is a spawn-time property (below). The owner's settings UI shows "applies on respawn" for that one field. The other three attributes update immediately; rendering is cosmetic and the hurtbox is unaffected.
@@ -1448,26 +1509,27 @@ end
 
 - **Base body.**
   - `OwnLook = "Avatar"` → the engine loads the player's Roblox avatar (`CanLoadCharacterAppearance = true`).
-  - `OwnLook = "Oosona"` → the default blocky appearance (`CanLoadCharacterAppearance = false` → "the player will spawn with a default appearance" [Docs]).
+  - `OwnLook = "Postcard"` → the default blocky appearance (`CanLoadCharacterAppearance = false` → "the player will spawn with a default appearance" [Docs]) as the base body. Each client draws the Postcard Look over it from `PostcardCode` (§5.7.1; Part 6 §6.8.2). The Postcard Look is built from the player's `PostcardSpec` choices, not from their Roblox avatar items.
   - Avatar Settings (H-05: Consistent Gameplay, Single Collider, R15) keep the rig R15 and the collider fixed.
 - **Everything else is client-rendered** (Part 6 AppearanceController), per viewer:
-  - the Character look (style palette rig from `StyleDef.palette` + Style Gear props from `ReplicatedStorage.Looks`);
-  - the Ooo-sona colours and parts;
-  - Style Gear on own looks;
-  - "Simplified".
+  - the Full Uniform (style palette rig from `StyleDef.palette` + Charm Gear props from `ReplicatedStorage.Looks`);
+  - the Postcard Look body style, skin tone, colours and parts;
+  - Charm Gear on own looks;
+  - "Simplified";
+  - the Peak uniform, which appears for the Peak's duration whatever the Full Uniform setting is: every viewer except `Simplified` sees the Full Uniform plus the style's Peak pieces (Part 6 §6.8.1–§6.8.2; nobody grows, and the hurtbox is unchanged).
 - **Hurtbox invariance.** The hurtbox is Part 3's fixed capsule (box) welded to the HRP (§3.12.2). Appearance never changes collision, query groups or hurtbox size.
   - Client-rendered look parts use `CanQuery = false` and group `CosmeticNoQuery` (§3.18 item 8; Part 6).
   - For server-loaded avatar accessories, AppearanceService's `CharacterAdded` handler (outside the sim) sets every `Accessory` `Handle` to `CanCollide = false`, `CanQuery = false`, `CanTouch = false`, `Massless = true`. The collision group stays as Part 3's `Hurtbox.prepare` sets it.
   - Hit queries only ever target the `Hurtbox` group.
-- **R15 only.** On `CharacterAdded`, AppearanceService checks `Humanoid.RigType == Enum.HumanoidRigType.R15` [Docs]. Otherwise it logs `[ALG][Appearance] ERROR rig_not_r15 user=<id>` (Avatar Settings misconfigured; H-05).
+- **R15 only.** On `CharacterAdded`, AppearanceService checks `Humanoid.RigType == Enum.HumanoidRigType.R15` [Docs]. Otherwise it logs `[HB][Appearance] ERROR rig_not_r15 user=<id>` (Avatar Settings misconfigured; H-05).
 - **Fallback route B** (only if spike APP-1 fails, §5.14): build the description with `Players:GetHumanoidDescriptionFromUserIdAsync(userId)` (pcall; cached per session) and spawn with `Player:LoadCharacterWithHumanoidDescriptionAsync(desc)` [Docs]. This changes Part 3 step 6. Never use the deprecated `Humanoid:ApplyDescription`, `Players:GetHumanoidDescriptionFromUserId` or `Player:LoadCharacterWithHumanoidDescription` [Docs deprecation tags]; for in-place refresh use `Humanoid:ApplyDescriptionAsync`.
 
 #### 5.7.4 `Appearance.Set` handler (§2.7.4 row 3)
 
-- Checks: `Features.Appearance`; P2 shape validation; `styleOverride.styleId` must be owned, in the free rotation, or trialable on Training (`StyleService.canEquip` rules 1–4 minus implemented, so unimplemented owned styles may store an override); `oosona` must pass `Schema.validateOosona(spec, cfg)`.
+- Checks: `Features.Appearance`; P2 shape validation; `styleOverride.styleId` must be owned, in the free rotation, or trialable in the Staff Room (`StyleService.canEquip` rules 1–3 without the `implemented` check, so unimplemented owned styles may store an override); `postcard` must pass `Schema.validatePostcard(spec, cfg)`.
 - One update of `{"settings"}`; `"inherit"` removes the key.
-- Then rewrite `CharacterLook` (for the current `EquippedStyle`), `ShowStyleGear` and `OosonaCode`.
-- Log `[ALG][Appearance] set user=<id> look=<bool> own=<Oosona|Avatar> gear=<bool>`.
+- Then rewrite `CharacterLook` (for the current `EquippedStyle`), `ShowStyleGear` and `PostcardCode`.
+- Log `[HB][Appearance] set user=<id> look=<bool> own=<Postcard|Avatar> gear=<bool>`.
 - Rate 5/1 (§2.7.4).
 
 #### 5.7.5 Viewer override (client; Part 6 renders) — truth table
@@ -1476,15 +1538,19 @@ The viewer's own character always renders as the owner chose. The override appli
 
 | Viewer `othersAppearance` | Target `CharacterLook` | Target `OwnLook` | Render |
 |---|---|---|---|
-| `AsChosen` | true | any | Character (palette rig + Style Gear) |
-| `AsChosen` | false | `Avatar` | Avatar (+ Style Gear if `ShowStyleGear`) |
-| `AsChosen` | false | `Oosona` | Ooo-sona from `OosonaCode` (+ Style Gear if `ShowStyleGear`) |
-| `AlwaysCharacter` | any | any | Character |
-| `AlwaysOwn` | any | `Avatar` | Avatar (+ gear per `ShowStyleGear`) |
-| `AlwaysOwn` | any | `Oosona` | Ooo-sona (+ gear per `ShowStyleGear`) |
+| `AsChosen` | true | any | Full Uniform (palette rig + Charm Gear) |
+| `AsChosen` | false | `Avatar` | Avatar (+ Charm Gear if `ShowStyleGear`) |
+| `AsChosen` | false | `Postcard` | Postcard Look from `PostcardCode` (+ Charm Gear if `ShowStyleGear`) |
+| `AlwaysCharacter` | any | any | Full Uniform |
+| `AlwaysOwn` | any | `Avatar` | Avatar (+ Charm Gear per `ShowStyleGear`) |
+| `AlwaysOwn` | any | `Postcard` | Postcard Look (+ Charm Gear per `ShowStyleGear`) |
 | `Simplified` | any | any | Palette-coloured graybox body, gear and accessories hidden |
 
-The **Style Tell is always on** in every row and cannot be disabled (§0.4): the nameplate chip in the style colour and icon, and the style's VFX palette (+ Flair tint).
+With the defaults (`CharacterLook = false`, `OwnLook = "Postcard"`, `ShowStyleGear = true`), other players see the Postcard Look plus Charm Gear.
+
+**At Peak** (60 s), every row except `Simplified` renders the Full Uniform plus the style's Peak pieces, whatever the owner's settings; nothing scales (Part 6 §6.8.1–§6.8.2).
+
+The **Style Tell is always on** in every row and cannot be disabled (§0.4): the nameplate chip in the style colour and icon, and the style's VFX palette (+ Finish tint).
 
 #### 5.7.6 AppearanceService API
 
@@ -1492,7 +1558,7 @@ The **Style Tell is always on** in every row and cannot be disabled (§0.4): the
 --!strict
 export type AppearanceServiceApi = {
 	onPlayerReady: (player: Player) -> (),         -- writes the 4 attributes; sets CanLoadCharacterAppearance before the first spawn
-	refresh: (player: Player) -> (),               -- recompute CharacterLook/ShowStyleGear/OosonaCode now
+	refresh: (player: Player) -> (),               -- recompute CharacterLook/ShowStyleGear/PostcardCode now
 	effectiveLook: (settings: Types.Settings, styleId: string) -> boolean, -- pure helper
 }
 ```
@@ -1501,13 +1567,13 @@ export type AppearanceServiceApi = {
 
 | Kind | Name | Expected |
 |---|---|---|
-| Lune | `appearance.effective_look` | global true, override `rocker=false` → rocker false, hero true; inherit removes |
-| Scenario | `appearance.attrs_replicated` | after join, client reads `CharacterLook=true`, `OwnLook="Oosona"`, `ShowStyleGear=true`, `OosonaCode` decodable |
-| Scenario | `appearance.per_style_override` | `Appearance.Set{styleOverride={styleId="stretch",value="off"}}`; equip stretch; respawn → `CharacterLook=false`; equip hero → true |
-| Scenario | `appearance.ownlook_on_respawn` | set `ownLook="Avatar"` → `OwnLook` attribute still `"Oosona"` until respawn, then `"Avatar"`; `CanLoadCharacterAppearance = true` |
-| Scenario | `appearance.hurtbox_invariant` | Hurtbox part size and CFrame offset are identical across Character / Oosona / Avatar lives (compare via `inspect_instance`) |
+| Lune | `appearance.effective_look` | global false (default), override `busker=true` → busker true, attendant false; global true, override `busker=false` → busker false, attendant true; `inherit` removes the override |
+| Scenario | `appearance.attrs_replicated` | after join, client reads `CharacterLook=false` (Full Uniform default Off), `OwnLook="Postcard"`, `ShowStyleGear=true`, `PostcardCode` decodable |
+| Scenario | `appearance.per_style_override` | `Appearance.Set{styleOverride={styleId="lifeguard",value="on"}}`; equip `lifeguard`; respawn → `CharacterLook=true`; equip `attendant`; respawn → false |
+| Scenario | `appearance.ownlook_on_respawn` | set `ownLook="Avatar"` → `OwnLook` attribute still `"Postcard"` until respawn, then `"Avatar"`; `CanLoadCharacterAppearance = true` |
+| Scenario | `appearance.hurtbox_invariant` | Hurtbox part size and CFrame offset are identical across Full Uniform / Postcard Look (every body style) / Avatar lives (compare via `inspect_instance`) |
 | Scenario | `appearance.r15_only` | every spawned character has `RigType = R15`; no `rig_not_r15` lines |
-| Scenario | `appearance.trial_override_allowed` | on Training, `styleOverride` for an unowned implemented style → accepted |
+| Scenario | `appearance.trial_override_allowed` | in the Staff Room, `styleOverride` for an unowned implemented style → accepted |
 | MCP | `screen_capture` per mode (Part 6 renders) | visual check by a human at H-10 |
 
 ---
@@ -1519,9 +1585,9 @@ export type AppearanceServiceApi = {
 - **Live** (`not RunService:IsStudio()` and `Telemetry.Enabled`): calls `AnalyticsService` methods. They are server-only, and events are recorded only in published games [Docs `production/analytics/event-types.md`].
 - **Studio**: never calls AnalyticsService. If `Telemetry.EchoInStudio`, every call prints one echo line:
 
-  `[ALG][TEL] <api> <name> user=<UserId> <sorted k=v of all fields>`
+  `[HB][TEL] <api> <name> user=<UserId> <sorted k=v of all fields>`
 
-  e.g. `[ALG][TEL] economy Treasure amount=25 balance=125 flow=source reason=combat_ko sku= user=-1`. The line is printed via `Log.info("TEL", ...)` (GDD §18.10 wording).
+  e.g. `[HB][TEL] economy Treasure amount=25 balance=125 flow=source reason=combat_ko sku= user=-1`. The line is printed via `Log.info("TEL", ...)` (GDD §18.10 wording).
 - **All environments**: each call is appended to the in-memory ring (`Telemetry.RingSize` 200) as a `TelRecord` for `Telemetry.recent(n)`, which test assertions use.
 - Telemetry calls **never yield**. In live mode, records go to a queue drained by a `task.defer`ed sender loop, and each AnalyticsService call is wrapped in `pcall` (failures are counted and logged once per minute).
 
@@ -1538,7 +1604,7 @@ export type AppearanceServiceApi = {
 | P2 | `match_summary`, `mod_summary` |
 | P3 | `perf_sample`, `world_event` |
 
-- Dropped records still go to the ring and the Studio echo. Log `[ALG][Tel] WARN budget_drop n=<n> window=<id>` once per window when n > 0.
+- Dropped records still go to the ring and the Studio echo. Log `[HB][Tel] WARN budget_drop n=<n> window=<id>` once per window when n > 0.
 - **Cardinality** [Docs]: at most 3 custom fields; values are **strings** (the wrapper `tostring`s every value); ≤ 8,000 unique combinations; ≤ 100 custom event names (this part uses 4); ≤ 10 economy currencies (4); ≤ 20 transaction types (7 below); ≤ 100 item SKUs (≈ 60: 18 styles, 36 variants, 4 products, 2 wish SKUs).
 
 #### 5.8.3 API (Part 2 §2.3.5 signatures) and field mapping
@@ -1571,7 +1637,7 @@ export type AppearanceServiceApi = {
 | progression | ProgressionService on level-up / mastery level-up | `LogProgressionEvent(player, "account"\|"mastery", Enum.AnalyticsProgressionType.Complete, level, "L<n>", cf)` | — | style_id (mastery) | — | — | — |
 | `perf_sample` | Telemetry, `Telemetry.Perf` remote (§2.7.4 row 18; sampled clients only, see **Perf sampling** below) | `LogCustomEvent(player, "perf_sample", fpsP50, cf)` | fps_p50 | device_tier | `p5:<floor(fpsP5/5)*5>` | `vfx:<level>` | memory_mb |
 | `mod_summary` | ModerationService at session end (§2.11.3) | `LogCustomEvent(player, "mod_summary", total, cf)` | total | top kind | distinct kinds | — | per-kind counts |
-| `duel_result`, `realm_clash`, `world_event`, `pass_progress` | — | future hooks (no duels, Realm Clash or Pass in M1-G) | | | | | |
+| `duel_result`, `realm_clash`, `world_event`, `pass_progress` | — | future hooks (no duels, Double Booking (Realm Clash) or Holiday Pass in M1-G) | | | | | |
 
 **Perf sampling (`perf_sample`, GDD §20.2 low-tier fps KPI; decision D-17).**
 - **Server (Telemetry, at join):** in its `Players.PlayerAdded` handler Telemetry sets the Player attribute `PerfSampled = Random.new():NextNumber() < Runtime.get().Telemetry.PerfSampleRate` (boolean; §2.5.2 row). The decision is per session and is never re-rolled. Studio seam `Telemetry._setPerfSampled(player: Player, on: boolean)` overrides it (no-op outside Studio). The `Telemetry.Perf` handler drops payloads from senders whose `PerfSampled` is not true (the §2.7.4 semantic check).
@@ -1594,8 +1660,8 @@ The 9 steps follow GDD §15.5, in order:
 | 8 | `first_wish` |
 | 9 | `first_live_fight` |
 
-- **Server-detected:** step 8 (first `Wish.Make`) and step 9 (first spawn on `candy_kingdom` after ready).
-- **Client-reported:** steps 2–7 are reported by Part 6's FTUE-lite (§6.9.10) through a new remote `Ftue.Step` (C2S event, rate 5 / 1, shape `struct{step = int(1, 9), skipped = bool}`, owner ProgressionService; §5.12): first `ui.tip.punch` shown → 2; first M1 contact → 3; first Block entered → 4; first Dash → 5; first Breakaway → 6; first Awakening → 7 (D-40). Step 1 (`cold_open`) is **not emitted in M1-G** (no cold open), so the onboarding funnel starts at step 2; Part 7 §7.6.8 notes it.
+- **Server-detected:** step 8 (first `Wish.Make`) and step 9 (first spawn on `hub` after ready).
+- **Client-reported:** steps 2–7 are reported by Part 6's FTUE-lite (§6.9.10) through a new remote `Ftue.Step` (C2S event, rate 5 / 1, shape `struct{step = int(1, 9), skipped = bool}`, owner ProgressionService; §5.12): first `ui.tip.punch` shown → 2; first M1 contact → 3; first Block entered → 4; first Dash → 5; first Breakaway → 6; first Peak (step name `awakening`) → 7 (D-40). Step 1 (`cold_open`) is **not emitted in M1-G** (no cold open), so the onboarding funnel starts at step 2; Part 7 §7.6.8 notes it.
 - The handler accepts only `step > flags.ftueStep`, so steps are monotonic and skips are allowed. It sets `flags.ftueStep = step` and `ftueDone = (step == 9)`, then emits the onboarding event.
 - Elapsed time = `now − createdAt`.
 
@@ -1603,8 +1669,8 @@ The 9 steps follow GDD §15.5, in order:
 
 | Kind | Name | Expected |
 |---|---|---|
-| Scenario | `tel.echo_economy` | KO → flush → a ring record with `api="economy"`, `name="Treasure"`, reason `combat_ko`; an Output line starting `[ALG][TEL] economy Treasure` |
-| Scenario | `tel.echo_wish` | `Wish.Make{1}` → `[ALG][TEL] custom wish_made ... CustomField01=tutorial` (fresh profile) |
+| Scenario | `tel.echo_economy` | KO → flush → a ring record with `api="economy"`, `name="Treasure"`, reason `combat_ko`; an Output line starting `[HB][TEL] economy Treasure` |
+| Scenario | `tel.echo_wish` | `Wish.Make{1}` → `[HB][TEL] custom wish_made ... CustomField01=tutorial` (fresh profile) |
 | Scenario | `tel.no_analytics_in_studio` | the seam counter `Telemetry._liveCalls == 0` after the full scenario suite |
 | Scenario | `tel.budget_drop` | seam: budget forced to 5; 20 P3 records → exactly 3 admitted (admitted while `used < 0.5 × 5`), a `budget_drop` warning, all 20 in the ring |
 | Scenario | `tel.fields_stringified` | a numeric field is sent as a string (inspect via `Telemetry._lastSent`) |
@@ -1621,7 +1687,7 @@ The 9 steps follow GDD §15.5, in order:
 - On accept:
   - append `{t, reporter, target, reason}` to a server-memory ring (100 entries; `ModerationService.reports(n)` for tests);
   - `signal(target, "report_received", {reason = reason})`;
-  - log `[ALG][Mod] report reporter=<id> target=<id> reason=<r>`;
+  - log `[HB][Mod] report reporter=<id> target=<id> reason=<r>`;
   - Notify the reporter with `ui.notify.report_thanks`.
 - The **30 s replay snapshot** (GDD §16.2) is a future hook: ModerationService (#3) cannot require CombatService (#9), and the snapshot needs Part 3's history ring.
 - No automatic action (GDD §18.10).
@@ -1665,7 +1731,7 @@ end
 |---|---|---|
 | `Rookie` attribute | ProgressionService | true while `flags.rookieSecLeft > 0` (7,200 s of play) |
 | Rookie nameplate | Part 6 | renders from `Rookie` |
-| Anti-farm | ProgressionService | §5.5.4 Rookie rule, per earner: a veteran gets no Treasure for the 3rd and later Rookie KO (any Rookie) within 10 min |
+| Anti-farm | ProgressionService | §5.5.4 Rookie rule, per earner: a veteran gets no Shells for the 3rd and later Rookie KO (any Rookie) within 10 min |
 | Protected spawn | Part 3 | 8 s or until attacking, for everyone (§3.13.5) |
 | Low-skill server bucket | — | future hook (matchmaking is out of scope) |
 
@@ -1688,26 +1754,27 @@ Wish = {
 	Pity = { EpicPlusHard = 30, LegendaryPlusHard = 120, MythicPlusHard = 400, -- GDD §8.4
 		SoftStart = 60, SoftStepPpm = 5000,                   -- +0.5%/Wish from Wish 60 (GDD §8.4)
 		NewStylePriority = true },                            -- GDD §8.4
-	Flair = { shiny = 20000, golden = 4000, crystal = 1000, rainbow = 200,
-		nightosphere = 40, glitched = 10 },                   -- ppm; standard = remainder 974,750 (GDD §8.7)
-	LuckyJarFlairMultiplier = 1.5,                            -- GDD §17.3 (cap ×1.5, GDD §17.4)
+	Flair = { glossy = 20000, gilt = 4000, seaglass = 1000, pearl = 200, -- Finish odds (data field Flair)
+		glowtide = 40, misprint = 10 },                       -- ppm; plain = remainder 974,750 (GDD §8.7)
+	LuckyJarFlairMultiplier = 1.5,                            -- Lucky Stamp; GDD §17.3 (cap ×1.5, GDD §17.4)
 	StorageCap = 1000, OverflowTreasure = 10,                 -- GDD §17.2
 	PoolMode = "Full",                                        -- §0.10
 	DuplicateShards = { common = 3, uncommon = 5, rare = 10, epic = 25,
-		legendary = 60, mythic = 150, cosmic = 300 },         -- (tuning default)
+		legendary = 60, mythic = 150, cosmic = 300 },         -- Stamps per duplicate (tuning default)
 	VariantChance = 0.05,                                     -- GDD §9.3
 	VariantsPerStyle = 2,                                     -- placeholder catalog v1..v2 (tuning default; GDD §9.3: 2–4)
-	CosmicSparksNeeded = 10, SparksPerMythicDupe = 1,         -- GDD §8.4
+	CosmicSparksNeeded = 10, SparksPerMythicDupe = 1,         -- Messages in a Bottle; GDD §8.4
 	FirstWishGuarantee = { Enabled = true, Rarity = "rare",
-		Styles = { "monarch", "flame" }, Weights = { 1, 1 } }, -- GDD §15.5
+		Styles = { "sandcastle", "scoop" }, Weights = { 1, 1 } }, -- GDD §15.5
 	FakeOut = { epic = 0.03 },                                -- GDD §8.6
-	BannerId = "standard",                                    -- GDD §20.4 banner_id (no banners in M1-G)
-	Announce = { CrossServerEnabled = false,                  -- M1-G default (§5.2.13); ALG_Wish may enable (live servers only)
-		CrossServerTopic = "ALG_Announce_v1" },               -- GDD §8.6 / §2.7.4 note
+	BannerId = "main",                                        -- GDD §20.4 banner_id (no banners in M1-G; one fixed value)
+	Announce = { CrossServerEnabled = false,                  -- M1-G default (§5.2.13); HB_Wish may enable (live servers only)
+		CrossServerTopic = "HB_Announce_v1" },               -- GDD §8.6 / §2.7.4 note
+	CosmicArrival = { Enabled = true, FogSec = 60 },          -- GDD §8.6: first Cosmic on a server, message + hub fog (§5.2.18)
 },
 
 Shop = {
-	StyleSlots = 3, CosmeticSlots = 4, CosmeticSlotsEnabled = true, -- GDD §8.5 (cosmetics = Variant offers, placeholder)
+	StyleSlots = 3, CosmeticSlots = 4, CosmeticSlotsEnabled = true, -- GDD §8.5 (cosmetics = Off-Duty Look offers, placeholder)
 	RefreshSec = 43200,                                       -- 12 h (GDD §8.5)
 	Prices = { common = 1500, uncommon = 3000, rare = 6000, epic = 12000, legendary = 30000, mythic = 75000 }, -- GDD §8.5
 	ExcludeRarities = { "starter", "cosmic" },                -- GDD §8.5
@@ -1790,16 +1857,15 @@ Progression = {
 },
 
 Appearance = {
-	OosonaSpecies = {                                         -- GDD §12.3 species templates (placeholder skins, tuning default)
-		{ id = "human", skin = "#F2C9A0" }, { id = "candy", skin = "#F7A8C8" }, { id = "dog", skin = "#E8B04A" },
-		{ id = "cat", skin = "#D9D9D9" }, { id = "vampire", skin = "#9AA3B5" }, { id = "flame", skin = "#FF8A3D" },
-		{ id = "lumpy", skin = "#B48CD9" }, { id = "wizard", skin = "#7FB7E6" }, { id = "ghost", skin = "#EAF4FF" },
-		{ id = "penguin", skin = "#2E3440" },
+	PostcardStyles = {                                        -- GDD §12.3 Postcard Look body styles (records read via .id; proportions: Part 6 Perf.Looks.BodyScale)
+		{ id = "classic" }, { id = "round" }, { id = "tall" }, { id = "tiny" },
 	},
-	OosonaFaces = 6, OosonaHats = 6, OosonaOutfits = 4,       -- (tuning default) graybox catalog sizes; hat 0..6, outfit 0..4
+	PostcardSkins = { "#F7DCC4", "#F2C9A0", "#E3B184", "#D9A066", -- (tuning default) skin palette, light to deep; head/arms = PostcardSkins[spec.skin]
+		"#B97D4F", "#A8693E", "#6B4226", "#4A2C1A" },          -- GDD §12.3 "skin palettes"; Settings swatches (Part 6 §6.9.9), no Skin text keys
+	PostcardFaces = 6, PostcardHats = 6, PostcardOutfits = 4,       -- (tuning default) graybox catalog sizes; hat 0..6, outfit 0..4
 	OutfitColors = { "#3B6EA8", "#2E8B57", "#8B3A3A", "#444444" }, -- legs colour per outfit 1..4 (tuning default)
 	NoOutfitDarken = 0.65,                                    -- outfit 0: legs = colour × 0.65 (tuning default)
-	OosonaColors = { "#F2C14E", "#F48FB1", "#7FD8BE", "#B39DDB", "#FFF3D6", "#4FC3F7",
+	PostcardColors = { "#F2C14E", "#F48FB1", "#7FD8BE", "#B39DDB", "#FFF3D6", "#4FC3F7",
 		"#FF8A65", "#A1887F", "#90A4AE", "#E0E0E0", "#6D4C41", "#212121" }, -- (tuning default) Settings swatches (Part 6 §6.9.9); #F2C14E = Part 2 default
 	SimplifiedLimbShade = 0.75,                               -- (tuning default) Simplified look limbs (Part 6 §6.8.2)
 	FaceExpressions = 24,                                     -- GDD §12.3
@@ -1820,7 +1886,7 @@ Telemetry = {
 | Path | Rule |
 |---|---|
 | `Wish.TierOdds.*` | int 0–1,000,000; **check** sum = 1,000,000 and every key ∈ the 7 rollable rarities |
-| `Wish.Flair.*` | int 0–1,000,000; **check** `Odds.flairTable(ctx, true)[1] > 0` (with the multiplier applied, standard stays positive) |
+| `Wish.Flair.*` | int 0–1,000,000; **check** `Odds.flairTable(ctx, true)[1] > 0` (with the multiplier applied, `plain` stays positive) |
 | `Wish.LuckyJarFlairMultiplier` | num 1–1.5 (GDD §17.4 cap) |
 | `Wish.Pity.*Hard` | int 1–10,000; **check** Epic ≤ Legendary ≤ Mythic |
 | `Wish.Pity.SoftStart` | int 1–`LegendaryPlusHard`; `SoftStepPpm` int 0–100,000 |
@@ -1835,17 +1901,18 @@ Telemetry = {
 | `Economy.Products.*.Wishes` | int 1–10,000; `Economy.RepeatVictim.Multipliers[*]` num 0–1 |
 | `Progression.TotemRangeStuds` | num 1–100; `Progression.Account.ActiveMinDamage` int 0–1,000 |
 | `Telemetry.BudgetFraction` | num 0.1–1; `Telemetry.PerfSampleRate` num 0–1; `ClassCeilings[*]` num 0–1 |
-| `Appearance.OosonaSpecies[*].skin`, `OutfitColors[*]` | hexColor; `#OutfitColors == OosonaOutfits`; **check** `#OosonaSpecies ≥ 1`; `OosonaSpecies[*].id` non-empty and unique |
-| `Appearance.OosonaColors[*]` | hexColor; **check** `#OosonaColors ≥ 1` |
-| `Appearance.OosonaFaces`, `OosonaHats`, `OosonaOutfits` | int ≥ 1 (Settings validator: face 1..`OosonaFaces`, hat 0..`OosonaHats`, outfit 0..`OosonaOutfits`, Part 2 §2.8.6) |
+| `Appearance.PostcardSkins[*]`, `OutfitColors[*]` | hexColor; `#OutfitColors == PostcardOutfits`; **check** `#PostcardSkins ≥ 6` (a wide range of skin tones) and `#PostcardStyles ≥ 1`; `PostcardStyles[*].id` non-empty and unique (Settings validator: body 1..`#PostcardStyles`, skin 1..`#PostcardSkins`, Part 2 §2.8.6) |
+| `Appearance.PostcardColors[*]` | hexColor; **check** `#PostcardColors ≥ 1` |
+| `Appearance.PostcardFaces`, `PostcardHats`, `PostcardOutfits` | int ≥ 1 (Settings validator: face 1..`PostcardFaces`, hat 0..`PostcardHats`, outfit 0..`PostcardOutfits`, Part 2 §2.8.6) |
 | `Appearance.SimplifiedLimbShade`, `Appearance.NoOutfitDarken` | num 0–1 |
 | `Appearance.FaceExpressions` | int ≥ 1 |
 | `Wish.Announce.CrossServerEnabled` | bool |
+| `Wish.CosmicArrival.Enabled` | bool; `Wish.CosmicArrival.FogSec` int 1–600 |
 | `Telemetry.PerfWindowSec` | int 5–600; `Telemetry.PerfSendEverySec` int ≥ `PerfWindowSec`, ≤ 3,600 |
 
-`Appearance` is the single canonical table for the whole spec (decision D-13): Part 6 §6.11 no longer defines it and points here. Species are records read via `.id` (Part 6 builders and UI, Part 8 `ui.oosona.species.<id>`). Oosona rendering follows §5.7.1 (head/arms species `skin`, torso `OosonaSpec.color`, legs `OutfitColors[outfit]` or `color × NoOutfitDarken`).
+`Appearance` is the single canonical table for the whole spec (decision D-13): Part 6 §6.11 no longer defines it and points here. Body styles are records read via `.id` (Part 6 render proxies via `Perf.Looks.BodyScale[<id>]` and the Settings UI; Skin keys `ui.postcard.body.<id>`). Skin swatches are colours only and need no Skin text keys. Postcard Look rendering follows §5.7.1 (head/arms `PostcardSkins[spec.skin]`; torso `PostcardSpec.color`; legs `OutfitColors[outfit]` or `color × NoOutfitDarken`).
 
-Live-ops note: changes to `ALG_Wish` take effect at the next Wish (§2.6.4). The new `oddsHash` appears in the ledger and the odds view. GDD §18.6's two-person approval is an operational rule outside the game code.
+Live-ops note: changes to `HB_Wish` take effect at the next Wish (§2.6.4). The new `oddsHash` appears in the ledger and the odds view. GDD §18.6's two-person approval is an operational rule outside the game code.
 
 ---
 
@@ -1867,7 +1934,7 @@ Live-ops note: changes to `ALG_Wish` take effect at the next Wish (§2.6.4). The
 
 **Studio scenarios** (in-Studio harness, Part 7):
 - `style.*` (§5.1.8)
-- `wish.*` (§5.2.17)
+- `wish.*` (§5.2.17; 16 scenarios, including `wish.cosmic_arrival_once`)
 - `policy.*` (§5.3)
 - `shop.*` (§5.4.3)
 - `progress.*` (§5.5.12)
@@ -1876,38 +1943,38 @@ Live-ops note: changes to `ALG_Wish` take effect at the next Wish (§2.6.4). The
 - `tel.*` (§5.8.5)
 - `mod.*` (§5.9)
 
-Every scenario prints `[ALG][TEST] <name> PASS|FAIL <detail>` (§0.4).
+Every scenario prints `[HB][TEST] <name> PASS|FAIL <detail>` (§0.4).
 
 **MCP verification recipe** (Part 1 snippets):
 1. `start_stop_play` (start).
 2. `execute_luau` with `datamodel_type = "Server"`: `return require(game.ServerScriptService.Services.TestHarness).run("wish.batch10_server")` (allowed only after spike T7-S4; otherwise use Part 7 §7.3.6's request/result protocol with selector `wish.batch10_server`).
-3. `get_console_output`, filtered for `[ALG][TEST]` and `[ALG][Wish]` lines.
+3. `get_console_output`, filtered for `[HB][TEST]` and `[HB][Wish]` lines.
 
 ---
 
 ### 5.12 New contracts introduced
 
 1. **Pure module APIs** `Shared/Wish/Odds.luau` and `Shared/Wish/Pity.luau` (§5.2.2), including:
-   - the per-roll stream: `fmix32` seeding, exactly 5 draws in the order d1 tier, d2 style, d3 Flair, d4 Variant, d5 fake-out;
+   - the per-roll stream: `fmix32` seeding, exactly 5 draws in the order d1 tier, d2 style, d3 Finish, d4 Off-Duty Look, d5 fake-out;
    - the largest-remainder quantization;
    - Cosmic fixed under pity;
    - rotation, curve and time helpers.
 
    Meta pure helpers (curves, rotations, `effectiveLook`) live in these files (§2.10 item 5).
 2. **Config:** complete Part 5 sections (§5.10). New keys beyond §0.9 / §2.6.2:
-   - `Wish.VariantsPerStyle`, `Wish.SparksPerMythicDupe`, `Wish.FakeOut`, `Wish.BannerId`, `Wish.Announce` (incl. `CrossServerEnabled = false`), `Wish.Pity.NewStylePriority`;
+   - `Wish.VariantsPerStyle`, `Wish.SparksPerMythicDupe`, `Wish.FakeOut`, `Wish.BannerId`, `Wish.Announce` (incl. `CrossServerEnabled = false`), `Wish.Pity.NewStylePriority`, `Wish.CosmicArrival` (`Enabled = true`, `FogSec = 60`);
    - `Shop.VariantPrices`;
    - `Economy.{TrainingEarns, BotRewardMultiplier, FlushSec, Products, Passes, SpendGuard, NoOfferAfterLossSec, ReceiptLoadWaitSec, ReceiptSaveWaitSec, ProductInfoCacheSec, Policy}`;
    - `Progression.{TotemRangeStuds, DailyResetCheckSec}`, `Progression.Account.ActiveMinDamage`, `Progression.FreeRotation.Salt`, `Progression.Quests.DailyPool`;
-   - `Appearance.{OutfitColors, NoOutfitDarken}`, plus Part 6's `Appearance.{OosonaColors, SimplifiedLimbShade, FaceExpressions}` merged here (D-13: §5.10 is the only `Appearance` table; Part 6 §6.11 points to it);
+   - `Appearance.{OutfitColors, NoOutfitDarken}`, `Appearance.PostcardStyles` as four body-style records `{id}` (`classic`, `round`, `tall`, `tiny`), the skin palette `Appearance.PostcardSkins` (8 tones; Part 2 §2.4 `PostcardSpec.skin`), plus Part 6's `Appearance.{PostcardColors, SimplifiedLimbShade, FaceExpressions}` merged here (D-13: §5.10 is the only `Appearance` table; Part 6 §6.11 points to it);
    - `Telemetry.{BaseRequestsPerMin, PerCcuRequestsPerMin, ClassCeilings, MatchSummaryMinLifeSec, PerfWindowSec, PerfSendEverySec}`.
 
    **Odds are integers in ppm.**
 3. **Value decisions vs §2.6.2's draft** (§5.10 wins wherever the two differ; Part 2's draft already carries the first three values):
-   - `Shop.CosmeticSlotsEnabled = true` (Variant offers as the placeholder cosmetic catalog);
+   - `Shop.CosmeticSlotsEnabled = true` (Off-Duty Look offers as the placeholder cosmetic catalog);
    - `Progression.FreeRotation.Enabled = true` (Count stays 3, GDD §8.1; DES-6 records the M1-G ratio);
    - `Progression.Quests.Enabled = true` (M1-G; §5.5.9, DES-7);
-   - `Appearance.OosonaHats = 6` (Part 2 keeps only an `Appearance` placeholder filled from §5.10; Part 6 builds `Oosona_Hat_1..6`; the Settings validator allows hat 0..6);
+   - `Appearance.PostcardHats = 6` (Part 2 keeps only an `Appearance` placeholder filled from §5.10; Part 6 builds `Postcard_Hat_1..6`; the Settings validator allows hat 0..6);
    - the active-minute rule is now "dealt ≥ `ActiveMinDamage` (10)" (§5.5.3) instead of the draft's "dealt or took ≥ 1".
 4. **Types additions** (Part 2 adds them to `Types.luau`):
    - `WishStats.paidEscrow: number`;
@@ -1922,50 +1989,93 @@ Every scenario prints `[ALG][TEST] <name> PASS|FAIL <detail>` (§0.4).
    - PlayerService MUST call `setSwapGate(CombatService.canTravel)` in `init()` and handle `swapNow` with `CombatService.spawnAsync`.
    - Part 6 MUST place totems as direct children of `<MapModel>/Totems`.
 7. **AppearanceService:** the `OwnLook` attribute is written only at ready and at `lifeStyleResolved` (the base look of the current character), and AppearanceService sets `Player.CanLoadCharacterAppearance` before each spawn. Part 6 renders per the §5.7.5 truth table.
+   - **Full Uniform default Off:** `settings.characterLook` defaults to **false** (Part 2 §2.8.6 row, template and normalize).
+   - **Postcard Look data** (Part 2 §2.4/§2.8.6 fields, validators and codec `p1.<body>.<skin>.<RRGGBB>.<face>.<hat>.<outfit>`): `PostcardSpec.body` indexes the body-style records `Appearance.PostcardStyles` (`body 1..#PostcardStyles`), and `PostcardSpec.skin` indexes the skin palette `Appearance.PostcardSkins` (`skin 1..#PostcardSkins`). Head and arms take `PostcardSkins[spec.skin]`; body-style proportions are Part 6's `Perf.Looks.BodyScale[<id>]`.
 8. **MonetizationService:**
    - `grantProduct` (the single grant path for receipts and mocks), `isMock`, `setMockPass`;
    - **`BindReceiptHandler` catch-all** with a `ProcessReceipt` fallback;
    - IDs come from `Assets.products[game.GameId]` with keys `wishes_10/55/120/300`, `vip`, `quick_wish`, `lucky_jar`;
-   - Skin keys `product.<key>.name`, `pass.<key>.name`.
+   - Skin keys `product.<key>.name`, `pass.<key>.name` (Base names in item 14: First Class, Quick Post, Lucky Stamp).
 9. **New remote** `Ftue.Step` (C2S event, rate 5 / 1, `struct{step = int(1, 9), skipped = bool}`, owner ProgressionService).
 10. **New DevCmds** (Part 2 §2.11.5 enum): `setWishSeedMaster(seed)`, `simActivity(sec, dmg)`, `simKo(victim, rookie)`, `flushProgress()`. Studio seams:
-    - `WishService._setSeedMaster`;
+    - `WishService._setSeedMaster`, `WishService._resetArrival`;
     - `PolicyGate._forceFail`;
     - `ProgressionService._simActivity/_simKo/_flushNow`;
     - `Telemetry._liveCalls/_lastSent/_setPerfSampled`;
     - `ModerationService._banCalls`.
 11. **Log tag `TEL`** for the Studio analytics echo (GDD §18.10). Fixed lines:
-    - `[ALG][Wish] batch ...`
-    - `[ALG][Policy] flags ...`
-    - `[ALG][Store] receipt ...` / `mock grant ...`
-    - `[ALG][Shop] rotation|buy ...`
-    - `[ALG][Progress] flush|level|reward_pending ...`
-    - `[ALG][Style] equip|resolved ...`
-    - `[ALG][Appearance] set ...`
-    - `[ALG][Mod] report|ban dry_run ...`
+    - `[HB][Wish] batch ...`, `[HB][Wish] arrival ...` / `arrival skip reason=<already_fired|disabled>`
+    - `[HB][Policy] flags ...`
+    - `[HB][Store] receipt ...` / `mock grant ...`
+    - `[HB][Shop] rotation|buy ...`
+    - `[HB][Progress] flush|level|reward_pending ...`
+    - `[HB][Style] equip|resolved ...`
+    - `[HB][Appearance] set ...`
+    - `[HB][Mod] report|ban dry_run ...`
 12. **Rotation ID format** `<b36 period>:<style chars>:<cosmetic codes>` and the cosmetic `itemId` format `"<styleId>/<variantId>"`.
-13. **Cross-server announcements:** implemented on `ALG_Announce_v1` with payload `{jobId, key, rarityId, styleId}`, gated by `Wish.Announce.CrossServerEnabled` (false in M1-G) and skipped in Studio; the subscribe runs in `task.spawn` with `pcall` so `start()` never yields (§5.2.13).
+13. **Cross-server announcements:** implemented on `HB_Announce_v1` with payload `{jobId, key, rarityId, styleId}`, gated by `Wish.Announce.CrossServerEnabled` (false in M1-G) and skipped in Studio; the subscribe runs in `task.spawn` with `pcall` so `start()` never yields (§5.2.13). A received Cosmic message also calls `cosmicArrival(nil, styleId)` (§5.2.18).
 13a. **Player attribute `PerfSampled`** (boolean, default false; written by Telemetry at join, §5.8.3). Part 2 §2.5.2 lists it; the Part 6 VfxController perf sender reads it.
 13b. **Rookie anti-farm is per earner** (§5.5.4): the server-memory log of paid Rookie KOs is keyed by the earner, not by the victim.
 13c. **Title auto-equip** (§5.5.5 flush step 4): the first title granted while `account.title == ""` becomes the equipped title. No `title` settings key and no picker in M1-G (Part 6 §6.15 future hook).
-14. **Skin keys needed (Part 8):**
-    - `ui.notify.{wish_epic, wish_legendary, wish_mythic_global, wish_cosmic_global, level_up, mastery_up, daily_login, streak_3, streak_5, streak_10, streak_ended, rookie_ended, shop_bought, purchase_granted, report_thanks, quest_done}`
-    - `ui.quest.<id>` (one per `Progression.Quests.DailyPool[*].id`, token `{goal}`) and `ui.hud.quests` (decision D-42)
-    - `ui.wish.fakeout_note`, `ui.shop.goose_line_<n>` (n = 1…6; Part 6's form, adopted by Part 8 §8.9 item 6)
-    - `variant.<styleId>.<vid>.name`
-    - `title.level_<n>`, `title.mastery_<styleId>_5`, `title.master_<styleId>`
-    - `ui.oosona.species.<id>`
+13d. **Cosmic Arrival** (§5.2.18): `WishService.cosmicArrival(player?, styleId) -> boolean` (server only; once per server; idempotent); config `Wish.CosmicArrival = {Enabled, FogSec}`; the `ReplicatedStorage.Runtime` attribute **`CosmicArrivalUntil`** (number, server time in seconds from `workspace:GetServerTimeNow()`; absent until the first Arrival; written only by WishService; Part 2 §2.5 lists it; Part 6 renders the horn, the hub fog and the music cut from it); Notify key `ui.notify.cosmic_arrival`; Studio seam `_resetArrival`; scenario `wish.cosmic_arrival_once`.
+13e. **Stamp-first reveal data** (§5.2.13): Part 6 stages each `WishResult` as stamp (`rarity`, `rarity.<id>.name`, `ui.wish.zone_<rarity>`), re-stamp (`fakeOut`), card flip (`styleId`, `flair`, `isNew`, `shards`, `variantId`), then reveal length (`firstReveal`, Quick Post). No new `WishResult` fields; nothing is sent before the commit.
+14. **Skin keys and their Base text.** Part 5 owns the Base text of these Wish, shop, progression and appearance-data keys; Part 8 §8.3.5–§8.3.7 carries these lines verbatim in the one shipped pack, `src/Shared/Skin/Packs/Base.luau`, and every other part that quotes one copies it verbatim. Voice: short, plain English with a seaside hotel's courtesy ("Enjoy your stay!", "Thank you kindly"). The only KO call-out in the game is "Checked out!" (Part 6), so no line here reuses it. Tokens are fixed per key (Part 8 §8.3.7 lists them): `{n}`, `{goal}`, `{who}`, `{styleId}`, `{rarityId}`, `{level}`, `{time}`; `ui.wish.fakeout_note`, `ui.wish.zone_<rarity>`, `ui.notify.wish_mythic_global` and `ui.notify.wish_cosmic_global` take none (the cross-server lines name no one, GDD §8.6). Keys marked *new* are introduced by this part; the shop lines use Part 6's key form `ui.shop.sundry_line_<n>` (n = 1…6).
+
+    | Key | Base text |
+    |---|---|
+    | `ui.hud.treasure` / `ui.hud.shards` / `ui.hud.sparks` | {n} Shells / {n} Stamps / {n} Messages in a Bottle |
+    | `ui.wish.shards` | +{n} Stamps |
+    | `ui.shop.balance` | Your Shells: {n} |
+    | `ui.wheel.shards` / `ui.wheel.convert` | Stamps: {n} / Trade Stamps for Mastery |
+    | `ui.wish.locked_paid` | Locked paid Wishes: {n} |
+    | `ui.wish.title` | Post a Wish |
+    | `ui.wish.make_1` / `ui.wish.make_10` | Post 1 Wish / Post a Mailbag (10 Wishes) |
+    | `ui.wish.auto10` | Auto Mailbag |
+    | `ui.wish.odds` / `ui.wish.new` / `ui.wish.secret` | Odds / New! / ??? |
+    | `ui.wish.pity_title` | Guaranteed Delivery |
+    | `ui.wish.fakeout_note` | Now and then an Epic Wish lands a Rare stamp first and is then re-stamped Epic. It only ever goes up, and it never changes what you get. |
+    | `ui.wish.zone_<rarity>` *new* (flavour on the stamp, §5.2.13) | common Local · uncommon Island · rare Inter-Island · epic Far Isles · legendary Fog's Edge · mythic Deep Water · cosmic Beyond the Haar |
+    | `rarity.<id>.name` | starter Starter · common Common · uncommon Uncommon · rare Rare · epic Epic · legendary Legendary · mythic Mythic · cosmic Cosmic |
+    | `flair.<id>.name` (Finish names) | plain Plain · glossy Glossy · gilt Gilt · seaglass Sea-Glass · pearl Pearl · glowtide Glowtide · misprint Misprint |
+    | `variant.<styleId>.v1.name` / `.v2.name` (Off-Duty Looks) | Day Off / Evening Out (graybox placeholders; each style's own look names are in GDD §7.3 and replace these when its looks are made) |
+    | `ui.notify.wish_epic` | Post for you: {styleId}! ({rarityId}) |
+    | `ui.notify.wish_legendary` (also used in-server for Mythic and Cosmic) | Gilt stamp! {who} got post from {styleId}! |
+    | `ui.notify.wish_mythic_global` | ❂ A Guest just had a reply from the Deep Bay! |
+    | `ui.notify.wish_cosmic_global` | A postcard just came back from beyond the Haar! |
+    | `ui.notify.cosmic_arrival` *new* (§5.2.18) | A ferry horn sounds in the fog… {who} got post from {styleId}! |
+    | `ui.notify.level_up` | Level {level}! Enjoy your stay. |
+    | `ui.notify.mastery_up` | {styleId} Mastery {level}! |
+    | `ui.notify.daily_login` | Welcome back! Your daily post has arrived. |
+    | `ui.notify.streak_3` / `_5` / `_10` | {who} is on a 3-KO streak! / {who} is on a 5-KO streak! / {who} is the talk of the pier: 10 KOs! |
+    | `ui.notify.streak_ended` | Streak over! |
+    | `ui.notify.rookie_ended` | Your new-arrival protection has ended. Enjoy your stay! |
+    | `ui.notify.shop_bought` | Sold! Thank you kindly. |
+    | `ui.notify.purchase_granted` | Purchase complete. Thank you kindly! |
+    | `ui.notify.report_thanks` | Thank you. Your report has been sent. |
+    | `ui.notify.quest_done` | Daily quest done! |
+    | `ui.hud.quests` | Daily Quests |
+    | `ui.quest.deal_damage` / `perfect_blocks` / `kos` / `active_minutes` / `awaken` (one per `Progression.Quests.DailyPool[*].id`, decision D-42) | Deal {goal} damage / Land {goal} Perfect Blocks / Get {goal} KOs / Play for {goal} minutes / Go Peak ×{goal} |
+    | `ui.shop.title` | Sundry's Rack |
+    | `ui.shop.refresh` | New cards on the rack in {time} |
+    | `ui.shop.coming_soon` | Coming soon |
+    | `ui.shop.confirm_in_dev` | This Charm is still being made. Collect it now and play it when it's ready? |
+    | `ui.shop.sundry_line_1` … `_6` | Have a browse. Everything on the rack has a fixed price. / New cards go up when the clock runs down. / No luck needed here. What you see is what you get. / Save your Shells for the one you really want. / Try a Charm in the Staff Room before you buy it. / Take your time. I'm not going anywhere. I'm a rack. |
+    | `title.level_<n>` (n = 10…100) | 10 Paddler · 20 Beachcomber · 30 Promenader · 40 Crowd-Pleaser · 50 Pier Performer · 60 Star Turn · 70 Showstopper · 80 Top of the Bill · 90 Isle Favourite · 100 Grand Entertainer |
+    | `title.mastery_<styleId>_5` / `title.master_<styleId>` | "<style name>'s Pen Pal" / "<style name>'s Understudy", generated from the Base style names (e.g. "Sonny's Pen Pal", "Sonny's Understudy") |
+    | `product.<key>.name` | wishes_10 10 Wishes · wishes_55 55 Wishes · wishes_120 120 Wishes · wishes_300 300 Wishes |
+    | `pass.<key>.name` | vip First Class · quick_wish Quick Post · lucky_jar Lucky Stamp |
+    | `ui.postcard.body.<id>` (one per `Appearance.PostcardStyles[*].id`) | classic Classic · round Round · tall Tall · tiny Tiny |
 15. **Telemetry mapping** (§5.8.3), including the reason→transactionType table, priority classes, and string-only custom fields.
 16. **Lune test names and vectors** (§5.2.15, §5.2.16, §5.11), and the scenario names in §5.1.8, §5.2.17, §5.3, §5.4.3, §5.5.12, §5.6.7, §5.7.7, §5.8.5 and §5.9.
 
 ### 5.13 Issues with spine
 
-1. **Brief vs Part 2: Ooo-sona "three colours".** The brief describes the Ooo-sona placeholder as three player-chosen colours. §2.4/§2.8.6 fixed `OosonaSpec` with one colour plus species, face, hat and outfit (≤ 30-char code), and the GDD says "color" (singular). This part keeps Part 2's spec and derives three colours: species skin, player colour, and outfit colour (§5.7.1). If three free colours are required, extend `OosonaSpec` to v2 with `color2`/`color3`; the code is still ≤ 50 chars.
-2. **Telemetry echo tag.** GDD §18.10 specifies `[ALG][TEL]` lines; Part 2's tag list has `Tel`. This part uses `TEL` for echo lines and `Tel` for operational warnings. Resolved by decision D-02: the canonical tag list (Part 2 §2.3.6) contains both, with exactly these meanings.
+1. **Brief vs Part 2: Postcard Look "three colours".** The brief describes the Postcard Look placeholder as three player-chosen colours. §2.4/§2.8.6 fix `PostcardSpec` with one colour plus body style, skin tone, face, hat and outfit (≤ 30-char code), and the GDD says "colour" (singular). This part keeps Part 2's spec and derives three colours: the chosen skin tone (`PostcardSkins[skin]`), the player colour and the outfit colour (§5.7.1). If three free colours are required, extend `PostcardSpec` to v2 with `color2`/`color3`; the code is still ≤ 50 chars.
+2. **Telemetry echo tag.** GDD §18.10 specifies `[HB][TEL]` lines; Part 2's tag list has `Tel`. This part uses `TEL` for echo lines and `Tel` for operational warnings. Resolved by decision D-02: the canonical tag list (Part 2 §2.3.6) contains both, with exactly these meanings.
 3. **Receipt API wording.** GDD §18.5 says purchases are granted "through `ProcessReceipt`". This part uses the newer verified `BindReceiptHandler` (precedence over `ProcessReceipt`) with `ProcessReceipt` as fallback. The idempotency behaviour is identical. GDD wording only.
 4. **File layout has no home for meta pure helpers** (curves, rotations, quest picks, `effectiveLook`). Per §2.10 item 5 they live in `Wish/Odds.luau` and `Wish/Pity.luau`, whose responsibilities are therefore broader than their names suggest. Recommend renaming them, or adding `Shared/Wish/Meta.luau`, in a later spine revision.
 5. **"Cosmic: no pity" vs the hard-pity renormalization.** §0.11 and the GDD do not say whether floors and soft pity boost Cosmic. This part fixes Cosmic at 0.01% in every state. The Monte Carlo (§5.2.16) confirms §0.11 is reproduced, so no spine number changes.
-6. **First-Wish guarantee vs M1-G kits.** GDD §15.5 picks `monarch` or `flame` 50/50. `flame` is not implemented in M1-G, so half of new players receive a non-equippable style from their guaranteed Wish. This part keeps the GDD numbers, because the config can be changed live through `ALG_Wish` without code. Flagged for the owner (§5.14).
+6. **First-Wish guarantee and M1-G kits.** GDD §15.5 picks `sandcastle` or `scoop` 50/50. Both are implemented in M1-G, so every new player's guaranteed Wish is playable at once. The pair stays live-tunable through `HB_Wish` without code (§5.14 DES-2).
 
 ### 5.14 Open questions / spikes
 
@@ -1974,13 +2084,14 @@ Every scenario prints `[ALG][TEST] <name> PASS|FAIL <detail>` (§0.4).
 | APP-1 | Does `Player.CanLoadCharacterAppearance = true` + `LoadCharacterAsync` load the avatar under `AuthorityMode = Server` in Studio (Play Solo and local multi-client test players with negative IDs)? Does `false` give the default blocky R15 rig with Avatar Settings applied? | P0 spike (Part 1 list), `appearance.ownlook_on_respawn` | Route B (§5.7.3): `GetHumanoidDescriptionFromUserIdAsync` + `LoadCharacterWithHumanoidDescriptionAsync` (requires a Part 3 step-6 change) |
 | MON-1 | Does `MarketplaceService:BindReceiptHandler` fire for Studio test purchases of dev products in the dev universe (H-09)? Does ProfileStore `.Mock` update `LastSavedData` after `Save()` so `waitSaved` completes? | Human + agent with H-09 products, `store.receipt_live_spike` | `ProcessReceipt` fallback (same body); in Mock mode, skip `waitSaved` |
 | POL-1 | What does `PolicyService:GetPolicyInfoForPlayerAsync` return in Studio, especially for negative test IDs? | `policy.live_in_studio` | `StudioFailOpen` + `Dev.Command setPolicy` |
-| MSG-1 | Is `MessagingService` usable in Studio sessions of a published dev place? This part skips it in Studio and keeps it off in M1-G (`Wish.Announce.CrossServerEnabled = false`); confirm live behaviour after H-11 only if the owner enables it through `ALG_Wish`. | P8 | Server-wide only (default) |
-| DES-1 | Owner sign-off on tuning defaults: Shards per duplicate (3/5/10/25/60/150/300), Variant prices, bot reward ×0.5, repeat-victim curve applied to XP, `ActiveMinDamage = 10`, Mastery curve `400 + 80·m` (§2.14 item 9). | H-10 (design review) | Keep defaults |
-| DES-2 | First-Wish guarantee in M1-G: keep GDD `monarch`/`flame` 50/50 (half get a non-equippable style), or temporarily override via `ALG_Wish` to `monarch` only? | Owner | Keep GDD |
-| DES-3 | Should a totem swap respawn at the nearest spawn (needs a `spawnAsync` option from Part 3) rather than a random safe hub? | Part 3 / owner | Random safe spawn (current) |
-| DES-4 | Should Cosmic craft be allowed when every Cosmic style is owned (Sparks → duplicate Shards)? This part refuses (`all_cosmic_owned`). | Owner | Refuse |
+| MSG-1 | Is `MessagingService` usable in Studio sessions of a published dev place? This part skips it in Studio and keeps it off in M1-G (`Wish.Announce.CrossServerEnabled = false`); confirm live behaviour after H-11 only if the owner enables it through `HB_Wish`. | P8 | Server-wide only (default) |
+| DES-1 | Owner sign-off on tuning defaults: Stamps per duplicate (`DuplicateShards` 3/5/10/25/60/150/300), Off-Duty Look prices (`VariantPrices`), bot reward ×0.5, repeat-victim curve applied to XP, `ActiveMinDamage = 10`, Mastery curve `400 + 80·m` (§2.14 item 9). | H-10 (design review) | Keep defaults |
+| DES-2 | First-Wish guarantee in M1-G: GDD §15.5 `sandcastle`/`scoop` 50/50. Both are implemented, so no override is needed; the owner confirms the pair. | Owner | Keep GDD |
+| DES-3 | Should a Charm Rack (totem) swap respawn at the nearest spawn (needs a `spawnAsync` option from Part 3) rather than a random safe hub? | Part 3 / owner | Random safe spawn (current) |
+| DES-4 | Should Cosmic craft be allowed when every Cosmic style is owned (Messages in a Bottle → duplicate Stamps)? This part refuses (`all_cosmic_owned`). | Owner | Refuse |
 | DES-5 | Prestige (GDD §9.1) flow: automatic at 100, or a manual claim? Data only in M1-G; XP beyond 100 accumulates in `xpTotal`. | Owner | Future hook |
-| DES-6 | M1-G free rotation makes 3 of the 4 rollable implemented styles free each week (75 %, vs the GDD's 3 of 16; GDD §8.1 `Count = 3` kept). This weakens the Wish/Shop chase the slice demonstrates (§5.1.4). Owner: keep, or disable it through `ALG_Progression` (`{"FreeRotation":{"Enabled":false}}`). | Owner (H-10 design review) | Keep (`Enabled = true`, `Count = 3`) |
-| DES-7 | M1-G daily earn with world events stubbed and weekly quests a future hook is below GDD §17.5: ≈ 10.5 Wishes and ≈ 1,025 Treasure per 45-min day with daily quests on (≈ 75 % / 58 % of 14 / 1,775), ≈ 6.5 Wishes and ≈ 575 Treasure if quests were off (§5.5.2, §5.5.9). Owner: accept the gap for the slice, or add a temporary slice-only grant that the owner specifies (applied as a live `ALG_*` overlay and recorded in `PROGRESS.md`; `Defaults.luau` and every GDD number stay unchanged). | Owner (H-10 design review) | Accept; daily quests on |
+| DES-6 | M1-G free rotation makes 3 of the 4 rollable implemented styles free each week (75 %, vs the GDD's 3 of 16; GDD §8.1 `Count = 3` kept). This weakens the Wish/Shop chase the slice demonstrates (§5.1.4). Owner: keep, or disable it through `HB_Progression` (`{"FreeRotation":{"Enabled":false}}`). | Owner (H-10 design review) | Keep (`Enabled = true`, `Count = 3`) |
+| DES-7 | M1-G daily earn with world events stubbed and weekly quests a future hook is below GDD §17.5: ≈ 10.5 Wishes and ≈ 1,025 Shells per 45-min day with daily quests on (≈ 75 % / 58 % of 14 / 1,775), ≈ 6.5 Wishes and ≈ 575 Shells if quests were off (§5.5.2, §5.5.9). Owner: accept the gap for the slice, or add a temporary slice-only grant that the owner specifies (applied as a live `HB_*` overlay and recorded in `PROGRESS.md`; `Defaults.luau` and every GDD number stay unchanged). | Owner (H-10 design review) | Accept; daily quests on |
+| ARR-1 | Cosmic Arrival scope: the design (GDD §8.6) fires it once per game, on the first Cosmic anyone pulls, on every server, with the Summer Board's sightings line on the pier; M1-G fires it once per server (§5.2.18). The universe-wide version needs a world record written with a compare-and-set (`DataStore:UpdateAsync` on a key outside player data; Part 2 owns data) and cross-server delivery. When does it ship? | Owner + Part 2 | Once per server; the universe-wide record and the Summer Board line are future hooks |
 | TEL-1 | The analytics "region" field (GDD §20.4 store events) is not sent (3-field budget). Confirm the dashboard's built-in location breakdown is enough; otherwise use `LocalizationService:GetCountryRegionForPlayerAsync` [Docs] in a custom field. | Live-ops | Omit |
 | OPS-1 | Enabling real bans (`BAN_MODE = "live"`) requires a human-approved PR and Studio's `Players.BanningEnabled`; it is out of scope for M1-G. | Human | Dry-run |
